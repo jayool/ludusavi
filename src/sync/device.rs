@@ -1,3 +1,4 @@
+use crate::prelude::StrictPath;
 use serde::{Deserialize, Serialize};
 
 /// Unique identity for this machine.
@@ -9,8 +10,7 @@ pub struct DeviceIdentity {
 }
 
 impl DeviceIdentity {
-    /// Loads the device identity from disk, or creates a new one if it doesn't exist.
-    pub fn load_or_create(app_dir: &crate::prelude::StrictPath) -> Self {
+    pub fn load_or_create(app_dir: &StrictPath) -> Self {
         let path = app_dir.joined("ludusavi-device.json");
 
         if path.is_file() {
@@ -22,7 +22,7 @@ impl DeviceIdentity {
         }
 
         let identity = Self {
-            id: uuid(),
+            id: Self::generate_id(),
             name: whoami::devicename(),
         };
 
@@ -32,34 +32,36 @@ impl DeviceIdentity {
 
         identity
     }
-}
 
-fn uuid() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    // Simple UUID v4-like without pulling in a new crate
-    // chrono and sha1 are already available in the project
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
+    fn generate_id() -> String {
+        // Uses sha1 (already a dependency) + current time + thread id
+        // to generate a unique ID without adding new dependencies.
+        use std::hash::{Hash, Hasher};
+        use std::collections::hash_map::DefaultHasher;
+        use std::time::SystemTime;
 
-    format!(
-        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
-        rand_u32(),
-        rand_u32() & 0xffff,
-        rand_u32() & 0x0fff,
-        (rand_u32() & 0x3fff) | 0x8000,
-        nanos as u64 * rand_u32() as u64 & 0xffffffffffff,
-    )
-}
+        let mut hasher = DefaultHasher::new();
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .hash(&mut hasher);
+        std::thread::current().id().hash(&mut hasher);
+        let h1 = hasher.finish();
 
-fn rand_u32() -> u32 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    use std::time::SystemTime;
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos()
+            .hash(&mut hasher);
+        let h2 = hasher.finish();
 
-    let mut hasher = DefaultHasher::new();
-    SystemTime::now().hash(&mut hasher);
-    std::thread::current().id().hash(&mut hasher);
-    hasher.finish() as u32
+        format!(
+            "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
+            (h1 >> 32) as u32,
+            (h1 & 0xffff) as u16,
+            (h2 & 0x0fff) as u16,
+            ((h2 >> 16) & 0x3fff) as u16 | 0x8000,
+            h1 & 0xffffffffffff_u64,
+        )
+    }
 }
