@@ -98,20 +98,20 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     log::info!("[sync daemon] Running as device: {} ({})", device.name, device.id);
 
-    // Paso 1: comprobación inmediata de descargas al arrancar
-    log::info!("[sync daemon] Checking cloud for downloads on startup...");
-    if let Err(e) = check_downloads(&config, &app_dir, &device) {
-        log::error!("[sync daemon] Error during startup download check: {e}");
+    // Paso 2: auto-registrar rutas para juegos sin ruta en este dispositivo
+    log::info!("[sync daemon] Auto-registering paths for unregistered games...");
+    if let Err(e) = auto_register_paths(&config, &device) {
+        log::error!("[sync daemon] Error during path auto-registration: {e}");
     }
 
     if stop_flag.load(Ordering::Relaxed) {
         return Ok(());
     }
 
-    // Paso 2: auto-registrar rutas para juegos sin ruta en este dispositivo
-    log::info!("[sync daemon] Auto-registering paths for unregistered games...");
-    if let Err(e) = auto_register_paths(&config, &device) {
-        log::error!("[sync daemon] Error during path auto-registration: {e}");
+    // Paso 1: comprobación inmediata de descargas al arrancar
+    log::info!("[sync daemon] Checking cloud for downloads on startup...");
+    if let Err(e) = check_downloads(&config, &app_dir, &device) {
+        log::error!("[sync daemon] Error during startup download check: {e}");
     }
 
     if stop_flag.load(Ordering::Relaxed) {
