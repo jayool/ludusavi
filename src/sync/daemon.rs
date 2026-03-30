@@ -346,7 +346,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
             }
             None => {
                 // No hay saves locales — intentar resolver la ruta esperada via manifiesto
-                match ludusavi::sync::operations::resolve_expected_save_path(config, game_entry) {
+                match crate::sync::operations::resolve_expected_save_path(config, game_entry) {
                     Some(expected_path) => {
                         log::info!(
                             "[sync daemon] Auto-registered expected path for {}: {}",
