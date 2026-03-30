@@ -477,10 +477,7 @@ fn make_rclone(config: &Config) -> Option<RcloneHelper> {
 /// Resuelve la ruta esperada de saves de un juego aunque no existan ficheros todavía.
 /// Para juegos Steam en Linux con Proton, construye la ruta del prefijo Proton.
 /// Equivalente a lo que hace parse_paths en scan.rs pero sin requerir que los ficheros existan.
-pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String>
-    config: &Config,
-    game: &crate::resource::manifest::Game,
-) -> Option<String> {
+pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String> {
     use crate::path::CommonPath;
     use crate::resource::manifest::placeholder as p;
 
