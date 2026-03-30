@@ -355,26 +355,8 @@ impl App {
                 ])
             }
             BackupPhase::CloudCheck => {
-                if self.operation.preview()
-                    || !self.config.cloud.synchronize
-                    || crate::cloud::validate_cloud_config(&self.config, &self.config.cloud.path).is_err()
-                {
-                    return self.handle_backup(BackupPhase::Load);
-                }
-
-                let local = self.config.backup.path.clone();
-                let games = self.operation.games();
-
-                match self.start_sync_cloud(&local, SyncDirection::Upload, Finality::Preview, games.cloned(), false) {
-                    Ok(_) => {
-                        // deferring to `transition_from_cloud_step`
-                        Task::none()
-                    }
-                    Err(e) => {
-                        self.operation.push_error(e);
-                        self.handle_backup(BackupPhase::Load)
-                    }
-                }
+                // Cloud upload deshabilitado: lo gestiona ludusavi-daemon via ZIP
+                return self.handle_backup(BackupPhase::Load);
             }
             BackupPhase::Load => {
                 self.invalidate_path_caches();
@@ -643,27 +625,8 @@ impl App {
                 }
             }
             BackupPhase::CloudSync => {
-                if !self.operation.should_sync_cloud_after() {
-                    return self.handle_backup(BackupPhase::Done);
-                }
-
-                let local = self.config.backup.path.clone();
-                let games = GameSelection::group(self.operation.syncable_games().cloned().unwrap_or_default());
-
-                if games.is_empty() {
-                    return self.handle_backup(BackupPhase::Done);
-                }
-
-                match self.start_sync_cloud(&local, SyncDirection::Upload, Finality::Final, Some(games), false) {
-                    Ok(_) => {
-                        // deferring to `transition_from_cloud_step`
-                        Task::none()
-                    }
-                    Err(e) => {
-                        self.operation.push_error(e);
-                        self.handle_backup(BackupPhase::Done)
-                    }
-                }
+                // Cloud upload deshabilitado: lo gestiona ludusavi-daemon via ZIP
+                return self.handle_backup(BackupPhase::Done);
             }
             BackupPhase::Done => {
                 log::info!("completed backup");
