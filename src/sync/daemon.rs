@@ -322,7 +322,16 @@ fn check_downloads(
                     }
                 }
                 SyncStatus::RequiresUpload => {
-                    log::debug!("[sync daemon] {} requires upload, watcher will handle it", game.name);
+                    log::info!("[sync daemon] Uploading on startup: {}", game.name);
+                    match upload_game(config, app_dir, device, game) {
+                        Ok(_) => {
+                            log::info!("[sync daemon] Upload complete: {}", game.name);
+                            any_changes = true;
+                        }
+                        Err(e) => {
+                            log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
+                        }
+                    }
                 }
                 SyncStatus::InSync => {
                     log::debug!("[sync daemon] {} is in sync", game.name);
