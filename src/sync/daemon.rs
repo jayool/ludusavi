@@ -13,7 +13,6 @@ use crate::{
     resource::{
         config::{Config, BackupFilter, ToggledPaths, ToggledRegistry},
         manifest::Manifest,
-        manifest::Manifest,
     },
     scan::{
         layout::BackupLayout,
