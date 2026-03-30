@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use chrono::{DateTime, Utc};
+use crate::resource::manifest::Game;
 use crate::{
     prelude::StrictPath,
     resource::config::Config,
@@ -472,4 +473,125 @@ fn make_rclone(config: &Config) -> Option<RcloneHelper> {
     Some(RcloneHelper {
         remote_id: remote.id().to_string(),
     })
+}
+/// Resuelve la ruta esperada de saves de un juego aunque no existan ficheros todavía.
+/// Para juegos Steam en Linux con Proton, construye la ruta del prefijo Proton.
+/// Equivalente a lo que hace parse_paths en scan.rs pero sin requerir que los ficheros existan.
+pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String>
+    config: &Config,
+    game: &crate::resource::manifest::Game,
+) -> Option<String> {
+    use crate::path::CommonPath;
+    use crate::resource::manifest::placeholder as p;
+
+    let home = CommonPath::Home.get()?;
+
+    // Intentar primero con roots Steam en Linux (Proton)
+    #[cfg(target_os = "linux")]
+    {
+        for root in config.expanded_roots().iter() {
+            if root.store() != crate::resource::config::Store::Steam {
+                continue;
+            }
+
+            let root_path = root.path().render();
+
+            // Para cada Steam ID del juego
+            for steam_id in game.all_ids().steam(None) {
+                let prefix = format!(
+                    "{}/steamapps/compatdata/{}/pfx/drive_c/users/steamuser",
+                    root_path, steam_id
+                );
+
+                // Intentar resolver cada path del manifiesto con este prefijo
+                for (raw_path, _) in &game.files {
+                    if raw_path.trim().is_empty() {
+                        continue;
+                    }
+
+                    // Solo paths que usan placeholders de Windows (saves via Proton)
+                    if !raw_path.contains(p::WIN_LOCAL_APP_DATA_LOW)
+                        && !raw_path.contains(p::WIN_APP_DATA)
+                        && !raw_path.contains(p::WIN_LOCAL_APP_DATA)
+                        && !raw_path.contains(p::WIN_DOCUMENTS)
+                        && !raw_path.contains(p::HOME)
+                    {
+                        continue;
+                    }
+
+                    let resolved = raw_path
+                        .replace(p::WIN_LOCAL_APP_DATA_LOW, &format!("{}/AppData/LocalLow", prefix))
+                        .replace(p::WIN_APP_DATA, &format!("{}/AppData/Roaming", prefix))
+                        .replace(p::WIN_LOCAL_APP_DATA, &format!("{}/AppData/Local", prefix))
+                        .replace(p::WIN_DOCUMENTS, &format!("{}/Documents", prefix))
+                        .replace(p::HOME, &format!("{}/AppData/Roaming", prefix))
+                        // Eliminar wildcards de storeUserId y osUserName
+                        .replace(&format!("/{}", p::STORE_USER_ID), "")
+                        .replace(&format!("/{}", p::OS_USER_NAME), "")
+                        .replace('*', "");
+
+                    // Limpiar slashes dobles y trailing slashes
+                    let resolved = resolved
+                        .split('/')
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    let resolved = format!("/{}", resolved);
+
+                    // Si el directorio existe, lo devolvemos directamente
+                    if std::path::Path::new(&resolved).is_dir() {
+                        log::debug!(
+                            "resolve_expected_save_path: found existing dir: {}",
+                            resolved
+                        );
+                        return Some(resolved);
+                    }
+
+                    // Si no existe pero el prefijo sí, devolvemos el candidato
+                    // (el directorio se creará cuando se extraiga el ZIP)
+                    if std::path::Path::new(&prefix).is_dir() {
+                        log::debug!(
+                            "resolve_expected_save_path: prefix exists, returning candidate: {}",
+                            resolved
+                        );
+                        return Some(resolved);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: path nativo Linux (XDG)
+    for (raw_path, _) in &game.files {
+        if raw_path.trim().is_empty() {
+            continue;
+        }
+
+        if !raw_path.contains(p::XDG_DATA) && !raw_path.contains(p::XDG_CONFIG) {
+            continue;
+        }
+
+        let data_dir = CommonPath::Data.get().unwrap_or(home);
+        let config_dir = CommonPath::Config.get().unwrap_or(home);
+
+        let resolved = raw_path
+            .replace(p::XDG_DATA, data_dir)
+            .replace(p::XDG_CONFIG, config_dir)
+            .replace(&format!("/{}", p::STORE_USER_ID), "")
+            .replace(&format!("/{}", p::OS_USER_NAME), "")
+            .replace('*', "");
+
+        let resolved = resolved
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("/");
+        let resolved = format!("/{}", resolved);
+
+        if std::path::Path::new(&resolved).is_dir() {
+            return Some(resolved);
+        }
+    }
+
+    None
 }
