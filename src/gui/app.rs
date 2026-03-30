@@ -5,6 +5,8 @@ use std::{
 
 use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
 
+use crate::sync::bridge::register_game_after_backup;
+
 use crate::{
     cloud::{rclone_monitor, Rclone, Remote},
     gui::{
@@ -584,6 +586,8 @@ impl App {
                             if scan_info.needs_cloud_sync() {
                                 self.operation.add_syncable_game(scan_info.game_name.clone());
                             }
+                            // Puente EmuSync: registra el juego en el game-list.json del cloud
+                            register_game_after_backup(&self.config, &scan_info);
                             scan_info.clear_processed_changes(backup_info, SCAN_KIND);
                         }
 
