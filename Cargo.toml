@@ -11,6 +11,8 @@ license = "MIT"
 [[bin]]
 name = "ludusavi"
 required-features = ["app"]
+name = "ludusavi-daemon"
+path = "src/bin/daemon_main.rs"
 
 [features]
 default = ["app"]
@@ -35,6 +37,7 @@ clap = { version = "4.5.17", features = ["derive", "wrap_help"], optional = true
 clap_complete = { version = "4.5.28", optional = true }
 dialoguer = { version = "0.11.0", optional = true }
 dirs = "5.0.1"
+env_logger = "0.11"
 filetime = "0.2.25"
 flexi_logger = { version = "0.29.3", features = ["textfilter"], default-features = false, optional = true }
 fluent = "0.16.1"
