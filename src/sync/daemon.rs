@@ -11,15 +11,14 @@ use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use crate::{
     prelude::{app_dir, StrictPath},
     resource::{
-        config::Config,
+        config::{Config, BackupFilter, ToggledPaths, ToggledRegistry},
         manifest::Manifest,
-        ResourceFile,
+        manifest::Manifest,
     },
     scan::{
         layout::BackupLayout,
         scan_game_for_backup,
         Launchers, SteamShortcuts, TitleFinder,
-        BackupFilter, ToggledPaths, ToggledRegistry,
     },
     sync::{
         conflict::{determine_sync_type, DirectoryScanResult, SyncStatus},
