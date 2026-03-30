@@ -345,10 +345,26 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
                 }
             }
             None => {
-                log::debug!(
-                    "[sync daemon] No saves found locally for {}, cannot auto-register",
-                    game_id
-                );
+                // No hay saves locales — intentar resolver la ruta esperada via manifiesto
+                match ludusavi::sync::operations::resolve_expected_save_path(config, game_entry) {
+                    Some(expected_path) => {
+                        log::info!(
+                            "[sync daemon] Auto-registered expected path for {}: {}",
+                            game_id,
+                            expected_path
+                        );
+                        if let Some(game) = game_list.get_game_mut(game_id) {
+                            game.path_by_device.insert(device.id.clone(), expected_path);
+                            any_changes = true;
+                        }
+                    }
+                    None => {
+                        log::debug!(
+                            "[sync daemon] Cannot resolve expected path for {}, skipping",
+                            game_id
+                        );
+                    }
+                }
             }
         }
     }
