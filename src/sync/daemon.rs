@@ -13,7 +13,6 @@ use crate::{
     sync::{
         conflict::{determine_sync_type, DirectoryScanResult, SyncStatus},
         device::DeviceIdentity,
-        game_list::GameMetaData,
         operations::{download_game, read_game_list_from_cloud, upload_game, write_game_list_to_cloud},
     },
 };
@@ -204,7 +203,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Registrar cada ruta en el watcher
     for (game_id, path) in &watched_paths {
         if Path::new(path).is_dir() {
-            match debouncer.watch(Path::new(path), RecursiveMode::Recursive) {
+            match debouncer.watcher().watch(Path::new(path), RecursiveMode::Recursive) {
                 Ok(_) => log::info!("[sync daemon] Watching: {} ({})", path, game_id),
                 Err(e) => log::warn!("[sync daemon] Failed to watch {}: {}", path, e),
             }
