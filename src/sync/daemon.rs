@@ -1,8 +1,11 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::time::Duration;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use notify::RecursiveMode;
+use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 
 use crate::{
     prelude::{app_dir, StrictPath},
@@ -15,93 +18,282 @@ use crate::{
     },
 };
 
-/// Configuración del daemon.
-pub struct DaemonConfig {
-    /// Cada cuántos segundos se comprueba si hay cambios.
-    /// Equivalente a LoopDelayTimeSpan en EmuSync.
-    pub check_interval_secs: u64,
+/// Igual que Syncthing:
+/// - notifyDelay = 10s (tiempo de silencio antes de actuar)
+/// - notifyTimeout = 60s (tiempo máximo antes de actuar aunque sigan llegando cambios)
+const NOTIFY_DELAY: Duration = Duration::from_secs(10);
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Estado de debounce para un juego concreto.
+/// Replica el comportamiento del aggregator de Syncthing.
+struct GameDebounceState {
+    /// Momento del primer evento (para notifyTimeout)
+    first_event: Instant,
+    /// Momento del último evento (para notifyDelay)
+    last_event: Instant,
 }
+
+impl GameDebounceState {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            first_event: now,
+            last_event: now,
+        }
+    }
+
+    fn update(&mut self) {
+        self.last_event = Instant::now();
+    }
+
+    /// Devuelve true si el juego debe procesarse ahora.
+    /// Replica isOld() del aggregator de Syncthing:
+    /// - Han pasado >10s desde el último evento (silencio)
+    /// - O han pasado >60s desde el primer evento (timeout máximo)
+    fn should_fire(&self) -> bool {
+        let now = Instant::now();
+        now.duration_since(self.last_event) > NOTIFY_DELAY
+            || now.duration_since(self.first_event) > NOTIFY_TIMEOUT
+    }
+}
+
+/// Configuración del daemon.
+pub struct DaemonConfig;
 
 impl Default for DaemonConfig {
     fn default() -> Self {
-        Self {
-            check_interval_secs: 120, // 2 minutos, igual que EmuSync por defecto
-        }
+        Self
     }
 }
 
 /// Ejecuta el daemon de sincronización en un hilo separado.
-/// Equivalente a GameSyncWorker.ExecuteAsync en EmuSync.
-///
-/// Devuelve un flag que se puede usar para detener el daemon:
-/// ponlo a `true` para que el hilo termine limpiamente.
 pub fn start_daemon(
     stop_flag: Arc<AtomicBool>,
-    daemon_config: DaemonConfig,
+    _daemon_config: DaemonConfig,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         log::info!("[sync daemon] Starting");
 
-        // Pequeño delay inicial igual que EmuSync (30 segundos)
-        // para dar tiempo al sistema a arrancar
-        std::thread::sleep(Duration::from_secs(30));
-
-        loop {
-            if stop_flag.load(Ordering::Relaxed) {
-                log::info!("[sync daemon] Stop requested, shutting down");
-                break;
-            }
-
-            log::debug!("[sync daemon] Running sync check");
-
-            if let Err(e) = run_sync_cycle() {
-                log::error!("[sync daemon] Error during sync cycle: {e}");
-            }
-
-            // Espera el intervalo configurado, comprobando el stop flag
-            // cada segundo para poder parar rápido si se solicita
-            for _ in 0..daemon_config.check_interval_secs {
-                if stop_flag.load(Ordering::Relaxed) {
-                    break;
-                }
-                std::thread::sleep(Duration::from_secs(1));
-            }
+        if let Err(e) = run_daemon(stop_flag) {
+            log::error!("[sync daemon] Fatal error: {e}");
         }
 
         log::info!("[sync daemon] Stopped");
     })
 }
 
-/// Un ciclo completo de sincronización: lee la config, lee el game list,
-/// y para cada juego decide si hay que subir o bajar.
-/// Equivalente a TryDetectGameChangesAsync en EmuSync.
-fn run_sync_cycle() -> Result<(), String> {
-    // Carga la config de Ludusavi
+fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     let config = Config::load().map_err(|e| format!("Failed to load config: {e:?}"))?;
 
-    // Comprueba que rclone está configurado
     if !config.apps.rclone.is_valid() {
-        log::warn!("[sync daemon] Rclone is not configured, skipping sync");
+        log::warn!("[sync daemon] Rclone is not configured, cannot start");
         return Ok(());
     }
 
     if config.cloud.remote.is_none() {
-        log::warn!("[sync daemon] No cloud remote configured, skipping sync");
+        log::warn!("[sync daemon] No cloud remote configured, cannot start");
         return Ok(());
     }
 
     let app_dir = app_dir();
     let device = DeviceIdentity::load_or_create(&app_dir);
 
-    log::debug!("[sync daemon] Running as device: {} ({})", device.name, device.id);
+    log::info!("[sync daemon] Running as device: {} ({})", device.name, device.id);
 
-    // Lee el game list del cloud
-    let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+    // --- Paso 1: comprobación inmediata de descargas al arrancar ---
+    log::info!("[sync daemon] Checking cloud for downloads on startup...");
+    if let Err(e) = check_downloads(&config, &app_dir, &device) {
+        log::error!("[sync daemon] Error during startup download check: {e}");
+    }
 
-    let mut any_changes = false;
+    if stop_flag.load(Ordering::Relaxed) {
+        return Ok(());
+    }
 
-    // Para cada juego en el game list, decide qué hacer
-    // Solo procesamos juegos que tienen una ruta configurada para este dispositivo
+    // --- Paso 2: leer el game list para saber qué rutas vigilar ---
+    let game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+
+    // Mapa game_id -> ruta local (solo para este dispositivo)
+    let watched_paths: HashMap<String, String> = game_list
+        .games
+        .iter()
+        .filter_map(|g| {
+            g.path_by_device
+                .get(&device.id)
+                .map(|path| (g.id.clone(), path.clone()))
+        })
+        .collect();
+
+    if watched_paths.is_empty() {
+        log::info!("[sync daemon] No games registered for this device, watching for new registrations...");
+        // Sin juegos registrados, simplemente esperamos a que stop_flag se active.
+        // En el futuro se podría añadir un mecanismo para recargar el game list.
+        while !stop_flag.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(5));
+        }
+        return Ok(());
+    }
+
+    log::info!("[sync daemon] Watching {} game(s) for changes", watched_paths.len());
+
+    // --- Paso 3: estado de debounce compartido entre el watcher y el worker ---
+    // Clave: game_id, Valor: GameDebounceState
+    let debounce_state: Arc<Mutex<HashMap<String, GameDebounceState>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
+    // Mapa inverso: ruta -> game_id (para el callback del watcher)
+    // Normalizamos las rutas para comparación
+    let path_to_game: Arc<HashMap<String, String>> = Arc::new(
+        watched_paths
+            .iter()
+            .map(|(game_id, path)| {
+                let normalized = normalize_path(path);
+                (normalized, game_id.clone())
+            })
+            .collect(),
+    );
+
+    // --- Paso 4: arrancar el file watcher con debounce ---
+    let debounce_state_watcher = debounce_state.clone();
+    let path_to_game_watcher = path_to_game.clone();
+
+    // El debouncer de notify-debouncer-full ya hace parte del debounce a nivel
+    // de evento individual, pero nosotros implementamos el debounce por juego
+    // manualmente (igual que el aggregator de Syncthing) para tener el
+    // notifyDelay y notifyTimeout correctos.
+    let mut debouncer = new_debouncer(
+        // Usamos 1s como ventana del debouncer interno, el debounce real
+        // lo hacemos nosotros con NOTIFY_DELAY/NOTIFY_TIMEOUT
+        Duration::from_secs(1),
+        None,
+        move |result: DebounceEventResult| {
+            match result {
+                Ok(events) => {
+                    let mut state = debounce_state_watcher.lock().unwrap();
+                    let mut dirty_games = HashSet::new();
+
+                    for event in events {
+                        for path in &event.paths {
+                            let path_str = normalize_path(&path.to_string_lossy());
+                            // Buscar a qué juego pertenece este path
+                            for (watch_path, game_id) in path_to_game_watcher.iter() {
+                                if path_str.starts_with(watch_path.as_str()) {
+                                    dirty_games.insert(game_id.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    for game_id in dirty_games {
+                        state
+                            .entry(game_id.clone())
+                            .and_modify(|s| s.update())
+                            .or_insert_with(GameDebounceState::new);
+                        log::debug!("[sync daemon] Change detected for game: {}", game_id);
+                    }
+                }
+                Err(e) => {
+                    log::error!("[sync daemon] Watcher error: {:?}", e);
+                }
+            }
+        },
+    )
+    .map_err(|e| format!("Failed to create file watcher: {e}"))?;
+
+    // Registrar cada ruta en el watcher
+    for (game_id, path) in &watched_paths {
+        if Path::new(path).is_dir() {
+            match debouncer.watch(Path::new(path), RecursiveMode::Recursive) {
+                Ok(_) => log::info!("[sync daemon] Watching: {} ({})", path, game_id),
+                Err(e) => log::warn!("[sync daemon] Failed to watch {}: {}", path, e),
+            }
+        } else {
+            log::warn!("[sync daemon] Path does not exist yet, skipping watch: {}", path);
+        }
+    }
+
+    // --- Paso 5: worker loop principal ---
+    // Comprueba cada segundo si hay juegos listos para subir (según el debounce)
+    log::info!("[sync daemon] File watcher active, monitoring for changes");
+
+    while !stop_flag.load(Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_secs(1));
+
+        // Recoger juegos listos para subir
+        let ready_games: Vec<String> = {
+            let state = debounce_state.lock().unwrap();
+            state
+                .iter()
+                .filter(|(_, s)| s.should_fire())
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+
+        if ready_games.is_empty() {
+            continue;
+        }
+
+        log::info!("[sync daemon] Processing {} game(s) ready for upload", ready_games.len());
+
+        // Cargar config y game list frescos para cada ciclo de upload
+        let config = match Config::load() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("[sync daemon] Failed to reload config: {e:?}");
+                continue;
+            }
+        };
+
+        let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+        let mut any_changes = false;
+
+        for game_id in &ready_games {
+            if let Some(game) = game_list.get_game_mut(game_id) {
+                log::info!("[sync daemon] Uploading: {}", game.name);
+                match upload_game(&config, &app_dir, &device, game) {
+                    Ok(_) => {
+                        log::info!("[sync daemon] Upload complete: {}", game.name);
+                        any_changes = true;
+                    }
+                    Err(e) => {
+                        log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
+                    }
+                }
+            } else {
+                log::warn!("[sync daemon] Game not found in cloud list: {}", game_id);
+            }
+
+            // Eliminar del estado de debounce independientemente del resultado
+            debounce_state.lock().unwrap().remove(game_id);
+        }
+
+        if any_changes {
+            if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
+                log::error!("[sync daemon] Failed to write game list: {e}");
+            }
+        }
+    }
+
+    log::info!("[sync daemon] Stop flag set, shutting down watcher");
+    Ok(())
+}
+
+/// Comprueba si hay juegos en el cloud más nuevos que la versión local y los descarga.
+/// Se llama una vez al arrancar el daemon.
+fn check_downloads(
+    config: &Config,
+    app_dir: &StrictPath,
+    device: &DeviceIdentity,
+) -> Result<(), String> {
+    let mut game_list = match read_game_list_from_cloud(config) {
+        Some(gl) => gl,
+        None => {
+            log::info!("[sync daemon] No game list found in cloud, nothing to download");
+            return Ok(());
+        }
+    };
+
     let game_ids: Vec<String> = game_list
         .games
         .iter()
@@ -109,75 +301,49 @@ fn run_sync_cycle() -> Result<(), String> {
         .map(|g| g.id.clone())
         .collect();
 
+    let mut any_changes = false;
+
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
-            match process_game(&config, &app_dir, &device, game) {
-                Ok(changed) => {
-                    if changed {
-                        any_changes = true;
+            let local_path = game.path_by_device.get(&device.id).cloned();
+            let scan = DirectoryScanResult::scan(local_path.as_deref());
+            let status = determine_sync_type(game, &scan);
+
+            match status {
+                SyncStatus::RequiresDownload => {
+                    log::info!("[sync daemon] Downloading on startup: {}", game.name);
+                    match download_game(config, app_dir, device, game) {
+                        Ok(_) => {
+                            log::info!("[sync daemon] Download complete: {}", game.name);
+                            any_changes = true;
+                        }
+                        Err(e) => {
+                            log::error!("[sync daemon] Download failed for {}: {e}", game.name);
+                        }
                     }
                 }
-                Err(e) => {
-                    log::error!("[sync daemon] Error processing game {}: {e}", game.name);
+                SyncStatus::RequiresUpload => {
+                    log::debug!("[sync daemon] {} requires upload, watcher will handle it", game.name);
+                }
+                SyncStatus::InSync => {
+                    log::debug!("[sync daemon] {} is in sync", game.name);
+                }
+                SyncStatus::Unknown | SyncStatus::UnsetDirectory => {
+                    log::debug!("[sync daemon] {} has no actionable status: {:?}", game.name, status);
                 }
             }
         }
     }
 
-    // Si hubo cambios, actualiza el game list en el cloud
     if any_changes {
-        log::info!("[sync daemon] Uploading updated game list to cloud");
-        write_game_list_to_cloud(&config, &game_list)
+        write_game_list_to_cloud(config, &game_list)
             .map_err(|e| format!("Failed to write game list: {e}"))?;
     }
 
     Ok(())
 }
 
-/// Procesa un juego: determina si hay que subir o bajar y lo hace.
-/// Devuelve true si se hizo algún cambio (para saber si hay que
-/// actualizar el game list en el cloud).
-/// Equivalente a DetectChangesForGameAsync en EmuSync.
-fn process_game(
-    config: &Config,
-    app_dir: &StrictPath,
-    device: &DeviceIdentity,
-    game: &mut GameMetaData,
-) -> Result<bool, String> {
-    let local_path = game.path_by_device.get(&device.id).cloned();
-    let scan = DirectoryScanResult::scan(local_path.as_deref());
-    let status = determine_sync_type(game, &scan);
-
-    log::debug!(
-        "[sync daemon] Game '{}' status: {:?}",
-        game.name,
-        status
-    );
-
-    match status {
-        SyncStatus::RequiresUpload => {
-            log::info!("[sync daemon] Uploading game: {}", game.name);
-            upload_game(config, app_dir, device, game)
-                .map_err(|e| format!("Upload failed for {}: {e}", game.name))?;
-            Ok(true)
-        }
-        SyncStatus::RequiresDownload => {
-            log::info!("[sync daemon] Downloading game: {}", game.name);
-            download_game(config, app_dir, device, game)
-                .map_err(|e| format!("Download failed for {}: {e}", game.name))?;
-            Ok(true)
-        }
-        SyncStatus::InSync => {
-            log::debug!("[sync daemon] Game '{}' is in sync, nothing to do", game.name);
-            Ok(false)
-        }
-        SyncStatus::Unknown | SyncStatus::UnsetDirectory => {
-            log::debug!(
-                "[sync daemon] Game '{}' has no actionable sync status: {:?}",
-                game.name,
-                status
-            );
-            Ok(false)
-        }
-    }
+/// Normaliza una ruta para comparación consistente entre plataformas.
+fn normalize_path(path: &str) -> String {
+    path.replace('\\', "/").to_lowercase()
 }
