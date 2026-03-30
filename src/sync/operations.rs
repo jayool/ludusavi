@@ -521,7 +521,7 @@ pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String
                         .replace(p::WIN_APP_DATA, &format!("{}/AppData/Roaming", prefix))
                         .replace(p::WIN_LOCAL_APP_DATA, &format!("{}/AppData/Local", prefix))
                         .replace(p::WIN_DOCUMENTS, &format!("{}/Documents", prefix))
-                        .replace(p::HOME, &format!("{}/AppData/Roaming", prefix))
+                        .replace(p::HOME, &prefix)
                         // Eliminar wildcards de storeUserId y osUserName
                         .replace(&format!("/{}", p::STORE_USER_ID), "")
                         .replace(&format!("/{}", p::OS_USER_NAME), "")
