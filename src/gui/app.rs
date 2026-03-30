@@ -5,7 +5,7 @@ use std::{
 
 use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
 
-use crate::sync::bridge::register_game_after_backup;
+use crate::core::sync::bridge::register_game_after_backup;
 
 use crate::{
     cloud::{rclone_monitor, Rclone, Remote},
