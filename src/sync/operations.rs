@@ -371,6 +371,88 @@ pub fn download_game(
     Ok(())
 }
 
+/// Calcula la carpeta raíz común de una lista de rutas de ficheros.
+/// Traducción directa de GetMostCommonFolder en LudusaviManifestScanner.cs de EmuSync.
+pub fn get_common_root_folder(paths: &[&str]) -> Option<String> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    // Normaliza y divide cada ruta en segmentos
+    let split_paths: Vec<Vec<String>> = paths
+        .iter()
+        .map(|p| {
+            std::path::Path::new(p)
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().to_string())
+                .collect()
+        })
+        .collect();
+
+    let first = &split_paths[0];
+    let mut common_length = first.len();
+
+    for i in 0..first.len() {
+        let segment = &first[i];
+        let mismatch = split_paths.iter().any(|sp| {
+            sp.len() <= i
+                || !sp[i].eq_ignore_ascii_case(segment)
+        });
+        if mismatch {
+            common_length = i;
+            break;
+        }
+    }
+
+    if common_length == 0 {
+        return None;
+    }
+
+    // Reconstruye la ruta desde los segmentos comunes
+    let common: std::path::PathBuf = first[..common_length].iter().collect();
+    Some(common.to_string_lossy().to_string())
+}
+
+/// Extrae la carpeta raíz común de los ficheros encontrados por Ludusavi.
+/// Este es el puente entre la detección de Ludusavi y el sistema de EmuSync.
+pub fn extract_root_from_scan(found_files: &std::collections::HashMap<crate::prelude::StrictPath, crate::scan::ScannedFile>) -> Option<String> {
+    if found_files.is_empty() {
+        return None;
+    }
+
+    // Obtenemos las rutas de los ficheros, excluyendo los ignorados
+    let paths: Vec<String> = found_files
+        .iter()
+        .filter(|(_, file)| !file.ignored)
+        .filter_map(|(path, _)| path.interpret().ok())
+        .collect();
+
+    if paths.is_empty() {
+        return None;
+    }
+
+    // Si solo hay un fichero, devolvemos su directorio padre
+    if paths.len() == 1 {
+        return std::path::Path::new(&paths[0])
+            .parent()
+            .map(|p| p.to_string_lossy().to_string());
+    }
+
+    // Para múltiples ficheros, calculamos la carpeta raíz común
+    // Pero queremos la carpeta, no un fichero, así que usamos los directorios padre
+    let dirs: Vec<String> = paths
+        .iter()
+        .filter_map(|p| {
+            std::path::Path::new(p)
+                .parent()
+                .map(|d| d.to_string_lossy().to_string())
+        })
+        .collect();
+
+    let dir_refs: Vec<&str> = dirs.iter().map(|s| s.as_str()).collect();
+    get_common_root_folder(&dir_refs)
+}
+
 /// Helper interno para construir el path remoto de rclone.
 struct RcloneHelper {
     remote_id: String,
