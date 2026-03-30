@@ -11,6 +11,8 @@ license = "MIT"
 [[bin]]
 name = "ludusavi"
 required-features = ["app"]
+
+[[bin]]
 name = "ludusavi-daemon"
 path = "src/bin/daemon_main.rs"
 
