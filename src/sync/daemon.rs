@@ -6,14 +6,11 @@ use std::time::Duration;
 
 use crate::{
     prelude::{app_dir, StrictPath},
-    resource::{
-        config::Config,
-        ResourceFile,
-    },
+    resource::config::Config,
     sync::{
         conflict::{determine_sync_type, DirectoryScanResult, SyncStatus},
         device::DeviceIdentity,
-        game_list::{GameListFile, GameMetaData},
+        game_list::GameMetaData,
         operations::{download_game, read_game_list_from_cloud, upload_game, write_game_list_to_cloud},
     },
 };
