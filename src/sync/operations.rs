@@ -487,7 +487,7 @@ pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String
     #[cfg(target_os = "linux")]
     {
         for root in config.expanded_roots().iter() {
-            if root.store() != crate::resource::config::Store::Steam {
+            if root.store() != crate::resource::manifest::Store::Steam {
                 continue;
             }
 
