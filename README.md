@@ -154,4 +154,4 @@ cross-platform and cross-store solution:
   * No command line interface.
 
 ## Development
-Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md)
+Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md).
