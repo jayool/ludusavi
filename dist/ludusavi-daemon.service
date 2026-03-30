@@ -1,0 +1,26 @@
+[Unit]
+Description=Ludusavi Sync Daemon
+Documentation=https://github.com/jayool/ludusavi
+# Arranca después de que la red esté disponible
+# necesario para poder conectar con el cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# El ejecutable - systemd lo busca aquí tras la instalación
+ExecStart=/usr/local/bin/ludusavi-daemon
+# Reinicia automáticamente si el daemon se cae
+Restart=on-failure
+RestartSec=10
+# Logs van al journal de systemd
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ludusavi-daemon
+# Variables de entorno opcionales
+# Descomenta para activar logs detallados:
+# Environment=LUDUSAVI_LOG=debug
+
+[Install]
+# Arranca automáticamente al iniciar sesión
+WantedBy=default.target
