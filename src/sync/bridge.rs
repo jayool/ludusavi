@@ -1,10 +1,10 @@
 use crate::{
-    prelude::{app_dir, StrictPath},
+    prelude::app_dir,
     resource::config::Config,
-    scan::{ScanInfo, ScannedFile},
+    scan::ScanInfo,
     sync::{
         device::DeviceIdentity,
-        game_list::{GameListFile, GameMetaData},
+        game_list::GameMetaData,
         operations::{extract_root_from_scan, read_game_list_from_cloud, write_game_list_to_cloud},
     },
 };
