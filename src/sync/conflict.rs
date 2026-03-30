@@ -72,17 +72,18 @@ impl DirectoryScanResult {
             if entry.file_type().is_file() {
                 storage_bytes += entry.metadata().map(|m| m.len()).unwrap_or(0);
 
-                if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
-                    let modified: DateTime<Utc> = modified.into();
-                    match latest_write_time {
-                        None => latest_write_time = Some(modified),
-                        Some(current) if modified > current => latest_write_time = Some(modified),
-                        _ => {}
+                if let Ok(meta) = entry.metadata() {
+                    if let Ok(modified) = meta.modified() {
+                        let modified: DateTime<Utc> = modified.into();
+                        match latest_write_time {
+                            None => latest_write_time = Some(modified),
+                            Some(current) if modified > current => latest_write_time = Some(modified),
+                            _ => {}
+                        }
                     }
                 }
             }
         }
-
         Self {
             directory_is_set: true,
             directory_exists: true,
