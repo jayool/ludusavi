@@ -206,6 +206,9 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     log::info!("[sync daemon] File watcher active, monitoring for changes");
 
     while !stop_flag.load(Ordering::Relaxed) {
+        let mut last_known_mod_time: Option<String> = None;
+        let mut poll_counter: u64 = 0;
+        const POLL_EVERY_N_SECONDS: u64 = 30;
         std::thread::sleep(Duration::from_secs(1));
 
         let ready_games: Vec<String> = {
@@ -254,6 +257,32 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         }
 
         if any_changes {
+            // Polling de descargas cada 30 segundos via ModTime
+            poll_counter += 1;
+            if poll_counter >= POLL_EVERY_N_SECONDS {
+                poll_counter = 0;
+            
+                let config = match Config::load() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!("[sync daemon] Failed to reload config for poll: {e:?}");
+                        continue;
+                    }
+                };
+            
+                let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+            
+                if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
+                    log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
+                    last_known_mod_time = current_mod_time;
+            
+                    if let Err(e) = check_downloads(&config, &app_dir, &device) {
+                        log::error!("[sync daemon] Error during poll download check: {e}");
+                    }
+                } else {
+                    log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
+                }
+            }
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
             }
