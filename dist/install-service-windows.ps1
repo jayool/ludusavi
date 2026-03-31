@@ -24,6 +24,7 @@ Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Silent
 # Configura la acción — redirige stdout y stderr al log
 $Action = New-ScheduledTaskAction `
     -Execute $ExePath
+    -WorkingDirectory (Split-Path $ExePath)
 
 # Trigger: al iniciar sesión del usuario actual
 $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -58,3 +59,4 @@ Write-Host "Useful commands:"
 Write-Host "  Start-ScheduledTask -TaskName $TaskName    # arrancar"
 Write-Host "  Stop-ScheduledTask -TaskName $TaskName     # parar"
 Write-Host "  Get-ScheduledTask -TaskName $TaskName      # ver estado"
+Write-Host "  Logs: Get-WinEvent -LogName Application | Where-Object {`$_.ProviderName -eq 'ludusavi-daemon'}"
