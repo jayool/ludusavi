@@ -449,6 +449,34 @@ fn make_rclone(config: &Config) -> Option<RcloneHelper> {
     })
 }
 
+/// Obtiene el ModTime del game-list.json en el cloud sin descargarlo.
+/// Usado para detectar cambios sin hacer una descarga completa.
+pub fn get_game_list_mod_time(config: &Config) -> Option<String> {
+    let rclone = make_rclone(config)?;
+    let cloud_path = &config.cloud.path;
+    let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
+
+    let args = vec![
+        "lsjson".to_string(),
+        rclone.path(&remote_file),
+    ];
+
+    let output = crate::prelude::run_command(
+        config.apps.rclone.path.raw(),
+        &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        &[0],
+        crate::prelude::Privacy::Public,
+    ).ok()?;
+
+    // Parsear el JSON y extraer ModTime
+    let parsed: serde_json::Value = serde_json::from_str(&output.stdout).ok()?;
+    parsed.as_array()?
+        .first()?
+        .get("ModTime")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
 /// Resuelve la ruta esperada de saves de un juego aunque no existan ficheros todavía.
 /// Soporta rutas nativas Windows, rutas Proton en Linux y rutas XDG en Linux.
 pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<String> {
