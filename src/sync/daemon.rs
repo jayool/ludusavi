@@ -132,9 +132,15 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         .collect();
 
     if watched_paths.is_empty() {
-        log::info!("[sync daemon] No games registered for this device, waiting...");
+        log::info!("[sync daemon] No games registered for this device, will retry in 30s...");
+        let mut wait = 0u64;
         while !stop_flag.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(5));
+            std::thread::sleep(Duration::from_secs(1));
+            wait += 1;
+            if wait >= 30 {
+                log::info!("[sync daemon] Retrying startup...");
+                return run_daemon(stop_flag);
+            }
         }
         return Ok(());
     }
