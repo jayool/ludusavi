@@ -40,7 +40,6 @@ fn temp_zip_dir(app_dir: &StrictPath) -> StrictPath {
 }
 
 /// Crea un zip de todos los ficheros en `folder_path` y lo escribe en `zip_path`.
-/// Traducción directa de ZipHelper.CreateZipFromFolder en EmuSync.
 pub fn create_zip_from_folder(
     folder_path: &str,
     zip_path: &StrictPath,
@@ -53,7 +52,6 @@ pub fn create_zip_from_folder(
         )));
     }
 
-    // Crea el directorio padre del zip si no existe
     if let Err(e) = zip_path.create_parent_dir() {
         return Err(SyncError::IoError(e.to_string()));
     }
@@ -102,7 +100,6 @@ pub fn create_zip_from_folder(
 }
 
 /// Extrae un zip en `output_directory`, forzando el timestamp dado si se proporciona.
-/// Traducción directa de ZipHelper.ExtractToDirectory en EmuSync.
 pub fn extract_zip_to_directory(
     zip_path: &StrictPath,
     output_directory: &str,
@@ -110,7 +107,6 @@ pub fn extract_zip_to_directory(
 ) -> Result<(), SyncError> {
     let output = std::path::Path::new(output_directory);
 
-    // Si el directorio existe, lo borramos primero (igual que EmuSync)
     if output.exists() {
         std::fs::remove_dir_all(output)
             .map_err(|e| SyncError::IoError(e.to_string()))?;
@@ -151,7 +147,6 @@ pub fn extract_zip_to_directory(
                 .map_err(|e| SyncError::IoError(e.to_string()))?;
         }
 
-        // Fuerza el timestamp si se proporciona (igual que EmuSync)
         if let Some(ts) = force_last_write_time {
             let system_time: std::time::SystemTime = ts.into();
             let _ = filetime::set_file_mtime(
@@ -161,7 +156,6 @@ pub fn extract_zip_to_directory(
         }
     }
 
-    // Fuerza el timestamp en el directorio raíz también (igual que EmuSync)
     if let Some(ts) = force_last_write_time {
         let system_time: std::time::SystemTime = ts.into();
         let _ = filetime::set_file_mtime(
@@ -174,13 +168,11 @@ pub fn extract_zip_to_directory(
 }
 
 /// Lee el game-list.json del cloud usando rclone.
-/// Devuelve None si no existe todavía.
 pub fn read_game_list_from_cloud(config: &Config) -> Option<GameListFile> {
     let rclone = make_rclone(config)?;
     let cloud_path = &config.cloud.path;
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
 
-    // Usamos un fichero temporal local para leer
     let temp_path = std::env::temp_dir().join("ludusavi-game-list-temp.json");
     let temp_strict = StrictPath::from(temp_path.clone());
 
@@ -243,7 +235,6 @@ pub fn write_game_list_to_cloud(
 }
 
 /// Sube el zip de un juego al cloud.
-/// Equivalente a UploadGameFilesAsync en EmuSync.
 pub fn upload_game(
     config: &Config,
     app_dir: &StrictPath,
@@ -258,10 +249,8 @@ pub fn upload_game(
 
     let rclone = make_rclone(config).ok_or(SyncError::NoRcloneConfig)?;
 
-    // Escanea el directorio local para obtener metadatos
     let scan = DirectoryScanResult::scan(Some(&local_path));
 
-    // Crea el zip temporal
     let temp_dir = temp_zip_dir(app_dir);
     let zip_name = format!("{}.zip", game.id);
     let zip_path = temp_dir.joined(&zip_name);
@@ -269,7 +258,6 @@ pub fn upload_game(
     log::info!("[{}] Creating zip from {}", game.name, local_path);
     create_zip_from_folder(&local_path, &zip_path)?;
 
-    // Sube el zip al cloud
     let cloud_path = &config.cloud.path;
     let remote_file = format!("{}/{}", cloud_path, game_zip_file_name(&game.id));
 
@@ -295,13 +283,11 @@ pub fn upload_game(
     )
     .map_err(|e| SyncError::RcloneError(e.command()))?;
 
-    // Actualiza los metadatos del juego
     game.last_synced_from = Some(device.id.clone());
     game.last_sync_time_utc = Some(Utc::now());
     game.latest_write_time_utc = scan.latest_write_time_utc;
     game.storage_bytes = scan.storage_bytes;
 
-    // Borra el zip temporal
     let _ = zip_path.remove();
 
     log::info!("[{}] Upload complete", game.name);
@@ -309,7 +295,6 @@ pub fn upload_game(
 }
 
 /// Descarga el zip de un juego del cloud y lo extrae.
-/// Equivalente a DownloadGameFilesAsync en EmuSync.
 pub fn download_game(
     config: &Config,
     app_dir: &StrictPath,
@@ -327,7 +312,6 @@ pub fn download_game(
     let cloud_path = &config.cloud.path;
     let remote_file = format!("{}/{}", cloud_path, game_zip_file_name(&game.id));
 
-    // Descarga el zip a un fichero temporal
     let temp_dir = temp_zip_dir(app_dir);
     if let Err(e) = temp_dir.create_dirs() {
         return Err(SyncError::IoError(e.to_string()));
@@ -361,11 +345,9 @@ pub fn download_game(
         return Err(SyncError::NoZipInCloud);
     }
 
-    // Extrae el zip en la ruta local, forzando el timestamp del cloud
     log::info!("[{}] Extracting zip to {}", game.name, local_path);
     extract_zip_to_directory(&zip_path, &local_path, game.latest_write_time_utc)?;
 
-    // Borra el zip temporal
     let _ = zip_path.remove();
 
     log::info!("[{}] Download complete", game.name);
@@ -373,13 +355,11 @@ pub fn download_game(
 }
 
 /// Calcula la carpeta raíz común de una lista de rutas de ficheros.
-/// Traducción directa de GetMostCommonFolder en LudusaviManifestScanner.cs de EmuSync.
 pub fn get_common_root_folder(paths: &[&str]) -> Option<String> {
     if paths.is_empty() {
         return None;
     }
 
-    // Normaliza y divide cada ruta en segmentos
     let split_paths: Vec<Vec<String>> = paths
         .iter()
         .map(|p| {
@@ -409,19 +389,16 @@ pub fn get_common_root_folder(paths: &[&str]) -> Option<String> {
         return None;
     }
 
-    // Reconstruye la ruta desde los segmentos comunes
     let common: std::path::PathBuf = first[..common_length].iter().collect();
     Some(common.to_string_lossy().to_string())
 }
 
 /// Extrae la carpeta raíz común de los ficheros encontrados por Ludusavi.
-/// Este es el puente entre la detección de Ludusavi y el sistema de EmuSync.
 pub fn extract_root_from_scan(found_files: &std::collections::HashMap<crate::prelude::StrictPath, crate::scan::ScannedFile>) -> Option<String> {
     if found_files.is_empty() {
         return None;
     }
 
-    // Obtenemos las rutas de los ficheros, excluyendo los ignorados
     let paths: Vec<String> = found_files
         .iter()
         .filter(|(_, file)| !file.ignored)
@@ -432,15 +409,12 @@ pub fn extract_root_from_scan(found_files: &std::collections::HashMap<crate::pre
         return None;
     }
 
-    // Si solo hay un fichero, devolvemos su directorio padre
     if paths.len() == 1 {
         return std::path::Path::new(&paths[0])
             .parent()
             .map(|p| p.to_string_lossy().to_string());
     }
 
-    // Para múltiples ficheros, calculamos la carpeta raíz común
-    // Pero queremos la carpeta, no un fichero, así que usamos los directorios padre
     let dirs: Vec<String> = paths
         .iter()
         .filter_map(|p| {
@@ -474,39 +448,92 @@ fn make_rclone(config: &Config) -> Option<RcloneHelper> {
         remote_id: remote.id().to_string(),
     })
 }
+
 /// Resuelve la ruta esperada de saves de un juego aunque no existan ficheros todavía.
-/// Para juegos Steam en Linux con Proton, construye la ruta del prefijo Proton.
-/// Equivalente a lo que hace parse_paths en scan.rs pero sin requerir que los ficheros existan.
-pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String> {
+/// Soporta rutas nativas Windows, rutas Proton en Linux y rutas XDG en Linux.
+pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<String> {
     use crate::path::CommonPath;
     use crate::resource::manifest::placeholder as p;
 
     let home = CommonPath::Home.get()?;
 
-    // Intentar primero con roots Steam en Linux (Proton)
+    // --- Windows: rutas nativas ---
+    #[cfg(target_os = "windows")]
+    {
+        for (raw_path, _) in &game.files {
+            if raw_path.trim().is_empty() {
+                continue;
+            }
+
+            if !raw_path.contains(p::WIN_LOCAL_APP_DATA_LOW)
+                && !raw_path.contains(p::WIN_APP_DATA)
+                && !raw_path.contains(p::WIN_LOCAL_APP_DATA)
+                && !raw_path.contains(p::WIN_DOCUMENTS)
+                && !raw_path.contains(p::HOME)
+            {
+                continue;
+            }
+
+            let data_local_low = CommonPath::DataLocalLow.get().unwrap_or(home);
+            let data_roaming = CommonPath::Data.get().unwrap_or(home);
+            let data_local = CommonPath::DataLocal.get().unwrap_or(home);
+            let documents = CommonPath::Document.get().unwrap_or(home);
+
+            let resolved = raw_path
+                .replace(p::WIN_LOCAL_APP_DATA_LOW, data_local_low)
+                .replace(p::WIN_APP_DATA, data_roaming)
+                .replace(p::WIN_LOCAL_APP_DATA, data_local)
+                .replace(p::WIN_DOCUMENTS, documents)
+                .replace(p::HOME, home)
+                .replace(&format!("/{}", p::STORE_USER_ID), "")
+                .replace(&format!("\\{}", p::STORE_USER_ID), "")
+                .replace(&format!("/{}", p::OS_USER_NAME), "")
+                .replace(&format!("\\{}", p::OS_USER_NAME), "")
+                .replace('*', "");
+
+            let resolved = resolved.replace('/', "\\");
+
+            if std::path::Path::new(&resolved).is_dir() {
+                log::debug!(
+                    "resolve_expected_save_path: found existing Windows dir: {}",
+                    resolved
+                );
+                return Some(resolved);
+            }
+
+            if let Some(parent) = std::path::Path::new(&resolved).parent() {
+                if parent.is_dir() {
+                    log::debug!(
+                        "resolve_expected_save_path: parent exists, returning Windows candidate: {}",
+                        resolved
+                    );
+                    return Some(resolved);
+                }
+            }
+        }
+    }
+
+    // --- Linux: rutas Proton (Steam) ---
     #[cfg(target_os = "linux")]
     {
-        for root in config.expanded_roots().iter() {
+        for root in _config.expanded_roots().iter() {
             if root.store() != crate::resource::manifest::Store::Steam {
                 continue;
             }
 
             let root_path = root.path().render();
 
-            // Para cada Steam ID del juego
             for steam_id in game.all_ids().steam(None) {
                 let prefix = format!(
                     "{}/steamapps/compatdata/{}/pfx/drive_c/users/steamuser",
                     root_path, steam_id
                 );
 
-                // Intentar resolver cada path del manifiesto con este prefijo
                 for (raw_path, _) in &game.files {
                     if raw_path.trim().is_empty() {
                         continue;
                     }
 
-                    // Solo paths que usan placeholders de Windows (saves via Proton)
                     if !raw_path.contains(p::WIN_LOCAL_APP_DATA_LOW)
                         && !raw_path.contains(p::WIN_APP_DATA)
                         && !raw_path.contains(p::WIN_LOCAL_APP_DATA)
@@ -522,12 +549,10 @@ pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String
                         .replace(p::WIN_LOCAL_APP_DATA, &format!("{}/AppData/Local", prefix))
                         .replace(p::WIN_DOCUMENTS, &format!("{}/Documents", prefix))
                         .replace(p::HOME, &prefix)
-                        // Eliminar wildcards de storeUserId y osUserName
                         .replace(&format!("/{}", p::STORE_USER_ID), "")
                         .replace(&format!("/{}", p::OS_USER_NAME), "")
                         .replace('*', "");
 
-                    // Limpiar slashes dobles y trailing slashes
                     let resolved = resolved
                         .split('/')
                         .filter(|s| !s.is_empty())
@@ -535,20 +560,17 @@ pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String
                         .join("/");
                     let resolved = format!("/{}", resolved);
 
-                    // Si el directorio existe, lo devolvemos directamente
                     if std::path::Path::new(&resolved).is_dir() {
                         log::debug!(
-                            "resolve_expected_save_path: found existing dir: {}",
+                            "resolve_expected_save_path: found existing Proton dir: {}",
                             resolved
                         );
                         return Some(resolved);
                     }
 
-                    // Si no existe pero el prefijo sí, devolvemos el candidato
-                    // (el directorio se creará cuando se extraiga el ZIP)
                     if std::path::Path::new(&prefix).is_dir() {
                         log::debug!(
-                            "resolve_expected_save_path: prefix exists, returning candidate: {}",
+                            "resolve_expected_save_path: prefix exists, returning Proton candidate: {}",
                             resolved
                         );
                         return Some(resolved);
@@ -558,35 +580,42 @@ pub fn resolve_expected_save_path(config: &Config, game: &Game) -> Option<String
         }
     }
 
-    // Fallback: path nativo Linux (XDG)
-    for (raw_path, _) in &game.files {
-        if raw_path.trim().is_empty() {
-            continue;
-        }
+    // --- Linux: rutas nativas XDG ---
+    #[cfg(target_os = "linux")]
+    {
+        for (raw_path, _) in &game.files {
+            if raw_path.trim().is_empty() {
+                continue;
+            }
 
-        if !raw_path.contains(p::XDG_DATA) && !raw_path.contains(p::XDG_CONFIG) {
-            continue;
-        }
+            if !raw_path.contains(p::XDG_DATA) && !raw_path.contains(p::XDG_CONFIG) {
+                continue;
+            }
 
-        let data_dir = CommonPath::Data.get().unwrap_or(home);
-        let config_dir = CommonPath::Config.get().unwrap_or(home);
+            let data_dir = CommonPath::Data.get().unwrap_or(home);
+            let config_dir = CommonPath::Config.get().unwrap_or(home);
 
-        let resolved = raw_path
-            .replace(p::XDG_DATA, data_dir)
-            .replace(p::XDG_CONFIG, config_dir)
-            .replace(&format!("/{}", p::STORE_USER_ID), "")
-            .replace(&format!("/{}", p::OS_USER_NAME), "")
-            .replace('*', "");
+            let resolved = raw_path
+                .replace(p::XDG_DATA, data_dir)
+                .replace(p::XDG_CONFIG, config_dir)
+                .replace(&format!("/{}", p::STORE_USER_ID), "")
+                .replace(&format!("/{}", p::OS_USER_NAME), "")
+                .replace('*', "");
 
-        let resolved = resolved
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("/");
-        let resolved = format!("/{}", resolved);
+            let resolved = resolved
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("/");
+            let resolved = format!("/{}", resolved);
 
-        if std::path::Path::new(&resolved).is_dir() {
-            return Some(resolved);
+            if std::path::Path::new(&resolved).is_dir() {
+                log::debug!(
+                    "resolve_expected_save_path: found existing XDG dir: {}",
+                    resolved
+                );
+                return Some(resolved);
+            }
         }
     }
 
