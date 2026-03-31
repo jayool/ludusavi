@@ -205,11 +205,13 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Paso 6: worker loop principal
     log::info!("[sync daemon] File watcher active, monitoring for changes");
 
+    let mut last_known_mod_time: Option<String> = None;
+    let mut poll_counter: u64 = 0;
+    const POLL_EVERY_N_SECONDS: u64 = 30;
+    
     while !stop_flag.load(Ordering::Relaxed) {
-        let mut last_known_mod_time: Option<String> = None;
-        let mut poll_counter: u64 = 0;
-        const POLL_EVERY_N_SECONDS: u64 = 30;
         std::thread::sleep(Duration::from_secs(1));
+        poll_counter += 1;
 
         let ready_games: Vec<String> = {
             let state = debounce_state.lock().unwrap();
@@ -257,34 +259,34 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         }
 
         if any_changes {
-            // Polling de descargas cada 30 segundos via ModTime
-            poll_counter += 1;
-            if poll_counter >= POLL_EVERY_N_SECONDS {
-                poll_counter = 0;
-            
-                let config = match Config::load() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        log::error!("[sync daemon] Failed to reload config for poll: {e:?}");
-                        continue;
-                    }
-                };
-            
-                let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
-            
-                if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
-                    log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
-                    last_known_mod_time = current_mod_time;
-            
-                    if let Err(e) = check_downloads(&config, &app_dir, &device) {
-                        log::error!("[sync daemon] Error during poll download check: {e}");
-                    }
-                } else {
-                    log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
-                }
-            }
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
+            }
+        }
+
+        // Polling de descargas cada 30 segundos via ModTime — independiente de uploads
+        if poll_counter >= POLL_EVERY_N_SECONDS {
+            poll_counter = 0;
+
+            let config = match Config::load() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("[sync daemon] Failed to reload config for poll: {e:?}");
+                    continue;
+                }
+            };
+
+            let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+
+            if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
+                log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
+                last_known_mod_time = current_mod_time.clone();
+
+                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
+                    log::error!("[sync daemon] Error during poll download check: {e}");
+                }
+            } else {
+                log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
             }
         }
     }
@@ -470,6 +472,72 @@ fn check_downloads(
                         game.name,
                         status
                     );
+                }
+            }
+        }
+    }
+
+    if any_changes {
+        write_game_list_to_cloud(config, &game_list)
+            .map_err(|e| format!("Failed to write game list: {e}"))?;
+    }
+
+    Ok(())
+}
+
+/// Igual que check_downloads pero después de cada descarga vuelve a registrar
+/// el directorio en el watcher, ya que extract_zip_to_directory borra y recrea
+/// el directorio lo que hace que inotify/Windows pierda el track.
+fn check_downloads_and_rewatch(
+    config: &Config,
+    app_dir: &StrictPath,
+    device: &DeviceIdentity,
+    debouncer: &mut notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::FileIdMap>,
+    watched_paths: &HashMap<String, String>,
+) -> Result<(), String> {
+    let mut game_list = match read_game_list_from_cloud(config) {
+        Some(gl) => gl,
+        None => {
+            log::info!("[sync daemon] No game list found in cloud, nothing to download");
+            return Ok(());
+        }
+    };
+
+    let game_ids: Vec<String> = game_list
+        .games
+        .iter()
+        .filter(|g| g.path_by_device.contains_key(&device.id))
+        .map(|g| g.id.clone())
+        .collect();
+
+    let mut any_changes = false;
+
+    for game_id in game_ids {
+        if let Some(game) = game_list.get_game_mut(&game_id) {
+            let local_path = game.path_by_device.get(&device.id).cloned();
+            let scan = DirectoryScanResult::scan(local_path.as_deref());
+            let status = determine_sync_type(game, &scan);
+
+            if status == SyncStatus::RequiresDownload {
+                log::info!("[sync daemon] Downloading (poll): {}", game.name);
+                match download_game(config, app_dir, device, game) {
+                    Ok(_) => {
+                        log::info!("[sync daemon] Download complete: {}", game.name);
+                        any_changes = true;
+
+                        // Re-registrar el directorio en el watcher
+                        if let Some(path) = watched_paths.get(&game_id) {
+                            if Path::new(path).is_dir() {
+                                match debouncer.watcher().watch(Path::new(path), RecursiveMode::Recursive) {
+                                    Ok(_) => log::info!("[sync daemon] Re-watching: {}", path),
+                                    Err(e) => log::warn!("[sync daemon] Failed to re-watch {}: {}", path, e),
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[sync daemon] Download failed for {}: {e}", game.name);
+                    }
                 }
             }
         }
