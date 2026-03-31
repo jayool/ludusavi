@@ -1,14 +1,13 @@
-# Script para instalar ludusavi-daemon como servicio de Windows
-# Equivalente a UseWindowsService() de EmuSync
-# Ejecutar como Administrador
+# Script para instalar ludusavi-daemon como tarea programada
+# No requiere permisos de administrador
+# Ejecutar como usuario normal
 
 param(
     [string]$ExePath = "$PSScriptRoot\ludusavi-daemon.exe"
 )
 
-$ServiceName = "ludusavi-daemon"
-$DisplayName = "Ludusavi Sync Daemon"
-$Description = "Automatically syncs game saves between devices using Ludusavi"
+$TaskName = "LudusaviDaemon"
+$LogFile = "$env:APPDATA\ludusavi\daemon.log"
 
 # Comprueba si el ejecutable existe
 if (-not (Test-Path $ExePath)) {
@@ -16,30 +15,46 @@ if (-not (Test-Path $ExePath)) {
     exit 1
 }
 
-# Para e elimina el servicio si ya existe
-$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "Stopping existing service..."
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-    Write-Host "Removing existing service..."
-    sc.exe delete $ServiceName
-    Start-Sleep -Seconds 2
-}
+# Crea el directorio de logs si no existe
+New-Item -ItemType Directory -Force -Path (Split-Path $LogFile) | Out-Null
 
-# Instala el nuevo servicio
-Write-Host "Installing service: $ServiceName"
-New-Service `
-    -Name $ServiceName `
-    -DisplayName $DisplayName `
-    -Description $Description `
-    -BinaryPathName $ExePath `
-    -StartupType Automatic `
-    -ErrorAction Stop
+# Elimina la tarea si ya existe
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-# Arranca el servicio
-Write-Host "Starting service..."
-Start-Service -Name $ServiceName
+# Configura la acción — redirige stdout y stderr al log
+$Action = New-ScheduledTaskAction `
+    -Execute $ExePath
 
-$service = Get-Service -Name $ServiceName
-Write-Host "Service status: $($service.Status)"
-Write-Host "Done. Ludusavi daemon will now start automatically with Windows."
+# Trigger: al iniciar sesión del usuario actual
+$Trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+
+# Configuración: reiniciar si falla, ejecutar aunque no haya red todavía
+$Settings = New-ScheduledTaskSettingsSet `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -MultipleInstances IgnoreNew `
+    -RunOnlyIfNetworkAvailable $false
+
+# Registra la tarea
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $Action `
+    -Trigger $Trigger `
+    -Settings $Settings `
+    -Description "Ludusavi Sync Daemon - syncs game saves automatically" `
+    -RunLevel Limited `
+    -Force
+
+# Arranca la tarea ahora
+Start-ScheduledTask -TaskName $TaskName
+
+$task = Get-ScheduledTask -TaskName $TaskName
+Write-Host "Task status: $($task.State)"
+Write-Host ""
+Write-Host "Done. Ludusavi daemon will start automatically at login."
+Write-Host ""
+Write-Host "Useful commands:"
+Write-Host "  Start-ScheduledTask -TaskName $TaskName    # arrancar"
+Write-Host "  Stop-ScheduledTask -TaskName $TaskName     # parar"
+Write-Host "  Get-ScheduledTask -TaskName $TaskName      # ver estado"
