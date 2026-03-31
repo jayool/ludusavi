@@ -1,18 +1,17 @@
 # Script para desinstalar ludusavi-daemon
-# Ejecutar como Administrador
 
-$ServiceName = "ludusavi-daemon"
+$TaskName = "LudusaviDaemon"
 
-$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+$existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $existing) {
-    Write-Host "Service not found: $ServiceName"
+    Write-Host "Task not found: $TaskName"
     exit 0
 }
 
-Write-Host "Stopping service..."
-Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+Write-Host "Stopping task..."
+Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
-Write-Host "Removing service..."
-sc.exe delete $ServiceName
+Write-Host "Removing task..."
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 
 Write-Host "Done. Ludusavi daemon has been uninstalled."
