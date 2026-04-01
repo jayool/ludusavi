@@ -277,7 +277,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
                 let status = determine_sync_type(game, &scan);
                 if status != SyncStatus::RequiresUpload {
-                    log::debug!("[sync daemon] Skipping upload for {} — not needed (status: {:?})", game.name, status);
+                    log::info!("[sync daemon] Skipping upload for {} — already in sync", game.name);
                     debounce_state.lock().unwrap().remove(game_id);
                     continue;
                 }
