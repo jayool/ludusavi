@@ -221,7 +221,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Paso 6: worker loop principal
     log::info!("[sync daemon] File watcher active, monitoring for changes");
 
-    let mut last_known_mod_time: Option<String> = None;
+    let mut last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
     let mut poll_counter: u64 = 0;
     const POLL_EVERY_N_SECONDS: u64 = 30;
     
