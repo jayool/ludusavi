@@ -158,8 +158,8 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             .collect(),
     );
 
-    // Set de juegos recién descargados — para ignorar eventos del watcher tras una descarga
-    let recently_downloaded: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    // Map de juegos recién descargados con timestamp — ignorar eventos durante 30s tras descarga
+    let recently_downloaded: Arc<Mutex<HashMap<String, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
 
     // Paso 5: arrancar el file watcher
     let debounce_state_watcher = debounce_state.clone();
@@ -187,8 +187,9 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 }
 
                 let mut recently = recently_downloaded_watcher.lock().unwrap();
+                recently.retain(|_, t| t.elapsed() < Duration::from_secs(30));
                 for game_id in dirty_games {
-                    if recently.remove(&game_id) {
+                    if recently.contains_key(&game_id) {
                         log::debug!("[sync daemon] Ignoring post-download events for: {}", game_id);
                         continue;
                     }
@@ -544,7 +545,7 @@ fn check_downloads_and_rewatch(
                     Ok(_) => {
                         log::info!("[sync daemon] Download complete: {}", game.name);
                         any_changes = true;
-                        recently_downloaded.lock().unwrap().insert(game_id.clone());
+                        recently_downloaded.lock().unwrap().insert(game_id.clone(), Instant::now());
 
                         // Re-registrar el directorio en el watcher
                         if let Some(path) = watched_paths.get(&game_id) {
