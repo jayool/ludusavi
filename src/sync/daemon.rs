@@ -187,7 +187,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 }
 
                 let mut recently = recently_downloaded_watcher.lock().unwrap();
-                recently.retain(|_, t| t.elapsed() < Duration::from_secs(30));
+                recently.retain(|_, t| t.elapsed() < Duration::from_secs(60));
                 for game_id in dirty_games {
                     if recently.contains_key(&game_id) {
                         log::debug!("[sync daemon] Ignoring post-download events for: {}", game_id);
