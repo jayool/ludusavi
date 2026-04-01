@@ -250,13 +250,15 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
             let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
 
-            if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
+        if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
                 log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
                 last_known_mod_time = current_mod_time.clone();
 
                 if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths, &recently_downloaded) {
                     log::error!("[sync daemon] Error during poll download check: {e}");
                 }
+                // Actualizar mod time tras descarga para no redetectar nuestro propio write
+                last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
             } else {
                 log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
             }
@@ -301,6 +303,9 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         if any_changes {
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
+            } else {
+                // Actualizar mod time para que el polling no redetecte nuestro propio upload
+                last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
             }
         }
     }
