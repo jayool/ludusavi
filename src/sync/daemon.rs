@@ -514,7 +514,7 @@ fn check_downloads_and_rewatch(
     device: &DeviceIdentity,
     debouncer: &mut notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::FileIdMap>,
     watched_paths: &HashMap<String, String>,
-    recently_downloaded: &Arc<Mutex<HashSet<String>>>,
+    recently_downloaded: &Arc<Mutex<HashMap<String, Instant>>>,
 ) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
