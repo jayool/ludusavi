@@ -158,9 +158,13 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             .collect(),
     );
 
+    // Set de juegos recién descargados — para ignorar eventos del watcher tras una descarga
+    let recently_downloaded: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+
     // Paso 5: arrancar el file watcher
     let debounce_state_watcher = debounce_state.clone();
     let path_to_game_watcher = path_to_game.clone();
+    let recently_downloaded_watcher = recently_downloaded.clone();
 
     let mut debouncer = new_debouncer(
         Duration::from_secs(1),
@@ -182,7 +186,12 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                     }
                 }
 
+                let mut recently = recently_downloaded_watcher.lock().unwrap();
                 for game_id in dirty_games {
+                    if recently.remove(&game_id) {
+                        log::debug!("[sync daemon] Ignoring post-download events for: {}", game_id);
+                        continue;
+                    }
                     state
                         .entry(game_id.clone())
                         .and_modify(|s| s.update())
@@ -245,7 +254,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
                 last_known_mod_time = current_mod_time.clone();
 
-                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
+                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths, &recently_downloaded) {
                     log::error!("[sync daemon] Error during poll download check: {e}");
                 }
             } else {
@@ -499,6 +508,7 @@ fn check_downloads_and_rewatch(
     device: &DeviceIdentity,
     debouncer: &mut notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::FileIdMap>,
     watched_paths: &HashMap<String, String>,
+    recently_downloaded: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
@@ -529,6 +539,7 @@ fn check_downloads_and_rewatch(
                     Ok(_) => {
                         log::info!("[sync daemon] Download complete: {}", game.name);
                         any_changes = true;
+                        recently_downloaded.lock().unwrap().insert(game_id.clone());
 
                         // Re-registrar el directorio en el watcher
                         if let Some(path) = watched_paths.get(&game_id) {
