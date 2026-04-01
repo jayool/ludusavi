@@ -228,6 +228,31 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 .collect()
         };
 
+        if poll_counter >= POLL_EVERY_N_SECONDS {
+            poll_counter = 0;
+
+            let config = match Config::load() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("[sync daemon] Failed to reload config for poll: {e:?}");
+                    continue;
+                }
+            };
+
+            let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+
+            if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
+                log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
+                last_known_mod_time = current_mod_time.clone();
+
+                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
+                    log::error!("[sync daemon] Error during poll download check: {e}");
+                }
+            } else {
+                log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
+            }
+        }
+
         if ready_games.is_empty() {
             continue;
         }
@@ -267,32 +292,6 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         if any_changes {
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
-            }
-        }
-
-        // Polling de descargas cada 30 segundos via ModTime — independiente de uploads
-        if poll_counter >= POLL_EVERY_N_SECONDS {
-            poll_counter = 0;
-
-            let config = match Config::load() {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("[sync daemon] Failed to reload config for poll: {e:?}");
-                    continue;
-                }
-            };
-
-            let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
-
-            if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
-                log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
-                last_known_mod_time = current_mod_time.clone();
-
-                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
-                    log::error!("[sync daemon] Error during poll download check: {e}");
-                }
-            } else {
-                log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
             }
         }
     }
