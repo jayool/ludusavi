@@ -284,6 +284,14 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
         for game_id in &ready_games {
             if let Some(game) = game_list.get_game_mut(game_id) {
+                let local_path = game.path_by_device.get(&device.id).cloned();
+                let scan = DirectoryScanResult::scan(local_path.as_deref());
+                let status = determine_sync_type(game, &scan);
+                if status != SyncStatus::RequiresUpload {
+                    log::debug!("[sync daemon] Skipping upload for {} — not needed (status: {:?})", game.name, status);
+                    debounce_state.lock().unwrap().remove(game_id);
+                    continue;
+                }
                 log::info!("[sync daemon] Uploading: {}", game.name);
                 match upload_game(&config, &app_dir, &device, game) {
                     Ok(_) => {
