@@ -108,12 +108,6 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         return Ok(());
     }
 
-    // Paso 1: comprobación inmediata de descargas al arrancar
-    log::info!("[sync daemon] Checking cloud for downloads on startup...");
-    if let Err(e) = check_downloads(&config, &app_dir, &device, &recently_downloaded) {
-        log::error!("[sync daemon] Error during startup download check: {e}");
-    }
-
     if stop_flag.load(Ordering::Relaxed) {
         return Ok(());
     }
@@ -160,6 +154,12 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     // Map de juegos recién descargados con timestamp — ignorar eventos durante 30s tras descarga
     let recently_downloaded: Arc<Mutex<HashMap<String, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    // Paso 1: comprobación inmediata de descargas al arrancar
+    log::info!("[sync daemon] Checking cloud for downloads on startup...");
+    if let Err(e) = check_downloads(&config, &app_dir, &device, &recently_downloaded) {
+        log::error!("[sync daemon] Error during startup download check: {e}");
+    }
 
     // Paso 5: arrancar el file watcher
     let debounce_state_watcher = debounce_state.clone();
