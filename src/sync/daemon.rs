@@ -110,7 +110,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     // Paso 1: comprobación inmediata de descargas al arrancar
     log::info!("[sync daemon] Checking cloud for downloads on startup...");
-    if let Err(e) = check_downloads(&config, &app_dir, &device) {
+    if let Err(e) = check_downloads(&config, &app_dir, &device, &recently_downloaded) {
         log::error!("[sync daemon] Error during startup download check: {e}");
     }
 
@@ -434,6 +434,7 @@ fn check_downloads(
     config: &Config,
     app_dir: &StrictPath,
     device: &DeviceIdentity,
+    recently_downloaded: &Arc<Mutex<HashMap<String, Instant>>>,
 ) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
@@ -464,7 +465,8 @@ fn check_downloads(
                     match download_game(config, app_dir, device, game) {
                         Ok(_) => {
                             log::info!("[sync daemon] Download complete: {}", game.name);
-                            any_changes = true;
+                                any_changes = true;
+                                recently_downloaded.lock().unwrap().insert(game_id.clone(), Instant::now());
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Download failed for {}: {e}", game.name);
