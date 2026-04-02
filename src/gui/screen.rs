@@ -193,6 +193,7 @@ impl Restore {
         operation: &Operation,
         histories: &TextHistories,
         modifiers: &keyboard::Modifiers,
+        sync_status: &std::collections::HashMap<String, String>,
     ) -> Element {
         let sort = &config.restore.sort;
 
