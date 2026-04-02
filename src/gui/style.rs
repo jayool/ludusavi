@@ -317,6 +317,8 @@ pub enum Container {
     Tooltip,
     DaemonDotActive,
     DaemonDotInactive,
+    SyncedBadge,
+    NotSyncedBadge,
 }
 impl container::Catalog for Theme {
     type Class<'a> = Container;
@@ -336,12 +338,15 @@ impl container::Catalog for Theme {
                 Container::DisabledBackup => self.disabled.into(),
                 Container::DaemonDotActive => self.added.into(),
                 Container::DaemonDotInactive => self.disabled.into(),
+                Container::SyncedBadge => self.added.into(),
+                Container::NotSyncedBadge => self.negative.into(),
                 Container::BadgeActivated => self.negative.into(),
                 _ => self.background.into(),
             }),
             border: Border {
                 color: match class {
                     Container::Wrapper => Color::TRANSPARENT,
+                    Container::SyncedBadge | Container::NotSyncedBadge => Color::TRANSPARENT,
                     Container::GameListEntry | Container::Notification => self.field,
                     Container::ChangeBadge { change, faded } => {
                         if *faded {
@@ -365,6 +370,7 @@ impl container::Catalog for Theme {
                     | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
+                    Container::SyncedBadge | Container::NotSyncedBadge => 0.0,
                     | Container::Badge
                     | Container::BadgeActivated
                     | Container::BadgeFaded
@@ -378,6 +384,7 @@ impl container::Catalog for Theme {
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge
+                    Container::SyncedBadge | Container::NotSyncedBadge => 10.0.into(),
                     | Container::BadgeActivated
                     | Container::BadgeFaded
                     | Container::ChangeBadge { .. }
@@ -388,6 +395,8 @@ impl container::Catalog for Theme {
             },
             text_color: match class {
                 Container::Wrapper => None,
+                Container::SyncedBadge => Some(self.background),
+                Container::NotSyncedBadge => Some(self.background),
                 Container::DaemonDotActive | Container::DaemonDotInactive => None,
                 Container::DisabledBackup => Some(self.text_inverted),
                 Container::ChangeBadge { change, faded } => {
