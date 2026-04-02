@@ -3027,6 +3027,7 @@ impl App {
                     &self.operation,
                     &self.text_histories,
                     &self.modifiers,
+                    &self.sync_status,
                 ),
                 Screen::CustomGames => self.custom_games_screen.view(
                     &self.config,
