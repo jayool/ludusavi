@@ -114,6 +114,7 @@ pub enum Message {
     CloseModal,
     UpdateTime,
     PruneNotifications,
+    DaemonStatusChecked(bool),
     Config {
         event: config::Event,
     },
