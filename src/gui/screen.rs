@@ -194,6 +194,7 @@ impl Restore {
         histories: &TextHistories,
         modifiers: &keyboard::Modifiers,
         sync_status: &std::collections::HashMap<String, String>,
+        daemon_running: bool,
     ) -> Element {
         let sort = &config.restore.sort;
 
@@ -219,6 +220,25 @@ impl Restore {
                     ))
                     .push(button::validate_backups(operation))
                     .push(button::filter(self.log.search.show)),
+            )
+            .push(
+                Row::new()
+                    .padding([0, 20])
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Container::new(Space::new().width(8).height(8))
+                            .class(if daemon_running {
+                                style::Container::DaemonDotActive
+                            } else {
+                                style::Container::DaemonDotInactive
+                            }),
+                    )
+                    .push(text(if daemon_running {
+                        "Sync daemon running"
+                    } else {
+                        "Sync daemon stopped"
+                    })),
             )
             .push(make_status_row(
                 &self.log.compute_operation_status(
