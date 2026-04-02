@@ -56,6 +56,7 @@ impl GameListEntry {
         expanded: bool,
         modifiers: &Modifiers,
         filtering_duplicates: bool,
+        sync_status: &std::collections::HashMap<String, String>,
     ) -> Container {
         let successful = match &self.backup_info {
             Some(x) => x.successful(),
@@ -165,6 +166,12 @@ impl GameListEntry {
                                 .view()
                         })
                         .push_if(!successful, || Badge::new(&TRANSLATOR.badge_failed()).view())
+                        .push({
+                            match sync_status.get(&self.scan_info.game_name).map(|s| s.as_str()) {
+                                Some("synced") => Some(Badge::new("Synced").view()),
+                                _ => None,
+                            }
+                        })
                         .push({
                             self.scan_info
                                 .backup
@@ -420,6 +427,7 @@ impl GameList {
         operation: &Operation,
         histories: &TextHistories,
         modifiers: &Modifiers,
+        sync_status: &std::collections::HashMap<String, String>,
     ) -> Container {
         Container::new(
             Column::new()
@@ -457,6 +465,7 @@ impl GameList {
                                     self.expanded_games.contains(&x.scan_info.game_name),
                                     modifiers,
                                     duplicatees.is_some(),
+                                    sync_status,
                                 ))
                             },
                         );
