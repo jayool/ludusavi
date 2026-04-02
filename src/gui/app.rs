@@ -3027,8 +3027,8 @@ impl App {
                     &self.operation,
                     &self.text_histories,
                     &self.modifiers,
-                    self.daemon_running,
                     &self.sync_status,
+                    self.daemon_running,
                 ),
                 Screen::CustomGames => self.custom_games_screen.view(
                     &self.config,
