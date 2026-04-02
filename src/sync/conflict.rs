@@ -124,10 +124,15 @@ pub fn determine_sync_type(
     let scan_latest = scan_result.latest_write_time_utc.unwrap_or(DateTime::<Utc>::MIN_UTC);
     let game_latest = game.latest_write_time_utc.unwrap_or(DateTime::<Utc>::MIN_UTC);
 
-    if scan_latest > game_latest {
+    // Truncar a segundos para evitar falsos positivos por diferencias de precisión
+    // entre filesystems (Windows trunca nanosegundos al leer mtime)
+    let scan_secs = scan_latest.timestamp();
+    let game_secs = game_latest.timestamp();
+    
+    if scan_secs > game_secs {
         log::debug!("[{}] Local version is newer - game should be uploaded", game.name);
         SyncStatus::RequiresUpload
-    } else if scan_latest < game_latest {
+    } else if scan_secs < game_secs {
         log::debug!("[{}] Cloud version is newer - game should be downloaded", game.name);
         SyncStatus::RequiresDownload
     } else {
