@@ -163,8 +163,8 @@ impl Backup {
                 operation,
                 histories,
                 modifiers,
-                &std::collections::HashMap::new(),
-            )),
+                sync_status,
+            ));
 
         template(content)
     }
@@ -254,6 +254,7 @@ impl Restore {
                 operation,
                 histories,
                 modifiers,
+                &std::collections::HashMap::new(),
             ));
 
         template(content)
