@@ -117,6 +117,7 @@ pub struct App {
     pending_save: HashMap<SaveKind, Instant>,
     modifiers: keyboard::Modifiers,
     jump_to_game_after_scan: Option<String>,
+    daemon_running: bool,
 }
 
 impl App {
@@ -1482,6 +1483,10 @@ impl App {
                         self.timed_notification = None;
                     }
                 }
+                Task::none()
+            }
+            Message::DaemonStatusChecked(running) => {
+                self.daemon_running = running;
                 Task::none()
             }
             Message::Config { event } => {
@@ -2952,6 +2957,18 @@ impl App {
             subscriptions.push(iced::time::every(Duration::from_millis(50)).map(|_| Message::Exit { user: false }));
         }
 
+        subscriptions.push(
+            iced::time::every(Duration::from_secs(5)).map(|_| {
+                let mut system = sysinfo::System::new();
+                system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+                let running = system
+                    .processes_by_exact_name("ludusavi-daemon".as_ref())
+                    .next()
+                    .is_some();
+                Message::DaemonStatusChecked(running)
+            }),
+        );
+
         iced::Subscription::batch(subscriptions)
     }
 
@@ -2974,6 +2991,7 @@ impl App {
                     &self.operation,
                     &self.text_histories,
                     &self.modifiers,
+                    self.daemon_running,
                 ),
                 Screen::Restore => self.restore_screen.view(
                     &self.config,
