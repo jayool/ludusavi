@@ -118,6 +118,7 @@ pub struct App {
     modifiers: keyboard::Modifiers,
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
+    sync_status: std::collections::HashMap<String, String>,
 }
 
 impl App {
@@ -2969,7 +2970,28 @@ impl App {
                     .processes_by_exact_name(daemon_name.as_ref())
                     .next()
                     .is_some();
-                Message::DaemonStatusChecked(running)
+        
+                let sync_status = {
+                    let path = crate::prelude::app_dir().joined("daemon-status.json");
+                    if let Some(content) = path.read() {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            json.get("games")
+                                .and_then(|g| g.as_object())
+                                .map(|obj| {
+                                    obj.iter()
+                                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                                        .collect::<std::collections::HashMap<String, String>>()
+                                })
+                                .unwrap_or_default()
+                        } else {
+                            std::collections::HashMap::new()
+                        }
+                    } else {
+                        std::collections::HashMap::new()
+                    }
+                };
+        
+                Message::DaemonStatusChecked(running, sync_status)
             }),
         );
 
