@@ -2961,8 +2961,12 @@ impl App {
             iced::time::every(Duration::from_secs(5)).map(|_| {
                 let mut system = sysinfo::System::new();
                 system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+                #[cfg(target_os = "windows")]
+                let daemon_name = "ludusavi-daemon.exe";
+                #[cfg(not(target_os = "windows"))]
+                let daemon_name = "ludusavi-daemon";
                 let running = system
-                    .processes_by_exact_name("ludusavi-daemon".as_ref())
+                    .processes_by_exact_name(daemon_name.as_ref())
                     .next()
                     .is_some();
                 Message::DaemonStatusChecked(running)
