@@ -474,7 +474,13 @@ fn check_downloads(
         if let Some(game) = game_list.get_game_mut(&game_id) {
             let local_path = game.path_by_device.get(&device.id).cloned();
             let scan = DirectoryScanResult::scan(local_path.as_deref());
+            log::info!("[sync daemon] [{}] scan_latest={:?} game_latest={:?} directory_exists={}", 
+                game.name,
+                scan.latest_write_time_utc, 
+                game.latest_write_time_utc,
+                scan.directory_exists);
             let status = determine_sync_type(game, &scan);
+            log::info!("[sync daemon] [{}] status={:?}", game.name, status);
 
             match status {
                 SyncStatus::RequiresDownload => {
