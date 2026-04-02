@@ -564,16 +564,12 @@ impl App {
                     );
                     self.operation.remove_active_game(&scan_info.game_name);
                     if scan_info.can_report_game() {
-                        // Puente EmuSync: registra el juego en el game-list.json del cloud
-                        // Se llama siempre que el juego tenga ficheros, independientemente
-                        // de si el backup local ha cambiado o no
-                        if !scan_info.found_files.is_empty() {
-                            register_game_after_backup(&self.config, &scan_info);
-                        }
                         if let Some(backup_info) = backup_info.as_ref() {
                             if scan_info.needs_cloud_sync() {
                                 self.operation.add_syncable_game(scan_info.game_name.clone());
                             }
+                            // Puente EmuSync: registra el juego en el game-list.json del cloud
+                            register_game_after_backup(&self.config, &scan_info);
                             scan_info.clear_processed_changes(backup_info, SCAN_KIND);
                         }
 
