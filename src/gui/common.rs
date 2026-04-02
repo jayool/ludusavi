@@ -114,7 +114,7 @@ pub enum Message {
     CloseModal,
     UpdateTime,
     PruneNotifications,
-    DaemonStatusChecked(bool),
+    DaemonStatusChecked(bool, std::collections::HashMap<String, String>),
     Config {
         event: config::Event,
     },
