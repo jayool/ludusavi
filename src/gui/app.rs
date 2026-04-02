@@ -1486,8 +1486,9 @@ impl App {
                 }
                 Task::none()
             }
-            Message::DaemonStatusChecked(running) => {
+            Message::DaemonStatusChecked(running, sync_status) => {
                 self.daemon_running = running;
+                self.sync_status = sync_status;
                 Task::none()
             }
             Message::Config { event } => {
@@ -3018,6 +3019,7 @@ impl App {
                     &self.text_histories,
                     &self.modifiers,
                     self.daemon_running,
+                    &self.sync_status,
                 ),
                 Screen::Restore => self.restore_screen.view(
                     &self.config,
