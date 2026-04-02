@@ -83,6 +83,7 @@ impl Backup {
         histories: &TextHistories,
         modifiers: &keyboard::Modifiers,
         daemon_running: bool,
+        sync_status: &std::collections::HashMap<String, String>,
     ) -> Element {
         let sort = &config.backup.sort;
 
@@ -162,6 +163,7 @@ impl Backup {
                 operation,
                 histories,
                 modifiers,
+                sync_status,
             ));
 
         template(content)
