@@ -315,6 +315,8 @@ pub enum Container {
     DisabledBackup,
     Notification,
     Tooltip,
+    DaemonDotActive,
+    DaemonDotInactive,
 }
 impl container::Catalog for Theme {
     type Class<'a> = Container;
@@ -332,6 +334,8 @@ impl container::Catalog for Theme {
                 Container::Notification => self.field.alpha(0.5).into(),
                 Container::Tooltip => self.field.into(),
                 Container::DisabledBackup => self.disabled.into(),
+                Container::DaemonDotActive => self.added.into(),
+                Container::DaemonDotInactive => self.disabled.into(),
                 Container::BadgeActivated => self.negative.into(),
                 _ => self.background.into(),
             }),
@@ -352,10 +356,13 @@ impl container::Catalog for Theme {
                         }
                     }
                     Container::BadgeActivated => self.negative,
+                    Container::DaemonDotActive | Container::DaemonDotInactive => Color::TRANSPARENT,
                     Container::ModalForeground | Container::BadgeFaded => self.disabled,
                     _ => self.text,
                 },
                 width: match class {
+                    Container::DaemonDotActive
+                    | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
                     | Container::Badge
@@ -366,6 +373,8 @@ impl container::Catalog for Theme {
                     _ => 0.0,
                 },
                 radius: match class {
+                    Container::DaemonDotActive
+                    | Container::DaemonDotInactive => 4.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge
@@ -379,6 +388,7 @@ impl container::Catalog for Theme {
             },
             text_color: match class {
                 Container::Wrapper => None,
+                Container::DaemonDotActive | Container::DaemonDotInactive => None,
                 Container::DisabledBackup => Some(self.text_inverted),
                 Container::ChangeBadge { change, faded } => {
                     if *faded {
