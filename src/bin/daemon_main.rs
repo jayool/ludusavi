@@ -2,10 +2,30 @@ use std::sync::{atomic::AtomicBool, Arc};
 use ludusavi::sync::daemon::{start_daemon, DaemonConfig};
 
 fn main() {
-    env_logger::Builder::new()
-        .filter_level(log::LevelFilter::Info)
-        .parse_env("LUDUSAVI_LOG")
-        .init();
+    let log_path = ludusavi::prelude::app_dir().joined("daemon.log");
+    let log_path_str = log_path.as_std_path_buf()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "daemon.log".to_string());
+
+    flexi_logger::Logger::try_with_env_or_str("info")
+        .unwrap_or_else(|_| flexi_logger::Logger::try_with_str("info").unwrap())
+        .log_to_file(
+            flexi_logger::FileSpec::default()
+                .directory(std::path::Path::new(&log_path_str).parent().unwrap_or(std::path::Path::new(".")))
+                .basename("daemon")
+                .suffix("log")
+                .suppress_timestamp(),
+        )
+        .duplicate_to_stdout(flexi_logger::Duplicate::All)
+        .format(flexi_logger::detailed_format)
+        .start()
+        .unwrap_or_else(|_| {
+            env_logger::Builder::new()
+                .filter_level(log::LevelFilter::Info)
+                .init();
+            // flexi_logger failed, falling back to env_logger (stdout only)
+            panic!("unreachable")
+        });
 
     log::info!("ludusavi-daemon starting");
 
