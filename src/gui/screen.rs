@@ -14,7 +14,7 @@ use crate::{
         search::CustomGamesFilter,
         shortcuts::TextHistories,
         style,
-        widget::{checkbox, number_input, pick_list, text, Button, Column, Container, Element, IcedParentExt, Row},
+        widget::{checkbox, number_input, pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space},
     },
     lang::{Language, TRANSLATOR},
     prelude::{AVAILABLE_PARALELLISM, STEAM_DECK},
@@ -82,6 +82,7 @@ impl Backup {
         operation: &Operation,
         histories: &TextHistories,
         modifiers: &keyboard::Modifiers,
+        daemon_running: bool,
     ) -> Element {
         let sort = &config.backup.sort;
 
@@ -105,7 +106,26 @@ impl Backup {
                         ),
                         self.log.is_filtered(),
                     ))
-                    .push(button::filter(self.log.search.show)),
+                    .push(button::filter(self.log.search.show))
+                    .push(Space::new().width(Length::Fill))
+                    .push(
+                        Row::new()
+                            .spacing(6)
+                            .align_y(Alignment::Center)
+                            .push(
+                                Container::new(Space::new().width(8).height(8))
+                                    .class(if daemon_running {
+                                        style::Container::DaemonDotActive
+                                    } else {
+                                        style::Container::DaemonDotInactive
+                                    }),
+                            )
+                            .push(text(if daemon_running {
+                                "Sync daemon running"
+                            } else {
+                                "Sync daemon stopped"
+                            })),
+                    ),
             )
             .push(make_status_row(
                 &self.log.compute_operation_status(
