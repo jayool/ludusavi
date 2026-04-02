@@ -106,26 +106,26 @@ impl Backup {
                         ),
                         self.log.is_filtered(),
                     ))
-                    .push(button::filter(self.log.search.show))
-                    .push(Space::new().width(Length::Fill))
+                    .push(button::filter(self.log.search.show)),
+            )
+            .push(
+                Row::new()
+                    .padding([0, 20])
+                    .spacing(6)
+                    .align_y(Alignment::Center)
                     .push(
-                        Row::new()
-                            .spacing(6)
-                            .align_y(Alignment::Center)
-                            .push(
-                                Container::new(Space::new().width(8).height(8))
-                                    .class(if daemon_running {
-                                        style::Container::DaemonDotActive
-                                    } else {
-                                        style::Container::DaemonDotInactive
-                                    }),
-                            )
-                            .push(text(if daemon_running {
-                                "Sync daemon running"
+                        Container::new(Space::new().width(8).height(8))
+                            .class(if daemon_running {
+                                style::Container::DaemonDotActive
                             } else {
-                                "Sync daemon stopped"
-                            })),
-                    ),
+                                style::Container::DaemonDotInactive
+                            }),
+                    )
+                    .push(text(if daemon_running {
+                        "Sync daemon running"
+                    } else {
+                        "Sync daemon stopped"
+                    })),
             )
             .push(make_status_row(
                 &self.log.compute_operation_status(
