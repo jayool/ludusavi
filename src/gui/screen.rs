@@ -94,7 +94,6 @@ impl Backup {
                     .padding([0, 20])
                     .spacing(20)
                     .align_y(Alignment::Center)
-                    .width(Length::Fill)
                     .push(button::backup_preview(operation, self.log.is_filtered()))
                     .push(button::backup(operation, self.log.is_filtered()))
                     .push(button::toggle_all_scanned_games(
