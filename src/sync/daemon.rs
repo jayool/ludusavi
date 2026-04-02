@@ -526,6 +526,15 @@ fn check_downloads(
             .map_err(|e| format!("Failed to write game list: {e}"))?;
     }
 
+    // Escribir estado de sync al disco para que la GUI lo pueda leer
+    let synced_games: std::collections::HashSet<String> = game_list
+        .games
+        .iter()
+        .filter(|g| g.path_by_device.contains_key(&device.id))
+        .map(|g| g.id.clone())
+        .collect();
+    write_sync_status(app_dir, &synced_games);
+
     Ok(())
 }
 
@@ -592,7 +601,30 @@ fn check_downloads_and_rewatch(
             .map_err(|e| format!("Failed to write game list: {e}"))?;
     }
 
+    // Escribir estado de sync al disco para que la GUI lo pueda leer
+    let synced_games: std::collections::HashSet<String> = game_list
+        .games
+        .iter()
+        .filter(|g| g.path_by_device.contains_key(&device.id))
+        .map(|g| g.id.clone())
+        .collect();
+    write_sync_status(app_dir, &synced_games);
+
     Ok(())
+}
+
+fn write_sync_status(app_dir: &StrictPath, synced_games: &std::collections::HashSet<String>) {
+    let path = app_dir.joined("daemon-status.json");
+    let map: serde_json::Map<String, serde_json::Value> = synced_games
+        .iter()
+        .map(|id| (id.clone(), serde_json::Value::String("synced".to_string())))
+        .collect();
+    let json = serde_json::json!({ "games": map });
+    if let Ok(content) = serde_json::to_string(&json) {
+        if let Ok(path_buf) = path.as_std_path_buf() {
+            let _ = std::fs::write(path_buf, content);
+        }
+    }
 }
 
 fn normalize_path(path: &str) -> String {
