@@ -210,7 +210,8 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Paso 6: worker loop principal
     log::info!("[sync daemon] File watcher active, monitoring for changes");
 
-    let mut last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+    let mut last_known_mod_time = load_last_mod_time(&app_dir)
+        .or_else(|| crate::sync::operations::get_game_list_mod_time(&config));
     let mut poll_counter: u64 = 0;
     const POLL_EVERY_N_SECONDS: u64 = 30;
     
@@ -243,12 +244,14 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
                 log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
                 last_known_mod_time = current_mod_time.clone();
+                save_last_mod_time(&app_dir, &last_known_mod_time);
 
                 if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
                     log::error!("[sync daemon] Error during poll download check: {e}");
                 }
                 // Actualizar mod time tras descarga para no redetectar nuestro propio write
                 last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+                save_last_mod_time(&app_dir, &last_known_mod_time);
             } else {
                 log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
             }
@@ -304,12 +307,30 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             } else {
                 // Actualizar mod time para que el polling no redetecte nuestro propio upload
                 last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
+                save_last_mod_time(&app_dir, &last_known_mod_time);
             }
         }
     }
 
     log::info!("[sync daemon] Stop flag set, shutting down watcher");
     Ok(())
+}
+fn load_last_mod_time(app_dir: &StrictPath) -> Option<String> {
+    let path = app_dir.joined("daemon-state.json");
+    let content = path.read()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    json.get("last_known_mod_time")?.as_str().map(|s| s.to_string())
+}
+
+fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
+    let path = app_dir.joined("daemon-state.json");
+    let json = serde_json::json!({ "last_known_mod_time": mod_time });
+    if let Ok(content) = serde_json::to_string(&json) {
+        let _ = std::fs::write(
+            path.as_std_path_buf().unwrap(),
+            content,
+        );
+    }
 }
 
 /// Para cada juego en el game-list sin ruta registrada para este dispositivo,
