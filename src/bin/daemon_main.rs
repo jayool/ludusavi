@@ -53,7 +53,7 @@ fn run() {
 windows_service::define_windows_service!(ffi_service_main, windows_service_main);
 
 #[cfg(target_os = "windows")]
-fn windows_service_main(arguments: Vec<std::ffi::OsString>) {
+fn windows_service_main(_arguments: Vec<std::ffi::OsString>) {
     use windows_service::{
         service::ServiceControl,
         service_control_handler::{self, ServiceControlHandlerResult},
