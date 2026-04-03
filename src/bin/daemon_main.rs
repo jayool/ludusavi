@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::sync::{atomic::AtomicBool, Arc};
 use ludusavi::sync::daemon::{start_daemon, DaemonConfig};
 
