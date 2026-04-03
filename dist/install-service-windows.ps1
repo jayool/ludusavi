@@ -35,7 +35,6 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -MultipleInstances IgnoreNew `
-    -Hidden
 
 # Registra la tarea
 Register-ScheduledTask `
