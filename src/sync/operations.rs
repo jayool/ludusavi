@@ -578,7 +578,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
     // --- Linux: rutas nativas XDG ---
     #[cfg(target_os = "linux")]
     {
-        for (raw_path, _) in &game.files {
+        for raw_path in game.files.keys() {
             if raw_path.trim().is_empty() {
                 continue;
             }
