@@ -555,6 +555,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn should_sync_cloud_after(&self) -> bool {
         match self {
             Operation::Idle => false,
@@ -612,6 +613,7 @@ impl Operation {
         }
     }
 
+    #[allow(dead_code)]
     pub fn syncable_games(&self) -> Option<&HashSet<String>> {
         match self {
             Operation::Idle => None,
