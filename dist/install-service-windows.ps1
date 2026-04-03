@@ -34,8 +34,7 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -MultipleInstances IgnoreNew `
-    -RunOnlyIfNetworkAvailable $false
+    -MultipleInstances IgnoreNew
 
 # Registra la tarea
 Register-ScheduledTask `
