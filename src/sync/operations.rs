@@ -162,7 +162,11 @@ pub fn read_game_list_from_cloud(config: &Config) -> Option<GameListFile> {
     let temp_path = std::env::temp_dir().join("ludusavi-game-list-temp.json");
     let temp_strict = StrictPath::from(temp_path.clone());
 
-    let args = ["copyto".to_string(), rclone.path(&remote_file), temp_path.to_string_lossy().to_string()];
+    let args = [
+        "copyto".to_string(),
+        rclone.path(&remote_file),
+        temp_path.to_string_lossy().to_string(),
+    ];
 
     match crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -193,7 +197,11 @@ pub fn write_game_list_to_cloud(config: &Config, game_list: &GameListFile) -> Re
     std::fs::write(&temp_path, &json).map_err(|e| SyncError::IoError(e.to_string()))?;
 
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
-    let args = ["copyto".to_string(), temp_path.to_string_lossy().to_string(), rclone.path(&remote_file)];
+    let args = [
+        "copyto".to_string(),
+        temp_path.to_string_lossy().to_string(),
+        rclone.path(&remote_file),
+    ];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
