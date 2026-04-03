@@ -52,7 +52,7 @@ impl ScanInfo {
         } else {
             0
         };
-        successful_bytes.checked_sub(failed_bytes).unwrap_or_default()
+        successful_bytes.saturating_sub(failed_bytes)
     }
 
     pub fn total_possible_bytes(&self) -> u64 {
