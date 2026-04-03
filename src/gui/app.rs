@@ -358,7 +358,7 @@ impl App {
             }
             BackupPhase::CloudCheck => {
                 // Cloud upload deshabilitado: lo gestiona ludusavi-daemon via ZIP
-                return self.handle_backup(BackupPhase::Load);
+                self.handle_backup(BackupPhase::Load)
             }
             BackupPhase::Load => {
                 self.invalidate_path_caches();
@@ -628,7 +628,7 @@ impl App {
             }
             BackupPhase::CloudSync => {
                 // Cloud upload deshabilitado: lo gestiona ludusavi-daemon via ZIP
-                return self.handle_backup(BackupPhase::Done);
+                self.handle_backup(BackupPhase::Done)
             }
             BackupPhase::Done => {
                 log::info!("completed backup");
