@@ -23,8 +23,7 @@ Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Silent
 
 # Configura la acción — redirige stdout y stderr al log
 $Action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-WindowStyle Hidden -NonInteractive -Command `"& '$ExePath'`"" `
+    -Execute $ExePath `
     -WorkingDirectory (Split-Path $ExePath)
 
 # Trigger: al iniciar sesión del usuario actual
@@ -35,7 +34,8 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -MultipleInstances IgnoreNew
+    -MultipleInstances IgnoreNew `
+    -Hidden
 
 # Registra la tarea
 Register-ScheduledTask `
