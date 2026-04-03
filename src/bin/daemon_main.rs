@@ -130,7 +130,7 @@ fn run_normal() {
 }
 
 fn run_with_flag(stop_flag: Arc<AtomicBool>) {
-    let config = DaemonConfig::default();
+    let config = DaemonConfig;
     let handle = start_daemon(stop_flag, config);
     handle.join().expect("Daemon thread panicked");
 }
