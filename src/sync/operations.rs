@@ -162,11 +162,7 @@ pub fn read_game_list_from_cloud(config: &Config) -> Option<GameListFile> {
     let temp_path = std::env::temp_dir().join("ludusavi-game-list-temp.json");
     let temp_strict = StrictPath::from(temp_path.clone());
 
-    let args = vec![
-        "copyto".to_string(),
-        rclone.path(&remote_file),
-        temp_path.to_string_lossy().to_string(),
-    ];
+    let args = ["copyto".to_string(), rclone.path(&remote_file), temp_path.to_string_lossy().to_string()];
 
     match crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -197,11 +193,7 @@ pub fn write_game_list_to_cloud(config: &Config, game_list: &GameListFile) -> Re
     std::fs::write(&temp_path, &json).map_err(|e| SyncError::IoError(e.to_string()))?;
 
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
-    let args = vec![
-        "copyto".to_string(),
-        temp_path.to_string_lossy().to_string(),
-        rclone.path(&remote_file),
-    ];
+    let args = ["copyto".to_string(), temp_path.to_string_lossy().to_string(), rclone.path(&remote_file)];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -250,7 +242,7 @@ pub fn upload_game(
         .to_string_lossy()
         .to_string();
 
-    let args = vec!["copyto".to_string(), zip_path_str, rclone.path(&remote_file)];
+    let args = ["copyto".to_string(), zip_path_str, rclone.path(&remote_file)];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -304,7 +296,7 @@ pub fn download_game(
 
     log::info!("[{}] Downloading zip from cloud: {}", game.name, remote_file);
 
-    let args = vec!["copyto".to_string(), rclone.path(&remote_file), zip_path_str];
+    let args = ["copyto".to_string(), rclone.path(&remote_file), zip_path_str];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -430,7 +422,7 @@ pub fn get_game_list_mod_time(config: &Config) -> Option<String> {
     let cloud_path = &config.cloud.path;
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
 
-    let args = vec!["lsjson".to_string(), rclone.path(&remote_file)];
+    let args = ["lsjson".to_string(), rclone.path(&remote_file)];
 
     let output = crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -461,7 +453,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
     // --- Windows: rutas nativas ---
     #[cfg(target_os = "windows")]
     {
-        for (raw_path, _) in &game.files {
+        for raw_path in game.files.keys() {
             if raw_path.trim().is_empty() {
                 continue;
             }
@@ -527,7 +519,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                     root_path, steam_id
                 );
 
-                for (raw_path, _) in &game.files {
+                for raw_path in game.files.keys() {
                     if raw_path.trim().is_empty() {
                         continue;
                     }
