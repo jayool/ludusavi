@@ -35,7 +35,7 @@ jobs:
             tar: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
       - uses: actions/checkout@v5
@@ -59,12 +59,12 @@ jobs:
           cd target/release
           tar --create --gzip --file=ludusavi-v${{ env.LUDUSAVI_VERSION }}-${{ matrix.artifact-name }}.tar.gz ${{ matrix.artifact-file }} ${{ matrix.artifact-daemon }}
       - if: ${{ matrix.tar }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ludusavi-v${{ env.LUDUSAVI_VERSION }}-${{ matrix.artifact-name }}
           path: target/release/ludusavi-v${{ env.LUDUSAVI_VERSION }}-${{ matrix.artifact-name }}.tar.gz
       - if: ${{ !matrix.tar }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ludusavi-v${{ env.LUDUSAVI_VERSION }}-${{ matrix.artifact-name }}
           path: |
