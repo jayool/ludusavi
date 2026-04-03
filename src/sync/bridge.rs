@@ -34,8 +34,12 @@ pub fn register_game_after_backup(config: &Config, scan_info: &ScanInfo) {
 
     // Escaneamos el directorio local para obtener los metadatos reales
     let scan_result = DirectoryScanResult::scan(Some(&root_path));
-    log::info!("[{}] scan_result: exists={}, latest_write={:?}", 
-        scan_info.game_name, scan_result.directory_exists, scan_result.latest_write_time_utc);
+    log::info!(
+        "[{}] scan_result: exists={}, latest_write={:?}",
+        scan_info.game_name,
+        scan_result.directory_exists,
+        scan_result.latest_write_time_utc
+    );
 
     log::info!(
         "[{}] Registering game with root path: {} (latest_write: {:?}, bytes: {})",

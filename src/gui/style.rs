@@ -361,8 +361,7 @@ impl container::Catalog for Theme {
                     _ => self.text,
                 },
                 width: match class {
-                    Container::DaemonDotActive
-                    | Container::DaemonDotInactive => 0.0,
+                    Container::DaemonDotActive | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
                     | Container::Badge
@@ -373,8 +372,7 @@ impl container::Catalog for Theme {
                     _ => 0.0,
                 },
                 radius: match class {
-                    Container::DaemonDotActive
-                    | Container::DaemonDotInactive => 4.0.into(),
+                    Container::DaemonDotActive | Container::DaemonDotInactive => 4.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge

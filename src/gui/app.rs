@@ -2959,42 +2959,37 @@ impl App {
             subscriptions.push(iced::time::every(Duration::from_millis(50)).map(|_| Message::Exit { user: false }));
         }
 
-        subscriptions.push(
-            iced::time::every(Duration::from_secs(5)).map(|_| {
-                let mut system = sysinfo::System::new();
-                system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-                #[cfg(target_os = "windows")]
-                let daemon_name = "ludusavi-daemon.exe";
-                #[cfg(not(target_os = "windows"))]
-                let daemon_name = "ludusavi-daemon";
-                let running = system
-                    .processes_by_exact_name(daemon_name.as_ref())
-                    .next()
-                    .is_some();
-        
-                let sync_status = {
-                    let path = crate::prelude::app_dir().joined("daemon-status.json");
-                    if let Some(content) = path.read() {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            json.get("games")
-                                .and_then(|g| g.as_object())
-                                .map(|obj| {
-                                    obj.iter()
-                                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
-                                        .collect::<std::collections::HashMap<String, String>>()
-                                })
-                                .unwrap_or_default()
-                        } else {
-                            std::collections::HashMap::new()
-                        }
+        subscriptions.push(iced::time::every(Duration::from_secs(5)).map(|_| {
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            #[cfg(target_os = "windows")]
+            let daemon_name = "ludusavi-daemon.exe";
+            #[cfg(not(target_os = "windows"))]
+            let daemon_name = "ludusavi-daemon";
+            let running = system.processes_by_exact_name(daemon_name.as_ref()).next().is_some();
+
+            let sync_status = {
+                let path = crate::prelude::app_dir().joined("daemon-status.json");
+                if let Some(content) = path.read() {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        json.get("games")
+                            .and_then(|g| g.as_object())
+                            .map(|obj| {
+                                obj.iter()
+                                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                                    .collect::<std::collections::HashMap<String, String>>()
+                            })
+                            .unwrap_or_default()
                     } else {
                         std::collections::HashMap::new()
                     }
-                };
-        
-                Message::DaemonStatusChecked(running, sync_status)
-            }),
-        );
+                } else {
+                    std::collections::HashMap::new()
+                }
+            };
+
+            Message::DaemonStatusChecked(running, sync_status)
+        }));
 
         iced::Subscription::batch(subscriptions)
     }

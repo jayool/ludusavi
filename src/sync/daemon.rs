@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use notify::RecursiveMode;
@@ -11,20 +11,15 @@ use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use crate::{
     prelude::{app_dir, StrictPath},
     resource::{
-        config::{Config, BackupFilter, ToggledPaths, ToggledRegistry},
+        config::{BackupFilter, Config, ToggledPaths, ToggledRegistry},
         manifest::Manifest,
     },
-    scan::{
-        layout::BackupLayout,
-        scan_game_for_backup,
-        Launchers, SteamShortcuts, TitleFinder,
-    },
+    scan::{layout::BackupLayout, scan_game_for_backup, Launchers, SteamShortcuts, TitleFinder},
     sync::{
         conflict::{determine_sync_type, DirectoryScanResult, SyncStatus},
         device::DeviceIdentity,
         operations::{
-            download_game, extract_root_from_scan, read_game_list_from_cloud, upload_game,
-            write_game_list_to_cloud,
+            download_game, extract_root_from_scan, read_game_list_from_cloud, upload_game, write_game_list_to_cloud,
         },
     },
 };
@@ -52,8 +47,7 @@ impl GameDebounceState {
 
     fn should_fire(&self) -> bool {
         let now = Instant::now();
-        now.duration_since(self.last_event) > NOTIFY_DELAY
-            || now.duration_since(self.first_event) > NOTIFY_TIMEOUT
+        now.duration_since(self.last_event) > NOTIFY_DELAY || now.duration_since(self.first_event) > NOTIFY_TIMEOUT
     }
 }
 
@@ -65,10 +59,7 @@ impl Default for DaemonConfig {
     }
 }
 
-pub fn start_daemon(
-    stop_flag: Arc<AtomicBool>,
-    _daemon_config: DaemonConfig,
-) -> std::thread::JoinHandle<()> {
+pub fn start_daemon(stop_flag: Arc<AtomicBool>, _daemon_config: DaemonConfig) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         log::info!("[sync daemon] Starting");
 
@@ -142,8 +133,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     log::info!("[sync daemon] Watching {} game(s) for changes", watched_paths.len());
 
     // Paso 4: estado de debounce compartido
-    let debounce_state: Arc<Mutex<HashMap<String, GameDebounceState>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let debounce_state: Arc<Mutex<HashMap<String, GameDebounceState>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let path_to_game: Arc<HashMap<String, String>> = Arc::new(
         watched_paths
@@ -209,12 +199,12 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     // Paso 6: worker loop principal
     log::info!("[sync daemon] File watcher active, monitoring for changes");
-    
+
     let mut last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
     save_last_mod_time(&app_dir, &last_known_mod_time);
     let mut poll_counter: u64 = 0;
     const POLL_EVERY_N_SECONDS: u64 = 30;
-    
+
     while !stop_flag.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_secs(1));
         poll_counter += 1;
@@ -241,12 +231,13 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
             let current_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
 
-        if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
+            if current_mod_time.is_some() && current_mod_time != last_known_mod_time {
                 log::info!("[sync daemon] Cloud game list changed, checking for downloads...");
                 last_known_mod_time = current_mod_time.clone();
                 save_last_mod_time(&app_dir, &last_known_mod_time);
 
-                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths) {
+                if let Err(e) = check_downloads_and_rewatch(&config, &app_dir, &device, &mut debouncer, &watched_paths)
+                {
                     log::error!("[sync daemon] Error during poll download check: {e}");
                 }
                 // Actualizar mod time tras descarga para no redetectar nuestro propio write
@@ -261,7 +252,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             continue;
         }
 
-        log::info!("[sync daemon] Processing {} game(s) ready for upload", ready_games.len());
+        log::info!(
+            "[sync daemon] Processing {} game(s) ready for upload",
+            ready_games.len()
+        );
 
         let config = match Config::load() {
             Ok(c) => c,
@@ -326,10 +320,7 @@ fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
     let path = app_dir.joined("daemon-state.json");
     let json = serde_json::json!({ "last_known_mod_time": mod_time });
     if let Ok(content) = serde_json::to_string(&json) {
-        let _ = std::fs::write(
-            path.as_std_path_buf().unwrap(),
-            content,
-        );
+        let _ = std::fs::write(path.as_std_path_buf().unwrap(), content);
     }
 }
 
@@ -403,11 +394,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
 
         match extract_root_from_scan(&scan_info.found_files) {
             Some(root_path) => {
-                log::info!(
-                    "[sync daemon] Auto-registered path for {}: {}",
-                    game_id,
-                    root_path
-                );
+                log::info!("[sync daemon] Auto-registered path for {}: {}", game_id, root_path);
                 if let Some(game) = game_list.get_game_mut(game_id) {
                     game.path_by_device.insert(device.id.clone(), root_path);
                     any_changes = true;
@@ -428,10 +415,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
                         }
                     }
                     None => {
-                        log::debug!(
-                            "[sync daemon] Cannot resolve expected path for {}, skipping",
-                            game_id
-                        );
+                        log::debug!("[sync daemon] Cannot resolve expected path for {}, skipping", game_id);
                     }
                 }
             }
@@ -439,8 +423,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
     }
 
     if any_changes {
-        write_game_list_to_cloud(config, &game_list)
-            .map_err(|e| format!("Failed to write game list: {e}"))?;
+        write_game_list_to_cloud(config, &game_list).map_err(|e| format!("Failed to write game list: {e}"))?;
         log::info!("[sync daemon] Updated game list with auto-registered paths");
     }
 
@@ -448,11 +431,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
 }
 
 /// Comprueba si hay juegos en el cloud más nuevos que la versión local y los descarga.
-fn check_downloads(
-    config: &Config,
-    app_dir: &StrictPath,
-    device: &DeviceIdentity,
-) -> Result<(), String> {
+fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentity) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
         None => {
@@ -474,11 +453,13 @@ fn check_downloads(
         if let Some(game) = game_list.get_game_mut(&game_id) {
             let local_path = game.path_by_device.get(&device.id).cloned();
             let scan = DirectoryScanResult::scan(local_path.as_deref());
-            log::info!("[sync daemon] [{}] scan_latest={:?} game_latest={:?} directory_exists={}", 
+            log::info!(
+                "[sync daemon] [{}] scan_latest={:?} game_latest={:?} directory_exists={}",
                 game.name,
-                scan.latest_write_time_utc, 
+                scan.latest_write_time_utc,
                 game.latest_write_time_utc,
-                scan.directory_exists);
+                scan.directory_exists
+            );
             let status = determine_sync_type(game, &scan);
             log::info!("[sync daemon] [{}] status={:?}", game.name, status);
 
@@ -488,7 +469,7 @@ fn check_downloads(
                     match download_game(config, app_dir, device, game) {
                         Ok(_) => {
                             log::info!("[sync daemon] Download complete: {}", game.name);
-                                any_changes = true;
+                            any_changes = true;
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Download failed for {}: {e}", game.name);
@@ -511,19 +492,14 @@ fn check_downloads(
                     log::debug!("[sync daemon] {} is in sync", game.name);
                 }
                 SyncStatus::Unknown | SyncStatus::UnsetDirectory => {
-                    log::debug!(
-                        "[sync daemon] {} has no actionable status: {:?}",
-                        game.name,
-                        status
-                    );
+                    log::debug!("[sync daemon] {} has no actionable status: {:?}", game.name, status);
                 }
             }
         }
     }
 
     if any_changes {
-        write_game_list_to_cloud(config, &game_list)
-            .map_err(|e| format!("Failed to write game list: {e}"))?;
+        write_game_list_to_cloud(config, &game_list).map_err(|e| format!("Failed to write game list: {e}"))?;
     }
 
     // Escribir estado de sync al disco para que la GUI lo pueda leer
@@ -597,8 +573,7 @@ fn check_downloads_and_rewatch(
     }
 
     if any_changes {
-        write_game_list_to_cloud(config, &game_list)
-            .map_err(|e| format!("Failed to write game list: {e}"))?;
+        write_game_list_to_cloud(config, &game_list).map_err(|e| format!("Failed to write game list: {e}"))?;
     }
 
     // Escribir estado de sync al disco para que la GUI lo pueda leer

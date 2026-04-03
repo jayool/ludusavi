@@ -1,15 +1,15 @@
-use std::io::{Read, Write};
-use chrono::{DateTime, Utc};
 use crate::resource::manifest::Game;
 use crate::{
     prelude::StrictPath,
     resource::config::Config,
     sync::{
         conflict::DirectoryScanResult,
-        game_list::{game_zip_file_name, GameListFile, GameMetaData, GAME_LIST_FILE_NAME},
         device::DeviceIdentity,
+        game_list::{game_zip_file_name, GameListFile, GameMetaData, GAME_LIST_FILE_NAME},
     },
 };
+use chrono::{DateTime, Utc};
+use std::io::{Read, Write};
 
 #[derive(Debug)]
 pub enum SyncError {
@@ -40,16 +40,11 @@ fn temp_zip_dir(app_dir: &StrictPath) -> StrictPath {
 }
 
 /// Crea un zip de todos los ficheros en `folder_path` y lo escribe en `zip_path`.
-pub fn create_zip_from_folder(
-    folder_path: &str,
-    zip_path: &StrictPath,
-) -> Result<(), SyncError> {
+pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Result<(), SyncError> {
     let folder = std::path::Path::new(folder_path);
 
     if !folder.is_dir() {
-        return Err(SyncError::IoError(format!(
-            "Folder does not exist: {folder_path}"
-        )));
+        return Err(SyncError::IoError(format!("Folder does not exist: {folder_path}")));
     }
 
     if let Err(e) = zip_path.create_parent_dir() {
@@ -57,7 +52,9 @@ pub fn create_zip_from_folder(
     }
 
     let file = std::fs::File::create(
-        zip_path.as_std_path_buf().map_err(|e| SyncError::IoError(e.to_string()))?,
+        zip_path
+            .as_std_path_buf()
+            .map_err(|e| SyncError::IoError(e.to_string()))?,
     )
     .map_err(|e| SyncError::IoError(e.to_string()))?;
 
@@ -81,8 +78,7 @@ pub fn create_zip_from_folder(
         zip.start_file(&zip_entry_name, options)
             .map_err(|e| SyncError::ZipError(e.to_string()))?;
 
-        let mut f = std::fs::File::open(path)
-            .map_err(|e| SyncError::IoError(e.to_string()))?;
+        let mut f = std::fs::File::open(path).map_err(|e| SyncError::IoError(e.to_string()))?;
 
         let mut buffer = [0u8; 65536];
         loop {
@@ -108,20 +104,15 @@ pub fn extract_zip_to_directory(
     let output = std::path::Path::new(output_directory);
 
     if output.exists() {
-        std::fs::remove_dir_all(output)
-            .map_err(|e| SyncError::IoError(e.to_string()))?;
+        std::fs::remove_dir_all(output).map_err(|e| SyncError::IoError(e.to_string()))?;
     }
-    std::fs::create_dir_all(output)
-        .map_err(|e| SyncError::IoError(e.to_string()))?;
+    std::fs::create_dir_all(output).map_err(|e| SyncError::IoError(e.to_string()))?;
 
     let file = zip_path.open().map_err(|e| SyncError::IoError(e.to_string()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| SyncError::ZipError(e.to_string()))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| SyncError::ZipError(e.to_string()))?;
 
     for i in 0..archive.len() {
-        let mut zip_file = archive
-            .by_index(i)
-            .map_err(|e| SyncError::ZipError(e.to_string()))?;
+        let mut zip_file = archive.by_index(i).map_err(|e| SyncError::ZipError(e.to_string()))?;
 
         if zip_file.name().ends_with('/') {
             continue;
@@ -130,38 +121,33 @@ pub fn extract_zip_to_directory(
         let out_path = output.join(zip_file.name().replace('\\', "/"));
 
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| SyncError::IoError(e.to_string()))?;
+            std::fs::create_dir_all(parent).map_err(|e| SyncError::IoError(e.to_string()))?;
         }
 
-        let mut out_file = std::fs::File::create(&out_path)
-            .map_err(|e| SyncError::IoError(e.to_string()))?;
+        let mut out_file = std::fs::File::create(&out_path).map_err(|e| SyncError::IoError(e.to_string()))?;
 
         let mut buffer = [0u8; 65536];
         loop {
-            let n = zip_file.read(&mut buffer).map_err(|e| SyncError::IoError(e.to_string()))?;
+            let n = zip_file
+                .read(&mut buffer)
+                .map_err(|e| SyncError::IoError(e.to_string()))?;
             if n == 0 {
                 break;
             }
-            out_file.write_all(&buffer[..n])
+            out_file
+                .write_all(&buffer[..n])
                 .map_err(|e| SyncError::IoError(e.to_string()))?;
         }
 
         if let Some(ts) = force_last_write_time {
             let system_time: std::time::SystemTime = ts.into();
-            let _ = filetime::set_file_mtime(
-                &out_path,
-                filetime::FileTime::from_system_time(system_time),
-            );
+            let _ = filetime::set_file_mtime(&out_path, filetime::FileTime::from_system_time(system_time));
         }
     }
 
     if let Some(ts) = force_last_write_time {
         let system_time: std::time::SystemTime = ts.into();
-        let _ = filetime::set_file_mtime(
-            output,
-            filetime::FileTime::from_system_time(system_time),
-        );
+        let _ = filetime::set_file_mtime(output, filetime::FileTime::from_system_time(system_time));
     }
 
     Ok(())
@@ -201,19 +187,14 @@ pub fn read_game_list_from_cloud(config: &Config) -> Option<GameListFile> {
 }
 
 /// Sube el game-list.json al cloud usando rclone.
-pub fn write_game_list_to_cloud(
-    config: &Config,
-    game_list: &GameListFile,
-) -> Result<(), SyncError> {
+pub fn write_game_list_to_cloud(config: &Config, game_list: &GameListFile) -> Result<(), SyncError> {
     let rclone = make_rclone(config).ok_or(SyncError::NoRcloneConfig)?;
     let cloud_path = &config.cloud.path;
 
-    let json = serde_json::to_string_pretty(game_list)
-        .map_err(|e| SyncError::IoError(e.to_string()))?;
+    let json = serde_json::to_string_pretty(game_list).map_err(|e| SyncError::IoError(e.to_string()))?;
 
     let temp_path = std::env::temp_dir().join("ludusavi-game-list-temp.json");
-    std::fs::write(&temp_path, &json)
-        .map_err(|e| SyncError::IoError(e.to_string()))?;
+    std::fs::write(&temp_path, &json).map_err(|e| SyncError::IoError(e.to_string()))?;
 
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
     let args = vec![
@@ -269,11 +250,7 @@ pub fn upload_game(
         .to_string_lossy()
         .to_string();
 
-    let args = vec![
-        "copyto".to_string(),
-        zip_path_str,
-        rclone.path(&remote_file),
-    ];
+    let args = vec!["copyto".to_string(), zip_path_str, rclone.path(&remote_file)];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -327,11 +304,7 @@ pub fn download_game(
 
     log::info!("[{}] Downloading zip from cloud: {}", game.name, remote_file);
 
-    let args = vec![
-        "copyto".to_string(),
-        rclone.path(&remote_file),
-        zip_path_str,
-    ];
+    let args = vec!["copyto".to_string(), rclone.path(&remote_file), zip_path_str];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -375,10 +348,9 @@ pub fn get_common_root_folder(paths: &[&str]) -> Option<String> {
 
     for i in 0..first.len() {
         let segment = &first[i];
-        let mismatch = split_paths.iter().any(|sp| {
-            sp.len() <= i
-                || !sp[i].eq_ignore_ascii_case(segment)
-        });
+        let mismatch = split_paths
+            .iter()
+            .any(|sp| sp.len() <= i || !sp[i].eq_ignore_ascii_case(segment));
         if mismatch {
             common_length = i;
             break;
@@ -394,7 +366,9 @@ pub fn get_common_root_folder(paths: &[&str]) -> Option<String> {
 }
 
 /// Extrae la carpeta raíz común de los ficheros encontrados por Ludusavi.
-pub fn extract_root_from_scan(found_files: &std::collections::HashMap<crate::prelude::StrictPath, crate::scan::ScannedFile>) -> Option<String> {
+pub fn extract_root_from_scan(
+    found_files: &std::collections::HashMap<crate::prelude::StrictPath, crate::scan::ScannedFile>,
+) -> Option<String> {
     if found_files.is_empty() {
         return None;
     }
@@ -456,21 +430,20 @@ pub fn get_game_list_mod_time(config: &Config) -> Option<String> {
     let cloud_path = &config.cloud.path;
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
 
-    let args = vec![
-        "lsjson".to_string(),
-        rclone.path(&remote_file),
-    ];
+    let args = vec!["lsjson".to_string(), rclone.path(&remote_file)];
 
     let output = crate::prelude::run_command(
         config.apps.rclone.path.raw(),
         &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         &[0],
         crate::prelude::Privacy::Public,
-    ).ok()?;
+    )
+    .ok()?;
 
     // Parsear el JSON y extraer ModTime
     let parsed: serde_json::Value = serde_json::from_str(&output.stdout).ok()?;
-    parsed.as_array()?
+    parsed
+        .as_array()?
         .first()?
         .get("ModTime")?
         .as_str()
@@ -522,10 +495,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
             let resolved = resolved.replace('/', "\\");
 
             if std::path::Path::new(&resolved).is_dir() {
-                log::debug!(
-                    "resolve_expected_save_path: found existing Windows dir: {}",
-                    resolved
-                );
+                log::debug!("resolve_expected_save_path: found existing Windows dir: {}", resolved);
                 return Some(resolved);
             }
 
@@ -589,10 +559,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                     let resolved = format!("/{}", resolved);
 
                     if std::path::Path::new(&resolved).is_dir() {
-                        log::debug!(
-                            "resolve_expected_save_path: found existing Proton dir: {}",
-                            resolved
-                        );
+                        log::debug!("resolve_expected_save_path: found existing Proton dir: {}", resolved);
                         return Some(resolved);
                     }
 
@@ -638,10 +605,7 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
             let resolved = format!("/{}", resolved);
 
             if std::path::Path::new(&resolved).is_dir() {
-                log::debug!(
-                    "resolve_expected_save_path: found existing XDG dir: {}",
-                    resolved
-                );
+                log::debug!("resolve_expected_save_path: found existing XDG dir: {}", resolved);
                 return Some(resolved);
             }
         }

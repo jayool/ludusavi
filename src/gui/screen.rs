@@ -14,7 +14,9 @@ use crate::{
         search::CustomGamesFilter,
         shortcuts::TextHistories,
         style,
-        widget::{checkbox, number_input, pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space},
+        widget::{
+            checkbox, number_input, pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space,
+        },
     },
     lang::{Language, TRANSLATOR},
     prelude::{AVAILABLE_PARALELLISM, STEAM_DECK},
@@ -115,12 +117,11 @@ impl Backup {
                     .spacing(6)
                     .align_y(Alignment::Center)
                     .push(
-                        Container::new(Space::new().width(8).height(8))
-                            .class(if daemon_running {
-                                style::Container::DaemonDotActive
-                            } else {
-                                style::Container::DaemonDotInactive
-                            }),
+                        Container::new(Space::new().width(8).height(8)).class(if daemon_running {
+                            style::Container::DaemonDotActive
+                        } else {
+                            style::Container::DaemonDotInactive
+                        }),
                     )
                     .push(text(if daemon_running {
                         "Sync daemon running"
@@ -227,12 +228,11 @@ impl Restore {
                     .spacing(6)
                     .align_y(Alignment::Center)
                     .push(
-                        Container::new(Space::new().width(8).height(8))
-                            .class(if daemon_running {
-                                style::Container::DaemonDotActive
-                            } else {
-                                style::Container::DaemonDotInactive
-                            }),
+                        Container::new(Space::new().width(8).height(8)).class(if daemon_running {
+                            style::Container::DaemonDotActive
+                        } else {
+                            style::Container::DaemonDotInactive
+                        }),
                     )
                     .push(text(if daemon_running {
                         "Sync daemon running"

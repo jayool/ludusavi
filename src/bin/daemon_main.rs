@@ -1,11 +1,12 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use std::sync::{atomic::AtomicBool, Arc};
 use ludusavi::sync::daemon::{start_daemon, DaemonConfig};
+use std::sync::{atomic::AtomicBool, Arc};
 
 fn main() {
     let log_path = ludusavi::prelude::app_dir().joined("daemon.log");
-    let log_path_str = log_path.as_std_path_buf()
+    let log_path_str = log_path
+        .as_std_path_buf()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "daemon.log".to_string());
 
@@ -13,7 +14,11 @@ fn main() {
         .unwrap_or_else(|_| flexi_logger::Logger::try_with_str("info").unwrap())
         .log_to_file(
             flexi_logger::FileSpec::default()
-                .directory(std::path::Path::new(&log_path_str).parent().unwrap_or(std::path::Path::new(".")))
+                .directory(
+                    std::path::Path::new(&log_path_str)
+                        .parent()
+                        .unwrap_or(std::path::Path::new(".")),
+                )
                 .basename("daemon")
                 .suffix("log")
                 .suppress_timestamp(),
@@ -22,9 +27,7 @@ fn main() {
         .format(flexi_logger::detailed_format)
         .start()
         .unwrap_or_else(|_| {
-            env_logger::Builder::new()
-                .filter_level(log::LevelFilter::Info)
-                .init();
+            env_logger::Builder::new().filter_level(log::LevelFilter::Info).init();
             // flexi_logger failed, falling back to env_logger (stdout only)
             panic!("unreachable")
         });
@@ -79,9 +82,7 @@ fn windows_service_main(arguments: Vec<std::ffi::OsString>) {
         }
     };
 
-    use windows_service::service::{
-        ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
-    };
+    use windows_service::service::{ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus};
 
     // Notifica a Windows que el servicio está corriendo
     let _ = status_handle.set_service_status(ServiceStatus {

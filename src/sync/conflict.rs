@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use crate::sync::game_list::GameMetaData;
+use chrono::{DateTime, Utc};
 
 /// Estado de sincronización de un juego.
 /// Equivalente a GameSyncStatus en EmuSync.
@@ -95,10 +95,7 @@ impl DirectoryScanResult {
 
 /// Determina qué tipo de sync necesita un juego.
 /// Traducción exacta de DetermineSyncType en GameSyncManager.cs de EmuSync.
-pub fn determine_sync_type(
-    game: &GameMetaData,
-    scan_result: &DirectoryScanResult,
-) -> SyncStatus {
+pub fn determine_sync_type(game: &GameMetaData, scan_result: &DirectoryScanResult) -> SyncStatus {
     // Nunca se ha sincronizado antes
     if game.last_sync_time_utc.is_none() {
         if scan_result.directory_exists {
@@ -128,7 +125,7 @@ pub fn determine_sync_type(
     // entre filesystems (Windows trunca nanosegundos al leer mtime)
     let scan_secs = scan_latest.timestamp();
     let game_secs = game_latest.timestamp();
-    
+
     if scan_secs > game_secs {
         log::debug!("[{}] Local version is newer - game should be uploaded", game.name);
         SyncStatus::RequiresUpload

@@ -36,8 +36,8 @@ impl DeviceIdentity {
     fn generate_id() -> String {
         // Uses sha1 (already a dependency) + current time + thread id
         // to generate a unique ID without adding new dependencies.
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
         use std::time::SystemTime;
 
         let mut hasher = DefaultHasher::new();
