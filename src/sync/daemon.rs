@@ -309,12 +309,6 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     log::info!("[sync daemon] Stop flag set, shutting down watcher");
     Ok(())
 }
-fn load_last_mod_time(app_dir: &StrictPath) -> Option<String> {
-    let path = app_dir.joined("daemon-state.json");
-    let content = path.read()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-    json.get("last_known_mod_time")?.as_str().map(|s| s.to_string())
-}
 
 fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
     let path = app_dir.joined("daemon-state.json");
