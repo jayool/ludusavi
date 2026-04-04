@@ -243,6 +243,23 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 // Actualizar mod time tras descarga para no redetectar nuestro propio write
                 last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
                 save_last_mod_time(&app_dir, &last_known_mod_time);
+
+                // Si hay juegos nuevos para este dispositivo, reiniciar el daemon
+                // para que entren en el file watcher
+                let new_game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+                let new_paths: Vec<String> = new_game_list
+                    .games
+                    .iter()
+                    .filter_map(|g| g.path_by_device.get(&device.id).cloned())
+                    .collect();
+                let has_new_games = new_paths.iter().any(|p| {
+                    let norm = normalize_path(p);
+                    !path_to_game.contains_key(&norm)
+                });
+                if has_new_games {
+                    log::info!("[sync daemon] New games detected, restarting to update file watcher...");
+                    return run_daemon(stop_flag);
+                }
             } else {
                 log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
             }
