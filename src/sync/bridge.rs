@@ -6,7 +6,7 @@ use crate::{
         conflict::DirectoryScanResult,
         device::DeviceIdentity,
         game_list::GameMetaData,
-        operations::{extract_root_from_scan, read_game_list_from_cloud, write_game_list_to_cloud},
+        operations::{extract_root_from_scan, read_game_list_from_cloud, upload_game, write_game_list_to_cloud},
     },
 };
 
@@ -85,5 +85,17 @@ pub fn register_game_after_backup(config: &Config, scan_info: &ScanInfo) {
 
     if let Err(e) = write_game_list_to_cloud(config, &game_list) {
         log::error!("[{}] Failed to write game-list: {}", scan_info.game_name, e);
+    }
+
+    // Subir el ZIP al cloud
+    if let Some(game) = game_list.get_game_mut(&game_id) {
+        match upload_game(config, &app_dir, &device, game) {
+            Ok(_) => log::info!("[{}] ZIP uploaded to cloud after backup", scan_info.game_name),
+            Err(e) => log::error!("[{}] Failed to upload ZIP after backup: {}", scan_info.game_name, e),
+        }
+        // Actualizar el game-list con los timestamps post-upload
+        if let Err(e) = write_game_list_to_cloud(config, &game_list) {
+            log::error!("[{}] Failed to update game-list after upload: {}", scan_info.game_name, e);
+        }
     }
 }
