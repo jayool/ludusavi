@@ -672,6 +672,9 @@ impl Operation {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     #[default]
+    Games,
+    ThisDevice,
+    AllDevices,
     Backup,
     Restore,
     CustomGames,
