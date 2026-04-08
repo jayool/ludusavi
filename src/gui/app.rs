@@ -2187,7 +2187,7 @@ impl App {
                         }
                         Screen::Other | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
-                    game_filter::Event::ToggledFilter
+                    game_filter::Event::ToggledFilter { filter, enabled } => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.toggle_filter(filter, enabled);
                         }
