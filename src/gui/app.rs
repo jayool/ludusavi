@@ -3453,6 +3453,18 @@ impl App {
                                 .push({
                                     let g = game_for_mode.clone();
                                     crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("NONE").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::None) {
+                                        style::Button::Primary
+                                    } else {
+                                        style::Button::Ghost
+                                    })
+                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::None))
+                                })
+                                    let g = game_for_mode.clone();
+                                    crate::gui::widget::Button::new(
                                         crate::gui::widget::text("LOCAL").size(12)
                                     )
                                     .padding([6, 14])
@@ -3515,7 +3527,7 @@ impl App {
                                 }),
                         )
                         .push_if(
-                            !matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Sync),
+                            matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud),
                             || {
                                 let auto_sync = self.sync_games_config.get_auto_sync(&game_name);
                                 let g = game_name.clone();
