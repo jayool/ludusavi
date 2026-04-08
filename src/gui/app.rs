@@ -3866,7 +3866,144 @@ impl App {
 
                 ScrollSubject::Other.into_widget(content).into()
             }
-            Screen::AllDevices | Screen::Other => screen::other(
+            Screen::AllDevices => {
+                let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
+
+                // Recopilar todos los devices del game-list
+                let mut device_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+                for game in &self.game_list.games {
+                    for dev_id in game.path_by_device.keys() {
+                        device_map.entry(dev_id.clone()).or_default().push(game.name.clone());
+                    }
+                }
+
+                let total_devices = device_map.len();
+
+                let header = Container::new(
+                    Row::new()
+                        .padding([0, 24])
+                        .height(52)
+                        .align_y(Alignment::Center)
+                        .push(crate::gui::widget::text("All devices").size(15).width(Length::Fill))
+                        .push(
+                            crate::gui::widget::text(format!("{} device{} registered",
+                                total_devices,
+                                if total_devices == 1 { "" } else { "s" }
+                            ))
+                            .size(12)
+                            .class(style::Text::Muted),
+                        ),
+                )
+                .width(Length::Fill)
+                .class(style::Container::TopBar);
+
+                let mut devices_col = Column::new().spacing(12);
+
+                if device_map.is_empty() {
+                    devices_col = devices_col.push(
+                        crate::gui::widget::text("No devices found. Run a sync to register devices.")
+                            .size(13)
+                            .class(style::Text::Muted),
+                    );
+                } else {
+                    // Ordenar — this device primero
+                    let mut device_ids: Vec<String> = device_map.keys().cloned().collect();
+                    device_ids.sort_by(|a, b| {
+                        if a == &device.id { std::cmp::Ordering::Less }
+                        else if b == &device.id { std::cmp::Ordering::Greater }
+                        else { a.cmp(b) }
+                    });
+
+                    for dev_id in device_ids {
+                        let is_this = dev_id == device.id;
+                        let games = device_map.get(&dev_id).cloned().unwrap_or_default();
+
+                        // Último sync desde este device
+                        let last_sync = self.game_list.games.iter()
+                            .filter(|g| g.last_synced_from.as_deref() == Some(&dev_id))
+                            .filter_map(|g| g.last_sync_time_utc)
+                            .max()
+                            .map(|t| {
+                                let now = chrono::Utc::now();
+                                let diff = now.signed_duration_since(t);
+                                if diff.num_minutes() < 1 {
+                                    "just now".to_string()
+                                } else if diff.num_hours() < 1 {
+                                    format!("{} min ago", diff.num_minutes())
+                                } else if diff.num_hours() < 24 {
+                                    format!("{} hours ago", diff.num_hours())
+                                } else {
+                                    format!("{} days ago", diff.num_days())
+                                }
+                            })
+                            .unwrap_or_else(|| "Never".to_string());
+
+                        let uuid_display = if dev_id.len() > 8 {
+                            format!("{}...", &dev_id[..8])
+                        } else {
+                            dev_id.clone()
+                        };
+
+                        let device_card = Container::new(
+                            Column::new()
+                                .spacing(8)
+                                .push(
+                                    Row::new()
+                                        .spacing(8)
+                                        .align_y(Alignment::Center)
+                                        .push(
+                                            crate::gui::widget::text(uuid_display)
+                                                .size(13)
+                                                .class(style::Text::Dim)
+                                                .width(Length::Fill),
+                                        )
+                                        .push_if(is_this, || {
+                                            crate::gui::widget::text("THIS DEVICE")
+                                                .size(10)
+                                                .class(style::Text::Accent)
+                                        }),
+                                )
+                                .push(
+                                    Row::new()
+                                        .spacing(6)
+                                        .push(
+                                            crate::gui::widget::text(
+                                                format!("{} game{}: {}",
+                                                    games.len(),
+                                                    if games.len() == 1 { "" } else { "s" },
+                                                    games.join(", ")
+                                                )
+                                            )
+                                            .size(12)
+                                            .class(style::Text::Muted),
+                                        ),
+                                )
+                                .push(
+                                    Row::new()
+                                        .spacing(6)
+                                        .push(crate::gui::widget::text("Last sync:").size(11).class(style::Text::Muted))
+                                        .push(crate::gui::widget::text(last_sync).size(11).class(style::Text::Dim)),
+                                ),
+                        )
+                        .width(Length::Fill)
+                        .padding(16)
+                        .class(style::Container::GamesTable);
+
+                        devices_col = devices_col.push(device_card);
+                    }
+                }
+
+                let content = Column::new()
+                    .push(header)
+                    .push(
+                        Container::new(devices_col)
+                            .width(Length::Fill)
+                            .padding([24, 24]),
+                    );
+
+                ScrollSubject::Other.into_widget(content).into()
+            }
+            Screen::Other => screen::other(
                 self.updating_manifest,
                 &self.config,
                 &self.cache,
