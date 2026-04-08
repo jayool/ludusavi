@@ -115,6 +115,7 @@ pub enum Message {
     UpdateTime,
     PruneNotifications,
     DaemonStatusChecked(bool, std::collections::HashMap<String, String>, ludusavi::sync::game_list::GameListFile),
+    SetGameSaveMode(String, ludusavi::sync::sync_config::SaveMode),
     Config {
         event: config::Event,
     },
