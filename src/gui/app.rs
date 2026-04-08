@@ -3140,7 +3140,199 @@ impl App {
                 &self.text_histories,
                 &self.modifiers,
             ),
-            Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::Other => screen::other(
+            Screen::Games => {
+                let entries: Vec<_> = self.backup_screen.log.entries.iter().collect();
+                let game_list = &self.game_list;
+                let sync_status = &self.sync_status;
+                let sync_config = &self.sync_games_config;
+
+                let header = Row::new()
+                    .padding([0, 24])
+                    .height(52)
+                    .align_y(Alignment::Center)
+                    .push(crate::gui::widget::text("Games").size(15).width(Length::Fill))
+                    .push(
+                        crate::gui::widget::Button::new(crate::gui::widget::text("+ Add game").size(13))
+                            .padding([7, 14])
+                            .class(style::Button::Primary)
+                            .on_press(Message::SwitchScreen(Screen::Backup)),
+                    );
+
+                let table_header = Row::new()
+                    .padding([8, 16])
+                    .push(crate::gui::widget::text("").width(20))
+                    .push(crate::gui::widget::text("NAME").size(11).class(style::Text::Muted).width(Length::Fill))
+                    .push(crate::gui::widget::text("MODE").size(11).class(style::Text::Muted).width(80))
+                    .push(crate::gui::widget::text("AUTO SYNC").size(11).class(style::Text::Muted).width(100))
+                    .push(crate::gui::widget::text("LAST SYNCED FROM").size(11).class(style::Text::Muted).width(160))
+                    .push(crate::gui::widget::text("LAST SYNCED").size(11).class(style::Text::Muted).width(140))
+                    .push(crate::gui::widget::text("").width(50));
+
+                let mut rows = Column::new().width(Length::Fill);
+
+                if entries.is_empty() {
+                    rows = rows.push(
+                        Container::new(
+                            crate::gui::widget::text("No games found. Run a backup scan first.")
+                                .size(13)
+                                .class(style::Text::Muted),
+                        )
+                        .width(Length::Fill)
+                        .padding([24, 16]),
+                    );
+                } else {
+                    for entry in entries {
+                        let name = &entry.scan_info.game_name;
+                        let mode = sync_config.get_mode(name);
+                        let status = sync_status.get(name).map(|s| s.as_str()).unwrap_or("");
+                        let meta = game_list.get_game(name);
+
+                        // Status dot color
+                        let dot_class = match (mode, status) {
+                            (ludusavi::sync::sync_config::SaveMode::Sync, "synced") => style::Container::DaemonDotActive,
+                            (ludusavi::sync::sync_config::SaveMode::Sync, _) => style::Container::DaemonDotInactive,
+                            (_, _) => style::Container::DaemonDotInactive,
+                        };
+
+                        // Mode badge text
+                        let mode_text = match mode {
+                            ludusavi::sync::sync_config::SaveMode::Local => "LOCAL",
+                            ludusavi::sync::sync_config::SaveMode::Cloud => "CLOUD",
+                            ludusavi::sync::sync_config::SaveMode::Sync => "SYNC",
+                        };
+
+                        // Last synced from
+                        let last_from = meta
+                            .and_then(|m| m.last_synced_from.as_deref())
+                            .unwrap_or("—");
+
+                        // Last synced time — simple format
+                        let last_synced = meta
+                            .and_then(|m| m.last_sync_time_utc)
+                            .map(|t| {
+                                let now = chrono::Utc::now();
+                                let diff = now.signed_duration_since(t);
+                                if diff.num_minutes() < 1 {
+                                    "just now".to_string()
+                                } else if diff.num_hours() < 1 {
+                                    format!("{} min ago", diff.num_minutes())
+                                } else if diff.num_hours() < 24 {
+                                    format!("{} hours ago", diff.num_hours())
+                                } else {
+                                    format!("{} days ago", diff.num_days())
+                                }
+                            })
+                            .unwrap_or_else(|| "Never".to_string());
+
+                        // Size
+                        let size_text = meta
+                            .map(|m| TRANSLATOR.adjusted_size(m.storage_bytes))
+                            .unwrap_or_default();
+
+                        let row = Container::new(
+                            Row::new()
+                                .padding([12, 16])
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(10)
+                                        .height(10)
+                                        .class(dot_class),
+                                )
+                                .push(crate::gui::widget::Space::new().width(10))
+                                .push(
+                                    Column::new()
+                                        .width(Length::Fill)
+                                        .push(crate::gui::widget::text(name.clone()).size(13))
+                                        .push(crate::gui::widget::text(size_text).size(11).class(style::Text::Muted)),
+                                )
+                                .push(
+                                    crate::gui::widget::text(mode_text)
+                                        .size(11)
+                                        .class(style::Text::Muted)
+                                        .width(80),
+                                )
+                                .push(
+                                    crate::gui::widget::text(
+                                        if matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync) {
+                                            "On"
+                                        } else {
+                                            "—"
+                                        }
+                                    )
+                                    .size(12)
+                                    .class(style::Text::Muted)
+                                    .width(100),
+                                )
+                                .push(
+                                    crate::gui::widget::text(last_from)
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                        .width(160),
+                                )
+                                .push(
+                                    crate::gui::widget::text(last_synced)
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                        .width(140),
+                                )
+                                .push({
+                                    let game_name = name.clone();
+                                    let options = match mode {
+                                        ludusavi::sync::sync_config::SaveMode::Sync => vec![
+                                            "Sync now",
+                                            "Force upload",
+                                            "Force download",
+                                            "Backup",
+                                            "Restore",
+                                        ],
+                                        _ => vec!["Scan now", "Backup", "Restore"],
+                                    };
+                                    Container::new(
+                                        crate::gui::popup_menu::PopupMenu::new(
+                                            options,
+                                            move |_action| Message::SwitchScreen(Screen::Backup),
+                                        )
+                                        .width(50)
+                                        .class(style::PickList::Popup),
+                                    )
+                                    .width(50)
+                                }),
+                        )
+                        .width(Length::Fill)
+                        .class(style::Container::GamesTableRow);
+
+                        rows = rows.push(row);
+                    }
+                }
+
+                let table = Container::new(
+                    Column::new()
+                        .push(
+                            Container::new(table_header)
+                                .width(Length::Fill)
+                                .class(style::Container::GamesTableRow),
+                        )
+                        .push(rows),
+                )
+                .width(Length::Fill)
+                .class(style::Container::GamesTable);
+
+                let content = Column::new()
+                    .push(
+                        Container::new(header)
+                            .width(Length::Fill)
+                            .class(style::Container::TopBar),
+                    )
+                    .push(
+                        Container::new(table)
+                            .width(Length::Fill)
+                            .padding([24, 24]),
+                    );
+
+                ScrollSubject::Other.into_widget(content).into()
+            }
+            Screen::ThisDevice | Screen::AllDevices | Screen::Other => screen::other(
                 self.updating_manifest,
                 &self.config,
                 &self.cache,
