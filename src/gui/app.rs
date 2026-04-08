@@ -3644,7 +3644,7 @@ impl App {
             }
             Screen::ThisDevice => {
                 let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
-                let device_id_short = format!("{}...", &device.id[..8]);
+                let device_id_short = device.id.clone();
 
                 let monitored_games: Vec<String> = self.game_list.games.iter()
                     .filter(|g| g.path_by_device.contains_key(&device.id))
