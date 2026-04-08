@@ -119,6 +119,8 @@ pub struct App {
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
     sync_status: std::collections::HashMap<String, String>,
+    game_list: ludusavi::sync::game_list::GameListFile,
+    sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
 }
 
 impl App {
@@ -1443,6 +1445,7 @@ impl App {
                 flags,
                 screen,
                 pending_save,
+                sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig::load(),
                 ..Self::default()
             },
             Task::batch(commands),
@@ -1486,9 +1489,10 @@ impl App {
                 }
                 Task::none()
             }
-            Message::DaemonStatusChecked(running, sync_status) => {
+            Message::DaemonStatusChecked(running, sync_status, game_list) => {
                 self.daemon_running = running;
                 self.sync_status = sync_status;
+                self.game_list = game_list;
                 Task::none()
             }
             Message::Config { event } => {
@@ -2988,7 +2992,16 @@ impl App {
                 }
             };
 
-            Message::DaemonStatusChecked(running, sync_status)
+            let game_list = {
+                let path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                if let Some(content) = path.read() {
+                    serde_json::from_str::<ludusavi::sync::game_list::GameListFile>(&content)
+                        .unwrap_or_default()
+                } else {
+                    ludusavi::sync::game_list::GameListFile::default()
+                }
+            };
+            Message::DaemonStatusChecked(running, sync_status, game_list)
         }));
 
         iced::Subscription::batch(subscriptions)
