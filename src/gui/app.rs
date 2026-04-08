@@ -3191,12 +3191,13 @@ impl App {
                             .on_press(Message::SwitchScreen(Screen::Backup)),
                     );
                 
-                let search_row = self.backup_screen.log.search.view(
-                    Screen::Backup,
-                    &self.text_histories,
-                    self.config.scan.show_deselected_games,
-                    vec![],
-                );
+                let search_row = crate::gui::widget::TextInput::new(
+                    "Search games...",
+                    &self.games_search,
+                )
+                .on_input(Message::GamesSearchChanged)
+                .padding([8, 12])
+                .size(13);
                 
                 let table_header = Row::new()
                     .padding([8, 16])
@@ -3375,6 +3376,7 @@ impl App {
                         Container::new(search_row)
                             .width(Length::Fill)
                             .padding([8, 24])
+                            .class(style::Container::TopBar)
                     })
                     .push(
                         Container::new(table)
