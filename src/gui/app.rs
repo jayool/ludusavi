@@ -2171,7 +2171,7 @@ impl App {
                             self.custom_games_screen.filter.enabled = !self.custom_games_screen.filter.enabled;
                             task = Some(iced::widget::operation::focus(id::custom_games_search()));
                         }
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::ToggledFilter { filter, enabled } => match self.screen {
                         Screen::Backup => {
@@ -2181,7 +2181,7 @@ impl App {
                             self.restore_screen.log.search.toggle_filter(filter, enabled);
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedGameName(value) => match self.screen {
                         Screen::Backup => {
@@ -2196,7 +2196,7 @@ impl App {
                             self.text_histories.custom_games_search_game_name.push(&value);
                             self.custom_games_screen.filter.name = value;
                         }
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::Reset => match self.screen {
                         Screen::Backup => {
@@ -2211,7 +2211,7 @@ impl App {
                             self.custom_games_screen.filter.reset();
                             self.text_histories.custom_games_search_game_name.push("");
                         }
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterUniqueness(value) => match self.screen {
                         Screen::Backup => {
@@ -2221,7 +2221,7 @@ impl App {
                             self.restore_screen.log.search.uniqueness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterCompleteness(value) => match self.screen {
                         Screen::Backup => {
@@ -2231,7 +2231,7 @@ impl App {
                             self.restore_screen.log.search.completeness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterEnablement(value) => match self.screen {
                         Screen::Backup => {
@@ -2241,7 +2241,7 @@ impl App {
                             self.restore_screen.log.search.enablement.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterChange(value) => match self.screen {
                         Screen::Backup => {
@@ -2251,7 +2251,7 @@ impl App {
                             self.restore_screen.log.search.change.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterManifest(value) => match self.screen {
                         Screen::Backup => {
@@ -2261,7 +2261,7 @@ impl App {
                             self.restore_screen.log.search.manifest.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                 }
 
@@ -3301,8 +3301,14 @@ impl App {
                         )
                         .width(Length::Fill)
                         .class(style::Container::GamesTableRow);
+                        let name_for_click = name.clone();
+                        let clickable_row = crate::gui::widget::Button::new(row)
+                            .on_press(Message::SwitchScreen(Screen::GameDetail(name_for_click)))
+                            .width(Length::Fill)
+                            .padding(0)
+                            .class(style::Button::Bare);
 
-                        rows = rows.push(row);
+                        rows = rows.push(clickable_row);
                     }
                 }
 
@@ -3328,6 +3334,172 @@ impl App {
                         Container::new(table)
                             .width(Length::Fill)
                             .padding([24, 24]),
+                    );
+
+                ScrollSubject::Other.into_widget(content).into()
+            }
+            Screen::GameDetail(ref game_name) => {
+                let game_name = game_name.clone();
+                let meta = self.game_list.get_game(&game_name);
+                let mode = self.sync_games_config.get_mode(&game_name);
+                let status = self.sync_status.get(&game_name).map(|s| s.as_str()).unwrap_or("");
+                let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create().id;
+
+                let header = Container::new(
+                    Row::new()
+                        .padding([0, 24])
+                        .height(52)
+                        .align_y(Alignment::Center)
+                        .push(crate::gui::widget::text(game_name.clone()).size(15).width(Length::Fill))
+                        .push(
+                            crate::gui::widget::Button::new(crate::gui::widget::text("← Back").size(13))
+                                .padding([7, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::SwitchScreen(Screen::Games)),
+                        ),
+                )
+                .width(Length::Fill)
+                .class(style::Container::TopBar);
+
+                // Sync status card
+                let status_card = {
+                    let (status_text, status_detail) = match (mode, status) {
+                        (ludusavi::sync::sync_config::SaveMode::Sync, "synced") => (
+                            "✓ Game files are up to date on this device",
+                            meta.and_then(|m| m.last_sync_time_utc)
+                                .map(|t| format!("Last synced on {}", t.format("%Y-%m-%d at %H:%M")))
+                                .unwrap_or_else(|| "No sync data available".to_string()),
+                        ),
+                        (ludusavi::sync::sync_config::SaveMode::Sync, _) => (
+                            "⚠ Sync pending",
+                            "This game has not been synced yet or sync is pending.".to_string(),
+                        ),
+                        (ludusavi::sync::sync_config::SaveMode::Local, _) => (
+                            "💾 Local backup only",
+                            "This game uses local backup only. Enable Sync mode to sync across devices.".to_string(),
+                        ),
+                        (ludusavi::sync::sync_config::SaveMode::Cloud, _) => (
+                            "☁ Cloud backup",
+                            "This game is backed up to the cloud manually.".to_string(),
+                        ),
+                    };
+
+                    Container::new(
+                        Column::new()
+                            .spacing(6)
+                            .push(crate::gui::widget::text(status_text).size(13))
+                            .push(crate::gui::widget::text(status_detail).size(12).class(style::Text::Muted)),
+                    )
+                    .width(Length::Fill)
+                    .padding(14)
+                    .class(style::Container::GameListEntry)
+                };
+
+                // Save mode section
+                let mode_text = match mode {
+                    ludusavi::sync::sync_config::SaveMode::Local => "LOCAL — Backup local only",
+                    ludusavi::sync::sync_config::SaveMode::Cloud => "CLOUD — Cloud backup",
+                    ludusavi::sync::sync_config::SaveMode::Sync => "SYNC — Bidirectional sync",
+                };
+
+                let settings_card = Container::new(
+                    Column::new()
+                        .spacing(10)
+                        .push(crate::gui::widget::text("SAVE MODE").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text(mode_text).size(13))
+                        .push(crate::gui::widget::text("SAVE LOCATION").size(11).class(style::Text::Muted))
+                        .push(
+                            meta.and_then(|m| m.path_by_device.get(&device_id))
+                                .map(|path| {
+                                    Container::new(
+                                        crate::gui::widget::text(path.clone())
+                                            .size(12)
+                                            .class(style::Text::Dim),
+                                    )
+                                    .width(Length::Fill)
+                                    .padding([8, 10])
+                                    .class(style::Container::GamesTableRow)
+                                })
+                                .unwrap_or_else(|| {
+                                    Container::new(
+                                        crate::gui::widget::text("No save location detected")
+                                            .size(12)
+                                            .class(style::Text::Muted),
+                                    )
+                                    .width(Length::Fill)
+                                    .padding([8, 10])
+                                    .class(style::Container::GamesTableRow)
+                                }),
+                        ),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable);
+
+                // Devices section
+                let devices_card = {
+                    let mut devices_col = Column::new()
+                        .spacing(6)
+                        .push(crate::gui::widget::text("DEVICES").size(11).class(style::Text::Muted));
+
+                    if let Some(meta) = meta {
+                        for (dev_id, path) in &meta.path_by_device {
+                            let is_this = dev_id == &device_id;
+                            devices_col = devices_col.push(
+                                Container::new(
+                                    Row::new()
+                                        .spacing(10)
+                                        .align_y(Alignment::Center)
+                                        .push(
+                                            Column::new()
+                                                .push(
+                                                    Row::new()
+                                                        .spacing(6)
+                                                        .push(crate::gui::widget::text(dev_id.clone()).size(13))
+                                                        .push_if(is_this, || {
+                                                            crate::gui::widget::text("THIS DEVICE")
+                                                                .size(10)
+                                                                .class(style::Text::Accent)
+                                                        }),
+                                                )
+                                                .push(
+                                                    crate::gui::widget::text(path.clone())
+                                                        .size(11)
+                                                        .class(style::Text::Muted),
+                                                ),
+                                        ),
+                                )
+                                .width(Length::Fill)
+                                .padding([8, 10])
+                                .class(style::Container::GamesTableRow),
+                            );
+                        }
+                    } else {
+                        devices_col = devices_col.push(
+                            crate::gui::widget::text("No devices found. Run a sync to register this device.")
+                                .size(12)
+                                .class(style::Text::Muted),
+                        );
+                    }
+
+                    Container::new(devices_col)
+                        .width(Length::Fill)
+                        .padding(16)
+                        .class(style::Container::GamesTable)
+                };
+
+                let content = Column::new()
+                    .push(header)
+                    .push(
+                        Container::new(
+                            Column::new()
+                                .spacing(16)
+                                .padding([24, 24])
+                                .push(status_card)
+                                .push(settings_card)
+                                .push(devices_card),
+                        )
+                        .width(Length::Fill),
                     );
 
                 ScrollSubject::Other.into_widget(content).into()
