@@ -114,7 +114,7 @@ pub enum Message {
     CloseModal,
     UpdateTime,
     PruneNotifications,
-    DaemonStatusChecked(bool, std::collections::HashMap<String, String>),
+    DaemonStatusChecked(bool, std::collections::HashMap<String, String>, ludusavi::sync::game_list::GameListFile),
     Config {
         event: config::Event,
     },
