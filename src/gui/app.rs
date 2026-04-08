@@ -1500,6 +1500,11 @@ impl App {
                 self.sync_games_config.save();
                 Task::none()
             }
+            Message::SetGameAutoSync(game, auto_sync) => {
+                self.sync_games_config.set_auto_sync(&game, auto_sync);
+                self.sync_games_config.save();
+                Task::none()
+            }
             Message::Config { event } => {
                 let mut task = None;
 
@@ -3151,18 +3156,44 @@ impl App {
                 let sync_status = &self.sync_status;
                 let sync_config = &self.sync_games_config;
 
-                let header = Row::new()
+            let header = Row::new()
                     .padding([0, 24])
                     .height(52)
                     .align_y(Alignment::Center)
                     .push(crate::gui::widget::text("Games").size(15).width(Length::Fill))
+                    .push(
+                        crate::gui::widget::Button::new(crate::gui::widget::text("🔍 Search").size(13))
+                            .padding([7, 14])
+                            .class(style::Button::Ghost)
+                            .on_press(Message::Filter { event: crate::scan::game_filter::Event::Toggled }),
+                    )
+                    .push(crate::gui::widget::Space::new().width(8))
+                    .push(
+                        crate::gui::widget::Button::new(crate::gui::widget::text("Scan now").size(13))
+                            .padding([7, 14])
+                            .class(style::Button::Ghost)
+                            .on_press(Message::Backup(BackupPhase::Start {
+                                preview: true,
+                                repair: false,
+                                jump: false,
+                                games: None,
+                            })),
+                    )
+                    .push(crate::gui::widget::Space::new().width(8))
                     .push(
                         crate::gui::widget::Button::new(crate::gui::widget::text("+ Add game").size(13))
                             .padding([7, 14])
                             .class(style::Button::Primary)
                             .on_press(Message::SwitchScreen(Screen::Backup)),
                     );
-
+                
+                let search_row = self.backup_screen.log.search.view(
+                    Screen::Backup,
+                    &self.text_histories,
+                    self.config.scan.show_deselected_games,
+                    vec![],
+                );
+                
                 let table_header = Row::new()
                     .padding([8, 16])
                     .push(crate::gui::widget::text("").width(20))
@@ -3335,6 +3366,11 @@ impl App {
                             .width(Length::Fill)
                             .class(style::Container::TopBar),
                     )
+                    .push_if(self.backup_screen.log.search.show, || {
+                        Container::new(search_row)
+                            .width(Length::Fill)
+                            .padding([8, 24])
+                    })
                     .push(
                         Container::new(table)
                             .width(Length::Fill)
@@ -3472,6 +3508,44 @@ impl App {
                                     .padding([8, 10])
                                     .class(style::Container::GamesTableRow)
                                 }),
+                        )
+                        .push_if(
+                            !matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Sync),
+                            || {
+                                let auto_sync = self.sync_games_config.get_auto_sync(&game_name);
+                                let g = game_name.clone();
+                                Column::new()
+                                    .spacing(6)
+                                    .push(crate::gui::widget::text("AUTO SYNC").size(11).class(style::Text::Muted))
+                                    .push(
+                                        Row::new()
+                                            .spacing(10)
+                                            .align_y(Alignment::Center)
+                                            .push(
+                                                crate::gui::widget::Button::new(
+                                                    crate::gui::widget::text(if auto_sync { "ON" } else { "OFF" }).size(12)
+                                                )
+                                                .padding([6, 14])
+                                                .class(if auto_sync {
+                                                    style::Button::Primary
+                                                } else {
+                                                    style::Button::Ghost
+                                                })
+                                                .on_press(Message::SetGameAutoSync(g, !auto_sync))
+                                            )
+                                            .push(
+                                                crate::gui::widget::text(
+                                                    if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local) {
+                                                        "Automatically backup when saves change"
+                                                    } else {
+                                                        "Automatically backup and upload when saves change"
+                                                    }
+                                                )
+                                                .size(12)
+                                                .class(style::Text::Muted)
+                                            ),
+                                    )
+                            }
                         ),
                 )
                 .width(Length::Fill)
