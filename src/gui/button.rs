@@ -325,6 +325,12 @@ pub fn nav<'a>(screen: Screen, current_screen: Screen) -> Button<'a> {
         Screen::Restore => TRANSLATOR.nav_restore_button(),
         Screen::CustomGames => TRANSLATOR.nav_custom_games_button(),
         Screen::Other => TRANSLATOR.nav_other_button(),
+        Screen::Games | Screen::ThisDevice | Screen::AllDevices => return Button::new(
+            text("").size(14).align_x(alignment::Horizontal::Center)
+        )
+        .on_press(Message::SwitchScreen(screen))
+        .padding([5, 20])
+        .class(style::Button::NavButtonInactive),
     };
 
     Button::new(text(label).size(14).align_x(alignment::Horizontal::Center))
