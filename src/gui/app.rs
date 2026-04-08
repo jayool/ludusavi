@@ -3235,7 +3235,8 @@ impl App {
                         };
 
                         // Mode badge text
-                        let mode_text = match mode {
+                         let mode_text = match mode {
+                            ludusavi::sync::sync_config::SaveMode::None => "—",
                             ludusavi::sync::sync_config::SaveMode::Local => "LOCAL",
                             ludusavi::sync::sync_config::SaveMode::Cloud => "CLOUD",
                             ludusavi::sync::sync_config::SaveMode::Sync => "SYNC",
