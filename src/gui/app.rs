@@ -3343,7 +3343,7 @@ impl App {
                 let meta = self.game_list.get_game(&game_name);
                 let mode = self.sync_games_config.get_mode(&game_name);
                 let status = self.sync_status.get(&game_name).map(|s| s.as_str()).unwrap_or("");
-                let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create().id;
+                let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir()).id;
 
                 let header = Container::new(
                     Row::new()
