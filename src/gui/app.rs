@@ -3227,8 +3227,12 @@ impl App {
                         .padding([24, 16]),
                     );
                 } else {
+                    let search_lower = self.games_search.to_lowercase();
                     for entry in entries {
                         let name = &entry.scan_info.game_name;
+                        if !search_lower.is_empty() && !name.to_lowercase().contains(&search_lower) {
+                            continue;
+                        }
                         let mode = sync_config.get_mode(name);
                         let status = sync_status.get(name).map(|s| s.as_str()).unwrap_or("");
                         let meta = game_list.get_game(name);
