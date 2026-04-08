@@ -3642,7 +3642,231 @@ impl App {
 
                 ScrollSubject::Other.into_widget(content).into()
             }
-            Screen::ThisDevice | Screen::AllDevices | Screen::Other => screen::other(
+            Screen::ThisDevice => {
+                let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
+                let device_id_short = format!("{}...", &device.id[..8]);
+
+                let monitored_games: Vec<String> = self.game_list.games.iter()
+                    .filter(|g| g.path_by_device.contains_key(&device.id))
+                    .map(|g| g.name.clone())
+                    .collect();
+
+                let last_sync = {
+                    let path = crate::prelude::app_dir().joined("daemon-state.json");
+                    path.read()
+                        .and_then(|content| {
+                            serde_json::from_str::<serde_json::Value>(&content).ok()
+                        })
+                        .and_then(|json| json.get("last_known_mod_time").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+                        .map(|t| {
+                            let now = chrono::Utc::now();
+                            let diff = now.signed_duration_since(t.with_timezone(&chrono::Utc));
+                            if diff.num_minutes() < 1 {
+                                "just now".to_string()
+                            } else if diff.num_hours() < 1 {
+                                format!("{} min ago", diff.num_minutes())
+                            } else if diff.num_hours() < 24 {
+                                format!("{} hours ago", diff.num_hours())
+                            } else {
+                                format!("{} days ago", diff.num_days())
+                            }
+                        })
+                        .unwrap_or_else(|| "Never".to_string())
+                };
+
+                let provider_name = match &self.config.cloud.remote {
+                    Some(crate::cloud::Remote::GoogleDrive { .. }) => "Google Drive",
+                    Some(crate::cloud::Remote::Dropbox { .. }) => "Dropbox",
+                    Some(crate::cloud::Remote::OneDrive { .. }) => "OneDrive",
+                    Some(crate::cloud::Remote::Box { .. }) => "Box",
+                    Some(crate::cloud::Remote::Ftp { .. }) => "FTP",
+                    Some(crate::cloud::Remote::Smb { .. }) => "SMB",
+                    Some(crate::cloud::Remote::WebDav { .. }) => "WebDAV",
+                    Some(crate::cloud::Remote::Custom { .. }) => "Custom",
+                    None => "Not configured",
+                };
+
+                let remote_id = self.config.cloud.remote.as_ref()
+                    .map(|r| r.id().to_string())
+                    .unwrap_or_else(|| "—".to_string());
+
+                let rclone_ok = self.config.apps.rclone.is_valid();
+
+                let header = Container::new(
+                    Row::new()
+                        .padding([0, 24])
+                        .height(52)
+                        .align_y(Alignment::Center)
+                        .push(crate::gui::widget::text("This device").size(15).width(Length::Fill)),
+                )
+                .width(Length::Fill)
+                .class(style::Container::TopBar);
+
+                // DEVICE card
+                let log_path = crate::prelude::app_dir().joined("daemon.log").render();
+                let device_card = Container::new(
+                    Column::new()
+                        .spacing(10)
+                        .push(crate::gui::widget::text("DEVICE").size(11).class(style::Text::Muted))
+                        .push(
+                            Row::new()
+                                .spacing(16)
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Column::new()
+                                        .width(Length::Fill)
+                                        .spacing(4)
+                                        .push(crate::gui::widget::text(device.name.clone()).size(14))
+                                        .push(crate::gui::widget::text(device_id_short).size(11).class(style::Text::Muted)),
+                                )
+                                .push(
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("Open logs").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(style::Button::Ghost)
+                                    .on_press(Message::OpenDir {
+                                        path: crate::prelude::app_dir(),
+                                    }),
+                                ),
+                        ),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable);
+
+                // SYNC DAEMON card
+                let daemon_card = Container::new(
+                    Column::new()
+                        .spacing(10)
+                        .push(crate::gui::widget::text("SYNC DAEMON").size(11).class(style::Text::Muted))
+                        .push(
+                            Row::new()
+                                .spacing(8)
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(8)
+                                        .height(8)
+                                        .class(if self.daemon_running {
+                                            style::Container::DaemonDotActive
+                                        } else {
+                                            style::Container::DaemonDotInactive
+                                        }),
+                                )
+                                .push(
+                                    crate::gui::widget::text(if self.daemon_running {
+                                        "Daemon is running"
+                                    } else {
+                                        "Daemon is stopped"
+                                    })
+                                    .size(13)
+                                    .class(if self.daemon_running {
+                                        style::Text::Green
+                                    } else {
+                                        style::Text::Muted
+                                    }),
+                                ),
+                        )
+                        .push(
+                            Row::new()
+                                .spacing(6)
+                                .push(crate::gui::widget::text("Last sync:").size(12).class(style::Text::Muted))
+                                .push(crate::gui::widget::text(last_sync).size(12).class(style::Text::Dim)),
+                        )
+                        .push(
+                            Column::new()
+                                .spacing(4)
+                                .push(crate::gui::widget::text("Monitoring:").size(12).class(style::Text::Muted))
+                                .push(if monitored_games.is_empty() {
+                                    crate::gui::widget::text("No games registered for this device")
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                } else {
+                                    crate::gui::widget::text(monitored_games.join(", "))
+                                        .size(12)
+                                        .class(style::Text::Dim)
+                                }),
+                        ),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable);
+
+                // CLOUD STORAGE card
+                let cloud_card = Container::new(
+                    Column::new()
+                        .spacing(10)
+                        .push(crate::gui::widget::text("CLOUD STORAGE").size(11).class(style::Text::Muted))
+                        .push(
+                            Row::new()
+                                .spacing(6)
+                                .push(crate::gui::widget::text("Provider:").size(12).class(style::Text::Muted))
+                                .push(crate::gui::widget::text(provider_name).size(12).class(style::Text::Dim)),
+                        )
+                        .push(
+                            Row::new()
+                                .spacing(6)
+                                .push(crate::gui::widget::text("Remote:").size(12).class(style::Text::Muted))
+                                .push(crate::gui::widget::text(remote_id).size(12).class(style::Text::Dim)),
+                        )
+                        .push(
+                            Row::new()
+                                .spacing(6)
+                                .push(crate::gui::widget::text("Path:").size(12).class(style::Text::Muted))
+                                .push(crate::gui::widget::text(self.config.cloud.path.clone()).size(12).class(style::Text::Dim)),
+                        )
+                        .push(
+                            Row::new()
+                                .spacing(8)
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(8)
+                                        .height(8)
+                                        .class(if rclone_ok {
+                                            style::Container::DaemonDotActive
+                                        } else {
+                                            style::Container::DaemonDotInactive
+                                        }),
+                                )
+                                .push(
+                                    crate::gui::widget::text(if rclone_ok {
+                                        "rclone configured"
+                                    } else {
+                                        "rclone not configured"
+                                    })
+                                    .size(12)
+                                    .class(if rclone_ok {
+                                        style::Text::Green
+                                    } else {
+                                        style::Text::Muted
+                                    }),
+                                ),
+                        ),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable);
+
+                let content = Column::new()
+                    .push(header)
+                    .push(
+                        Container::new(
+                            Column::new()
+                                .spacing(16)
+                                .padding([24, 24])
+                                .push(device_card)
+                                .push(daemon_card)
+                                .push(cloud_card),
+                        )
+                        .width(Length::Fill),
+                    );
+
+                ScrollSubject::Other.into_widget(content).into()
+            }
+            Screen::AllDevices | Screen::Other => screen::other(
                 self.updating_manifest,
                 &self.config,
                 &self.cache,
