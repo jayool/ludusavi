@@ -13,6 +13,12 @@ pub enum SaveMode {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GameSyncConfig {
     pub mode: SaveMode,
+    #[serde(default = "default_true")]
+    pub auto_sync: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -59,5 +65,13 @@ impl SyncGamesConfig {
             .entry(game.to_string())
             .or_default()
             .mode = mode;
+    }
+    
+    pub fn get_auto_sync(&self, game: &str) -> bool {
+        self.games.get(game).map(|c| c.auto_sync).unwrap_or(true)
+    }
+
+    pub fn set_auto_sync(&mut self, game: &str, auto_sync: bool) {
+        self.games.entry(game.to_string()).or_default().auto_sync = auto_sync;
     }
 }
