@@ -233,7 +233,7 @@ impl App {
 
     fn register_notify_on_single_game_scanned(&mut self) {
         if let Some(GameSelection::Single { game }) = self.operation.games() {
-            self.notify_on_single_game_scanned = Some((game.clone(), self.screen));
+            self.notify_on_single_game_scanned = Some((game.clone(), self.screen.clone()));
         }
     }
 
@@ -1288,7 +1288,7 @@ impl App {
         if !self.modals.is_empty() {
             ScrollSubject::Modal
         } else {
-            ScrollSubject::from(self.screen)
+            ScrollSubject::from(self.screen.clone())
         }
     }
 
@@ -3040,7 +3040,7 @@ impl App {
                 crate::gui::widget::Button::new(
                     crate::gui::widget::text(label).size(13),
                 )
-                .on_press(Message::SwitchScreen(screen))
+                .on_press(Message::SwitchScreen(screen.clone()))
                 .width(Length::Fill)
                 .padding([8, 10])
                 .class(if active {
