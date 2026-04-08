@@ -3428,6 +3428,10 @@ impl App {
                             "☁ Cloud backup",
                             "This game is backed up to the cloud manually.".to_string(),
                         ),
+                        (ludusavi::sync::sync_config::SaveMode::None, _) => (
+                            "— Not managed",
+                            "This game is not managed by Save Sync.".to_string(),
+                        ),
                     };
 
                     Container::new(
