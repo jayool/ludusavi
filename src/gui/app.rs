@@ -3022,7 +3022,7 @@ impl App {
             .padding([16, 14]);
 
             // Nav items
-            let nav_item = |label: &str, screen: Screen| -> Element {
+            let nav_item = |label: &'static str, screen: Screen| -> Element {
                 let active = self.screen == screen;
                 crate::gui::widget::Button::new(
                     crate::gui::widget::text(label).size(13),
