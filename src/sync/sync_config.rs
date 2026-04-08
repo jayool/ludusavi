@@ -24,7 +24,9 @@ impl SyncGamesConfig {
     const FILE_NAME: &'static str = "sync-games.json";
 
     pub fn path() -> std::path::PathBuf {
-        crate::prelude::app_dir().as_std_path_buf().join(Self::FILE_NAME)
+        let app_dir = crate::prelude::app_dir();
+        let rendered = app_dir.render();
+        std::path::PathBuf::from(rendered).join(Self::FILE_NAME)
     }
 
     pub fn load() -> Self {
