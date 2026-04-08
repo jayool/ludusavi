@@ -441,7 +441,6 @@ impl GameList {
                         histories,
                         config.scan.show_deselected_games,
                         self.manifests(manifest),
-                        false,
                     )
                 })
                 .push({
