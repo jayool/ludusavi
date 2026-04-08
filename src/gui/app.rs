@@ -2181,9 +2181,13 @@ impl App {
                             self.custom_games_screen.filter.enabled = !self.custom_games_screen.filter.enabled;
                             task = Some(iced::widget::operation::focus(id::custom_games_search()));
                         }
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Games => {
+                            self.backup_screen.log.search.show = !self.backup_screen.log.search.show;
+                            task = Some(iced::widget::operation::focus(id::backup_search()));
+                        }
+                        Screen::Other | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
-                    game_filter::Event::ToggledFilter { filter, enabled } => match self.screen {
+                    game_filter::Event::ToggledFilter
                         Screen::Backup => {
                             self.backup_screen.log.search.toggle_filter(filter, enabled);
                         }
