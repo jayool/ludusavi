@@ -3196,7 +3196,6 @@ impl App {
                     &self.text_histories,
                     self.config.scan.show_deselected_games,
                     vec![],
-                    true,
                 );
                 
                 let table_header = Row::new()
