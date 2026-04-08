@@ -316,6 +316,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
             } else {
+                write_game_list_local(&app_dir, &game_list);
                 // Actualizar mod time para que el polling no redetecte nuestro propio upload
                 last_known_mod_time = crate::sync::operations::get_game_list_mod_time(&config);
                 save_last_mod_time(&app_dir, &last_known_mod_time);
@@ -520,6 +521,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
         .filter(|g| g.path_by_device.contains_key(&device.id))
         .map(|g| g.id.clone())
         .collect();
+    write_game_list_local(app_dir, &game_list);
     write_sync_status(app_dir, &synced_games);
 
     Ok(())
@@ -594,9 +596,19 @@ fn check_downloads_and_rewatch(
         .filter(|g| g.path_by_device.contains_key(&device.id))
         .map(|g| g.id.clone())
         .collect();
+    write_game_list_local(app_dir, &game_list);
     write_sync_status(app_dir, &synced_games);
 
     Ok(())
+}
+
+fn write_game_list_local(app_dir: &StrictPath, game_list: &crate::sync::game_list::GameListFile) {
+    let path = app_dir.joined("ludusavi-game-list.json");
+    if let Ok(content) = serde_json::to_string_pretty(game_list) {
+        if let Ok(path_buf) = path.as_std_path_buf() {
+            let _ = std::fs::write(path_buf, content);
+        }
+    }
 }
 
 fn write_sync_status(app_dir: &StrictPath, synced_games: &std::collections::HashSet<String>) {
