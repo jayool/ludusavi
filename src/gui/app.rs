@@ -3938,11 +3938,7 @@ impl App {
                             })
                             .unwrap_or_else(|| "Never".to_string());
 
-                        let uuid_display = if dev_id.len() > 8 {
-                            format!("{}...", &dev_id[..8])
-                        } else {
-                            dev_id.clone()
-                        };
+                        let uuid_display = dev_id.clone();
 
                         let device_card = Container::new(
                             Column::new()
