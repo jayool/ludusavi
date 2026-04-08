@@ -5,6 +5,7 @@ use std::collections::HashMap;
 #[serde(rename_all = "camelCase")]
 pub enum SaveMode {
     #[default]
+    None,
     Local,
     Cloud,
     Sync,
@@ -57,7 +58,7 @@ impl SyncGamesConfig {
         self.games
             .get(game)
             .map(|c| &c.mode)
-            .unwrap_or(&SaveMode::Local)
+            .unwrap_or(&SaveMode::None)
     }
 
     pub fn set_mode(&mut self, game: &str, mode: SaveMode) {
