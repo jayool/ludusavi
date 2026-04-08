@@ -154,33 +154,9 @@ impl FilterComponent {
         histories: &TextHistories,
         show_deselected_games: bool,
         manifests: Vec<game_filter::Manifest>,
-        simple: bool,
     ) -> Option<Element> {
         if !self.show {
             return None;
-        }
-
-        if simple {
-            return Some(
-                Container::new(
-                    Container::new(
-                        Row::new()
-                            .padding(padding::left(5).right(5))
-                            .spacing(20)
-                            .align_y(Alignment::Center)
-                            .push(text(TRANSLATOR.filter_label()))
-                            .push(histories.input(match screen {
-                                Screen::Restore => UndoSubject::RestoreSearchGameName,
-                                _ => UndoSubject::BackupSearchGameName,
-                            }))
-                            .push(button::reset_filter(self.is_dirty())),
-                    )
-                    .class(style::Container::GameListEntry)
-                    .padding(padding::top(5).bottom(5)),
-                )
-                .padding(padding::left(15).right(15))
-                .into(),
-            );
         }
 
         let content = Column::new()
