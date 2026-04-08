@@ -2995,67 +2995,159 @@ impl App {
     }
 
     pub fn view(&self) -> Element {
-        let content = Column::new()
-            .align_x(Alignment::Center)
-            .push(
+        // --- SIDEBAR ---
+        let sidebar = {
+            // Logo
+            let logo = Container::new(
                 Row::new()
-                    .padding([10, 20])
-                    .spacing(20)
-                    .push(button::nav(Screen::Backup, self.screen))
-                    .push(button::nav(Screen::Restore, self.screen))
-                    .push(button::nav(Screen::CustomGames, self.screen))
-                    .push(button::nav(Screen::Other, self.screen)),
-            )
-            .push(match self.screen {
-                Screen::Backup => self.backup_screen.view(
-                    &self.config,
-                    &self.manifest.extended,
-                    &self.operation,
-                    &self.text_histories,
-                    &self.modifiers,
-                    self.daemon_running,
-                    &self.sync_status,
-                ),
-                Screen::Restore => self.restore_screen.view(
-                    &self.config,
-                    &self.manifest.extended,
-                    &self.operation,
-                    &self.text_histories,
-                    &self.modifiers,
-                    &self.sync_status,
-                    self.daemon_running,
-                ),
-                Screen::CustomGames => self.custom_games_screen.view(
-                    &self.config,
-                    &self.manifest.extended,
-                    !self.operation.idle(),
-                    &self.text_histories,
-                    &self.modifiers,
-                ),
-                Screen::Other => screen::other(
-                    self.updating_manifest,
-                    &self.config,
-                    &self.cache,
-                    &self.operation,
-                    &self.text_histories,
-                    &self.modifiers,
-                ),
-                Screen::Games | Screen::ThisDevice | Screen::AllDevices => {
-                    screen::other(
-                        self.updating_manifest,
-                        &self.config,
-                        &self.cache,
-                        &self.operation,
-                        &self.text_histories,
-                        &self.modifiers,
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Container::new(
+                            crate::gui::widget::text("💾").size(16)
+                        )
+                        .width(28)
+                        .height(28)
+                        .center_x(28)
+                        .center_y(28)
+                        .class(style::Container::Badge),
                     )
-                }
-            })
-            .push(self.timed_notification.as_ref().map(|x| x.view()))
-            .push(self.manifest_notification.as_ref().map(|x| x.view()));
+                    .push(
+                        Column::new()
+                            .push(crate::gui::widget::text("Ludusavi").size(15))
+                            .push(crate::gui::widget::text("SAVE SYNC").size(10).class(style::Text::Muted)),
+                    ),
+            )
+            .width(Length::Fill)
+            .padding([16, 14]);
+
+            // Nav items
+            let nav_item = |label: &str, screen: Screen| -> Element {
+                let active = self.screen == screen;
+                crate::gui::widget::Button::new(
+                    crate::gui::widget::text(label).size(13),
+                )
+                .on_press(Message::SwitchScreen(screen))
+                .width(Length::Fill)
+                .padding([8, 10])
+                .class(if active {
+                    style::Button::SidebarItemActive
+                } else {
+                    style::Button::SidebarItem
+                })
+                .into()
+            };
+
+            let nav = Column::new()
+                .padding([8, 8])
+                .spacing(2)
+                .push(nav_item("🎮  Games", Screen::Games))
+                .push(nav_item("🖥  This device", Screen::ThisDevice))
+                .push(nav_item("📡  All devices", Screen::AllDevices))
+                .push(
+                    crate::gui::widget::text("ADVANCED")
+                        .size(10)
+                        .class(style::Text::Muted)
+                        .width(Length::Fill),
+                )
+                .push(nav_item("📦  Backup", Screen::Backup))
+                .push(nav_item("↩  Restore", Screen::Restore))
+                .push(nav_item("🎮  Custom games", Screen::CustomGames))
+                .push(nav_item("ℹ  Other", Screen::Other));
+
+            // Daemon status pill
+            let daemon_pill = Container::new(
+                Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Container::new(crate::gui::widget::Space::new(7, 7))
+                            .class(style::Container::DaemonDotActive),
+                    )
+                    .push(
+                        crate::gui::widget::text(if self.daemon_running {
+                            "Sync daemon running"
+                        } else {
+                            "Sync daemon stopped"
+                        })
+                        .size(12)
+                        .class(if self.daemon_running {
+                            style::Text::Green
+                        } else {
+                            style::Text::Muted
+                        }),
+                    ),
+            )
+            .width(Length::Fill)
+            .padding([10, 12])
+            .class(if self.daemon_running {
+                style::Container::DaemonStatus
+            } else {
+                style::Container::GameListEntry
+            });
+
+            Container::new(
+                Column::new()
+                    .height(Length::Fill)
+                    .push(logo)
+                    .push(nav.height(Length::Fill))
+                    .push(Container::new(daemon_pill).padding([8, 8]).width(Length::Fill)),
+            )
+            .width(200)
+            .height(Length::Fill)
+            .class(style::Container::Sidebar)
+        };
+
+        // --- MAIN CONTENT ---
+        let main_content = match self.screen {
+            Screen::Backup => self.backup_screen.view(
+                &self.config,
+                &self.manifest.extended,
+                &self.operation,
+                &self.text_histories,
+                &self.modifiers,
+                self.daemon_running,
+                &self.sync_status,
+            ),
+            Screen::Restore => self.restore_screen.view(
+                &self.config,
+                &self.manifest.extended,
+                &self.operation,
+                &self.text_histories,
+                &self.modifiers,
+                &self.sync_status,
+                self.daemon_running,
+            ),
+            Screen::CustomGames => self.custom_games_screen.view(
+                &self.config,
+                &self.manifest.extended,
+                !self.operation.idle(),
+                &self.text_histories,
+                &self.modifiers,
+            ),
+            Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::Other => screen::other(
+                self.updating_manifest,
+                &self.config,
+                &self.cache,
+                &self.operation,
+                &self.text_histories,
+                &self.modifiers,
+            ),
+        };
+
+        let body = Row::new()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .push(sidebar)
+            .push(
+                Container::new(main_content)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .class(style::Container::ContentArea),
+            );
 
         let stack = Stack::new()
-            .push(Container::new(content).class(style::Container::Primary))
+            .push(Container::new(body).class(style::Container::Primary))
             .push(
                 self.modals
                     .last()
@@ -3067,6 +3159,8 @@ impl App {
             .height(Length::Fill)
             .push(stack)
             .push_if(self.progress.visible(), || self.progress.view(&self.operation))
+            .push(self.timed_notification.as_ref().map(|x| x.view()))
+            .push(self.manifest_notification.as_ref().map(|x| x.view()))
             .into()
     }
 }
