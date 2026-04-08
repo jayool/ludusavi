@@ -3040,7 +3040,7 @@ impl App {
                 crate::gui::widget::Button::new(
                     crate::gui::widget::text(label).size(13),
                 )
-                .on_press(Message::SwitchScreen(screen.clone()))
+                .on_press(Message::SwitchScreen(screen))
                 .width(Length::Fill)
                 .padding([8, 10])
                 .class(if active {
