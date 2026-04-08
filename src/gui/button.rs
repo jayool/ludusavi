@@ -334,7 +334,7 @@ pub fn nav<'a>(screen: Screen, current_screen: Screen) -> Button<'a> {
     };
 
     Button::new(text(label).size(14).align_x(alignment::Horizontal::Center))
-        .on_press(Message::SwitchScreen(screen))
+        .on_press(Message::SwitchScreen(screen.clone()))
         .padding([5, 20])
         .class(if current_screen == screen {
             style::Button::NavButtonActive
