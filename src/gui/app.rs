@@ -3463,6 +3463,7 @@ impl App {
                                     })
                                     .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::None))
                                 })
+                                .push({
                                     let g = game_for_mode.clone();
                                     crate::gui::widget::Button::new(
                                         crate::gui::widget::text("LOCAL").size(12)
