@@ -673,6 +673,7 @@ impl Operation {
 pub enum Screen {
     #[default]
     Games,
+    GameDetail(String),
     ThisDevice,
     AllDevices,
     Backup,
@@ -811,7 +812,7 @@ impl From<Screen> for ScrollSubject {
             Screen::Backup => Self::Backup,
             Screen::Restore => Self::Restore,
             Screen::CustomGames => Self::CustomGames,
-            Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => Self::Other,
+            Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => Self::Other,
         }
     }
 }
