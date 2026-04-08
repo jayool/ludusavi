@@ -2167,7 +2167,7 @@ impl App {
                             self.custom_games_screen.filter.enabled = !self.custom_games_screen.filter.enabled;
                             task = Some(iced::widget::operation::focus(id::custom_games_search()));
                         }
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::ToggledFilter { filter, enabled } => match self.screen {
                         Screen::Backup => {
@@ -2177,7 +2177,7 @@ impl App {
                             self.restore_screen.log.search.toggle_filter(filter, enabled);
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedGameName(value) => match self.screen {
                         Screen::Backup => {
@@ -2192,7 +2192,7 @@ impl App {
                             self.text_histories.custom_games_search_game_name.push(&value);
                             self.custom_games_screen.filter.name = value;
                         }
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::Reset => match self.screen {
                         Screen::Backup => {
@@ -2207,7 +2207,7 @@ impl App {
                             self.custom_games_screen.filter.reset();
                             self.text_histories.custom_games_search_game_name.push("");
                         }
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterUniqueness(value) => match self.screen {
                         Screen::Backup => {
@@ -2217,7 +2217,7 @@ impl App {
                             self.restore_screen.log.search.uniqueness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterCompleteness(value) => match self.screen {
                         Screen::Backup => {
@@ -2227,7 +2227,7 @@ impl App {
                             self.restore_screen.log.search.completeness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterEnablement(value) => match self.screen {
                         Screen::Backup => {
@@ -2237,7 +2237,7 @@ impl App {
                             self.restore_screen.log.search.enablement.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterChange(value) => match self.screen {
                         Screen::Backup => {
@@ -2247,7 +2247,7 @@ impl App {
                             self.restore_screen.log.search.change.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterManifest(value) => match self.screen {
                         Screen::Backup => {
@@ -2257,7 +2257,7 @@ impl App {
                             self.restore_screen.log.search.manifest.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other => {}
+                        Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                 }
 
