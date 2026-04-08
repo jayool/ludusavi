@@ -3040,6 +3040,16 @@ impl App {
                     &self.text_histories,
                     &self.modifiers,
                 ),
+                Screen::Games | Screen::ThisDevice | Screen::AllDevices => {
+                    screen::other(
+                        self.updating_manifest,
+                        &self.config,
+                        &self.cache,
+                        &self.operation,
+                        &self.text_histories,
+                        &self.modifiers,
+                    )
+                }
             })
             .push(self.timed_notification.as_ref().map(|x| x.view()))
             .push(self.manifest_notification.as_ref().map(|x| x.view()));
