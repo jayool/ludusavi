@@ -669,7 +669,7 @@ impl Operation {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum Screen {
     #[default]
     Games,
