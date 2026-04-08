@@ -119,6 +119,7 @@ pub struct App {
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
     sync_status: std::collections::HashMap<String, String>,
+    games_search: String,
     game_list: ludusavi::sync::game_list::GameListFile,
     sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
 }
