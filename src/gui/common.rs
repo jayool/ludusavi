@@ -117,6 +117,7 @@ pub enum Message {
     DaemonStatusChecked(bool, std::collections::HashMap<String, String>, ludusavi::sync::game_list::GameListFile),
     SetGameSaveMode(String, ludusavi::sync::sync_config::SaveMode),
     SetGameAutoSync(String, bool),
+    GamesSearchChanged(String),
     Config {
         event: config::Event,
     },
