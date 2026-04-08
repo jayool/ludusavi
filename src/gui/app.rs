@@ -3061,7 +3061,9 @@ impl App {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(
-                        Container::new(crate::gui::widget::Space::new(7, 7))
+                        Container::new(crate::gui::widget::Space::new())
+                            .width(7)
+                            .height(7)
                             .class(style::Container::DaemonDotActive),
                     )
                     .push(
