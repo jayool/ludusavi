@@ -1495,6 +1495,11 @@ impl App {
                 self.game_list = game_list;
                 Task::none()
             }
+            Message::SetGameSaveMode(game, mode) => {
+                self.sync_games_config.set_mode(&game, mode);
+                self.sync_games_config.save();
+                Task::none()
+            }
             Message::Config { event } => {
                 let mut task = None;
 
@@ -3395,18 +3400,55 @@ impl App {
                     .class(style::Container::GameListEntry)
                 };
 
-                // Save mode section
-                let mode_text = match mode {
-                    ludusavi::sync::sync_config::SaveMode::Local => "LOCAL — Backup local only",
-                    ludusavi::sync::sync_config::SaveMode::Cloud => "CLOUD — Cloud backup",
-                    ludusavi::sync::sync_config::SaveMode::Sync => "SYNC — Bidirectional sync",
-                };
-
+                let game_for_mode = game_name.clone();
+                let current_mode = mode.clone();
                 let settings_card = Container::new(
                     Column::new()
                         .spacing(10)
                         .push(crate::gui::widget::text("SAVE MODE").size(11).class(style::Text::Muted))
-                        .push(crate::gui::widget::text(mode_text).size(13))
+                        .push(
+                            Row::new()
+                                .spacing(8)
+                                .push({
+                                    let g = game_for_mode.clone();
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("LOCAL").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local) {
+                                        style::Button::Primary
+                                    } else {
+                                        style::Button::Ghost
+                                    })
+                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Local))
+                                })
+                                .push({
+                                    let g = game_for_mode.clone();
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("CLOUD").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Cloud) {
+                                        style::Button::Primary
+                                    } else {
+                                        style::Button::Ghost
+                                    })
+                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Cloud))
+                                })
+                                .push({
+                                    let g = game_for_mode.clone();
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("SYNC").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Sync) {
+                                        style::Button::Primary
+                                    } else {
+                                        style::Button::Ghost
+                                    })
+                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Sync))
+                                }),
+                        )
                         .push(crate::gui::widget::text("SAVE LOCATION").size(11).class(style::Text::Muted))
                         .push(
                             meta.and_then(|m| m.path_by_device.get(&device_id))
