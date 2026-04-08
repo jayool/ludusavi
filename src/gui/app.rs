@@ -1501,6 +1501,10 @@ impl App {
                 self.sync_games_config.save();
                 Task::none()
             }
+            Message::GamesSearchChanged(query) => {
+                self.games_search = query;
+                Task::none()
+            }
             Message::SetGameAutoSync(game, auto_sync) => {
                 self.sync_games_config.set_auto_sync(&game, auto_sync);
                 self.sync_games_config.save();
