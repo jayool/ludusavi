@@ -3103,10 +3103,13 @@ impl App {
                 .push(nav_item("🖥  This device", Screen::ThisDevice))
                 .push(nav_item("📡  All devices", Screen::AllDevices))
                 .push(
-                    crate::gui::widget::text("ADVANCED")
-                        .size(10)
-                        .class(style::Text::Muted)
-                        .width(Length::Fill),
+                    Container::new(
+                        crate::gui::widget::text("ADVANCED")
+                            .size(10)
+                            .class(style::Text::Muted)
+                            .width(Length::Fill),
+                    )
+                    .padding(iced::padding::top(12).bottom(4).left(10).right(10)),
                 )
                 .push(nav_item("📦  Backup", Screen::Backup))
                 .push(nav_item("↩  Restore", Screen::Restore))
@@ -3122,7 +3125,11 @@ impl App {
                         Container::new(crate::gui::widget::Space::new())
                             .width(7)
                             .height(7)
-                            .class(style::Container::DaemonDotActive),
+                            .class(if self.daemon_running {
+                                style::Container::DaemonDotActive
+                            } else {
+                                style::Container::DaemonDotInactive
+                            }),
                     )
                     .push(
                         crate::gui::widget::text(if self.daemon_running {
