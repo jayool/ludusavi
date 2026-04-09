@@ -3367,7 +3367,9 @@ impl App {
                                 )
                                 .push({
                                     let _game_name = name.clone();
+                                    let game_for_menu = name.clone();
                                     let options = match mode {
+                                        ludusavi::sync::sync_config::SaveMode::None => vec![],
                                         ludusavi::sync::sync_config::SaveMode::Sync => vec![
                                             "Sync now",
                                             "Force upload",
@@ -3380,7 +3382,25 @@ impl App {
                                     Container::new(
                                         crate::gui::popup_menu::PopupMenu::new(
                                             options,
-                                            move |_action| Message::SwitchScreen(Screen::Backup),
+                                            move |action| match action {
+                                                "Scan now" => Message::Backup(BackupPhase::Start {
+                                                    preview: true,
+                                                    repair: false,
+                                                    jump: false,
+                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
+                                                }),
+                                                "Backup" => Message::Backup(BackupPhase::Start {
+                                                    preview: false,
+                                                    repair: false,
+                                                    jump: false,
+                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
+                                                }),
+                                                "Restore" => Message::Restore(RestorePhase::Start {
+                                                    preview: false,
+                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
+                                                }),
+                                                _ => Message::Ignore,
+                                            },
                                         )
                                         .width(50)
                                         .class(style::PickList::Popup),
