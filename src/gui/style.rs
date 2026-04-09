@@ -447,7 +447,7 @@ impl container::Catalog for Theme {
                         }
                     }
                     Container::BadgeActivated => self.negative,
-                    Container::DaemonDotActive | Container::DaemonDotInactive => Color::TRANSPARENT,
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => Color::TRANSPARENT,
                     Container::ModalForeground | Container::BadgeFaded => self.disabled,
                     _ => self.border,
                 },
@@ -457,7 +457,7 @@ impl container::Catalog for Theme {
                     Container::GamesTable => 1.0,
                     Container::GamesTableRow => 0.0,
                     Container::DaemonStatus => 1.0,
-                    Container::DaemonDotActive | Container::DaemonDotInactive => 0.0,
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
                     | Container::Badge
@@ -474,7 +474,7 @@ impl container::Catalog for Theme {
                     Container::GamesTable => 10.0.into(),
                     Container::GamesTableRow => 0.0.into(),
                     Container::DaemonStatus => 8.0.into(),
-                    Container::DaemonDotActive | Container::DaemonDotInactive => 4.0.into(),
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 4.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge
@@ -488,7 +488,7 @@ impl container::Catalog for Theme {
             },
             text_color: match class {
                 Container::Wrapper | Container::GamesTableRow => None,
-                Container::DaemonDotActive | Container::DaemonDotInactive => None,
+                Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => None,
                 Container::DaemonStatus => Some(self.added),
                 Container::DisabledBackup => Some(self.text_inverted),
                 Container::ChangeBadge { change, faded } => {
