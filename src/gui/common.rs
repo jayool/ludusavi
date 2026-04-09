@@ -118,6 +118,7 @@ pub enum Message {
     SetGameSaveMode(String, ludusavi::sync::sync_config::SaveMode),
     SetGameAutoSync(String, bool),
     GamesSearchChanged(String),
+    SaveGameDetail,
     Config {
         event: config::Event,
     },
