@@ -120,6 +120,8 @@ pub struct App {
     daemon_running: bool,
     sync_status: std::collections::HashMap<String, String>,
     games_search: String,
+    pending_game_detail: Option<ludusavi::sync::sync_config::GameSyncConfig>,
+    pending_game_detail_name: Option<String>,
     game_list: ludusavi::sync::game_list::GameListFile,
     sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
 }
