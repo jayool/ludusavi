@@ -319,6 +319,7 @@ pub fn open_url_icon<'a>(url: String) -> Element<'a> {
     template(Icon::OpenInBrowser.text(), Some(Message::OpenUrl(url)), None)
 }
 
+#[allow(dead_code)]
 pub fn nav<'a>(screen: Screen, current_screen: Screen) -> Button<'a> {
     let label = match screen {
         Screen::Backup => TRANSLATOR.nav_backup_button(),
