@@ -48,7 +48,8 @@ pub struct Theme {
     success: Color,
     failure: Color,
     skipped: Color,
-    added: Color,      // green
+    added: Color,
+    #[allow(dead_code)]
     yellow: Color,
 }
 
