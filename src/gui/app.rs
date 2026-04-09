@@ -3527,29 +3527,96 @@ impl App {
 
                 // Sync status card
                 let status_card = {
-                    let (status_text, status_detail) = match (mode, status) {
-                        (ludusavi::sync::sync_config::SaveMode::Sync, "synced") => (
-                            "✓ Game files are up to date on this device",
-                            meta.and_then(|m| m.last_sync_time_utc)
-                                .map(|t| format!("Last synced on {}", t.format("%Y-%m-%d at %H:%M")))
-                                .unwrap_or_else(|| "No sync data available".to_string()),
-                        ),
-                        (ludusavi::sync::sync_config::SaveMode::Sync, _) => (
-                            "⚠ Sync pending",
-                            "This game has not been synced yet or sync is pending.".to_string(),
-                        ),
-                        (ludusavi::sync::sync_config::SaveMode::Local, _) => (
-                            "💾 Local backup only",
-                            "This game uses local backup only. Enable Sync mode to sync across devices.".to_string(),
-                        ),
-                        (ludusavi::sync::sync_config::SaveMode::Cloud, _) => (
-                            "☁ Cloud backup",
-                            "This game is backed up to the cloud manually.".to_string(),
-                        ),
-                        (ludusavi::sync::sync_config::SaveMode::None, _) => (
+                    let last_sync_str = meta
+                        .and_then(|m| m.last_sync_time_utc)
+                        .map(|t| {
+                            let now = chrono::Utc::now();
+                            let diff = now.signed_duration_since(t);
+                            if diff.num_minutes() < 1 {
+                                "just now".to_string()
+                            } else if diff.num_hours() < 1 {
+                                format!("{} min ago", diff.num_minutes())
+                            } else if diff.num_hours() < 24 {
+                                format!("{} hours ago", diff.num_hours())
+                            } else {
+                                format!("{} days ago", diff.num_days())
+                            }
+                        });
+
+                    let last_sync_from = meta
+                        .and_then(|m| m.last_synced_from.as_deref())
+                        .map(|id| if id.len() > 8 { format!("{}...", &id[..8]) } else { id.to_string() });
+
+                    let (status_text, status_detail) = match mode {
+                        ludusavi::sync::sync_config::SaveMode::None => (
                             "— Not managed",
                             "This game is not managed by Save Sync.".to_string(),
                         ),
+                        ludusavi::sync::sync_config::SaveMode::Local => {
+                            if auto_sync_current {
+                                (
+                                    "💾 Local — auto-sync on",
+                                    "Saves will be backed up automatically when they change.".to_string(),
+                                )
+                            } else {
+                                (
+                                    "💾 Local — auto-sync off",
+                                    "Saves are backed up manually only.".to_string(),
+                                )
+                            }
+                        }
+                        ludusavi::sync::sync_config::SaveMode::Cloud => {
+                            match (auto_sync_current, &last_sync_str, &last_sync_from) {
+                                (_, None, _) => (
+                                    "☁ Cloud — never backed up",
+                                    "This game has not been backed up to the cloud yet.".to_string(),
+                                ),
+                                (false, Some(when), Some(from)) => (
+                                    "☁ Cloud — manual sync",
+                                    format!("Last backed up {} from {}.", when, from),
+                                ),
+                                (false, Some(when), None) => (
+                                    "☁ Cloud — manual sync",
+                                    format!("Last backed up {}.", when),
+                                ),
+                                (true, Some(when), Some(from)) => (
+                                    "☁ Cloud — auto-sync on",
+                                    format!("Last backed up {} from {}.", when, from),
+                                ),
+                                (true, Some(when), None) => (
+                                    "☁ Cloud — auto-sync on",
+                                    format!("Last backed up {}.", when),
+                                ),
+                            }
+                        }
+                        ludusavi::sync::sync_config::SaveMode::Sync => {
+                            match (status, &last_sync_str, &last_sync_from) {
+                                ("synced", Some(when), Some(from)) => (
+                                    "✓ Up to date",
+                                    format!("Last synced {} from {}.", when, from),
+                                ),
+                                ("synced", Some(when), None) => (
+                                    "✓ Up to date",
+                                    format!("Last synced {}.", when),
+                                ),
+                                ("synced", None, _) => (
+                                    "✓ Up to date",
+                                    "Game files are in sync.".to_string(),
+                                ),
+                                (_, None, _) => (
+                                    "⚠ Never synced",
+                                    "This game has not been synced yet. Run a sync to get started.".to_string(),
+                                ),
+                                (_, Some(when), Some(from)) => (
+                                    "⚠ Sync pending",
+                                    format!("Last synced {} from {}. A new sync may be needed.", when, from),
+                                ),
+                                (_, Some(when), None) => (
+                                    "⚠ Sync pending",
+                                    format!("Last synced {}. A new sync may be needed.", when),
+                                ),
+                            }
+                        }
                     };
 
                     Container::new(
