@@ -420,6 +420,7 @@ impl container::Catalog for Theme {
                 Container::Tooltip => self.surface2.into(),
                 Container::DisabledBackup => self.disabled.into(),
                 Container::DaemonDotActive => self.added.into(),
+                Container::DaemonDotPending => self.yellow.into(),
                 Container::DaemonDotInactive => self.text_muted.into(),
                 Container::BadgeActivated => self.negative.into(),
                 _ => self.background.into(),
