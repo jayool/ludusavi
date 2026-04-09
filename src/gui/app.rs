@@ -3280,9 +3280,14 @@ impl App {
                         };
 
                         // Last synced from
-                        let last_from = meta
+                        let last_from_full = meta
                             .and_then(|m| m.last_synced_from.as_deref())
                             .unwrap_or("—");
+                        let last_from = if last_from_full.len() > 8 {
+                            format!("{}...", &last_from_full[..8])
+                        } else {
+                            last_from_full.to_string()
+                        };
 
                         // Last synced time — simple format
                         let last_synced = meta
@@ -3332,10 +3337,17 @@ impl App {
                                 )
                                 .push(
                                     crate::gui::widget::text(
-                                        if matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync) {
-                                            "On"
-                                        } else {
-                                            "—"
+                                        match mode {
+                                            ludusavi::sync::sync_config::SaveMode::None => "—",
+                                            ludusavi::sync::sync_config::SaveMode::Sync => "On",
+                                            ludusavi::sync::sync_config::SaveMode::Local |
+                                            ludusavi::sync::sync_config::SaveMode::Cloud => {
+                                                if self.sync_games_config.get_auto_sync(name) {
+                                                    "On"
+                                                } else {
+                                                    "Off"
+                                                }
+                                            }
                                         }
                                     )
                                     .size(12)
@@ -3343,7 +3355,7 @@ impl App {
                                     .width(100),
                                 )
                                 .push(
-                                    crate::gui::widget::text(last_from)
+                                    crate::gui::widget::text(last_from.clone())
                                         .size(12)
                                         .class(style::Text::Muted)
                                         .width(160),
