@@ -10,7 +10,6 @@ use ludusavi::sync::bridge::register_game_after_backup;
 use crate::{
     cloud::{rclone_monitor, Rclone, Remote},
     gui::{
-        button,
         common::{
             BackupPhase, BrowseFileSubject, BrowseSubject, Flags, GameAction, GameSelection, Message, Operation,
             RestorePhase, Screen, ScrollSubject, UndoSubject, ValidatePhase,
@@ -3367,7 +3366,7 @@ impl App {
                                         .width(140),
                                 )
                                 .push({
-                                    let game_name = name.clone();
+                                    let _game_name = name.clone();
                                     let options = match mode {
                                         ludusavi::sync::sync_config::SaveMode::Sync => vec![
                                             "Sync now",
@@ -3842,7 +3841,7 @@ impl App {
                 .class(style::Container::TopBar);
 
                 // DEVICE card
-                let log_path = crate::prelude::app_dir().joined("daemon.log").render();
+                let _log_path = crate::prelude::app_dir().joined("daemon.log").render();
                 let device_card = Container::new(
                     Column::new()
                         .spacing(10)
