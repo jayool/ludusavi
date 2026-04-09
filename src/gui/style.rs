@@ -392,8 +392,8 @@ pub enum Container {
     DisabledBackup,
     Notification,
     Tooltip,
-    // Daemon dot
     DaemonDotActive,
+    DaemonDotPending,
     DaemonDotInactive,
 }
 impl container::Catalog for Theme {
