@@ -1499,17 +1499,36 @@ impl App {
                 Task::none()
             }
             Message::SetGameSaveMode(game, mode) => {
-                self.sync_games_config.set_mode(&game, mode);
-                self.sync_games_config.save();
+                let current = self.sync_games_config.games
+                    .get(&game)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut pending = self.pending_game_detail.clone().unwrap_or(current);
+                pending.mode = mode;
+                self.pending_game_detail = Some(pending);
+                self.pending_game_detail_name = Some(game);
                 Task::none()
             }
             Message::GamesSearchChanged(query) => {
                 self.games_search = query;
                 Task::none()
             }
+            Message::SaveGameDetail => {
+                if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
+                    self.sync_games_config.games.insert(name, pending);
+                    self.sync_games_config.save();
+                }
+                Task::none()
+            }
             Message::SetGameAutoSync(game, auto_sync) => {
-                self.sync_games_config.set_auto_sync(&game, auto_sync);
-                self.sync_games_config.save();
+                let current = self.sync_games_config.games
+                    .get(&game)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut pending = self.pending_game_detail.clone().unwrap_or(current);
+                pending.auto_sync = auto_sync;
+                self.pending_game_detail = Some(pending);
+                self.pending_game_detail_name = Some(game);
                 Task::none()
             }
             Message::Config { event } => {
@@ -2119,7 +2138,13 @@ impl App {
                 self.save_config();
                 self.close_specific_modal(modal::Kind::ConfirmAddMissingRoots)
             }
-            Message::SwitchScreen(screen) => self.switch_screen(screen),
+            Message::SwitchScreen(screen) => {
+                if !matches!(screen, Screen::GameDetail(_)) {
+                    self.pending_game_detail = None;
+                    self.pending_game_detail_name = None;
+                }
+                self.switch_screen(screen)
+            }
             Message::ToggleGameListEntryExpanded { name } => {
                 match self.screen {
                     Screen::Backup => {
@@ -3400,7 +3425,11 @@ impl App {
             Screen::GameDetail(ref game_name) => {
                 let game_name = game_name.clone();
                 let meta = self.game_list.get_game(&game_name);
-                let mode = self.sync_games_config.get_mode(&game_name);
+                let mode = self.pending_game_detail
+                    .as_ref()
+                    .filter(|_| self.pending_game_detail_name.as_deref() == Some(&game_name))
+                    .map(|p| &p.mode)
+                    .unwrap_or_else(|| self.sync_games_config.get_mode(&game_name));
                 let status = self.sync_status.get(&game_name).map(|s| s.as_str()).unwrap_or("");
                 let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir()).id;
 
@@ -3547,7 +3576,11 @@ impl App {
                         .push_if(
                             matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud),
                             || {
-                                let auto_sync = self.sync_games_config.get_auto_sync(&game_name);
+                                let auto_sync = self.pending_game_detail
+                                    .as_ref()
+                                    .filter(|_| self.pending_game_detail_name.as_deref() == Some(&game_name))
+                                    .map(|p| p.auto_sync)
+                                    .unwrap_or_else(|| self.sync_games_config.get_auto_sync(&game_name));
                                 let g = game_name.clone();
                                 Column::new()
                                     .spacing(6)
@@ -3586,6 +3619,20 @@ impl App {
                 .width(Length::Fill)
                 .padding(16)
                 .class(style::Container::GamesTable);
+
+                let has_pending = self.pending_game_detail_name.as_deref() == Some(&game_name)
+                    && self.pending_game_detail.is_some();
+
+                let save_button = crate::gui::widget::Button::new(
+                    crate::gui::widget::text("Save changes").size(13)
+                )
+                .padding([8, 20])
+                .class(if has_pending {
+                    style::Button::Primary
+                } else {
+                    style::Button::Ghost
+                })
+                .on_press_maybe(has_pending.then_some(Message::SaveGameDetail));
 
                 // Devices section
                 let devices_card = {
@@ -3648,7 +3695,8 @@ impl App {
                                 .padding([24, 24])
                                 .push(status_card)
                                 .push(settings_card)
-                                .push(devices_card),
+                                .push(devices_card)
+                                .push(save_button),
                         )
                         .width(Length::Fill),
                     );
