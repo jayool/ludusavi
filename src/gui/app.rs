@@ -3433,6 +3433,12 @@ impl App {
                 let status = self.sync_status.get(&game_name).map(|s| s.as_str()).unwrap_or("");
                 let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir()).id;
 
+                let auto_sync_current = self.pending_game_detail
+                    .as_ref()
+                    .filter(|_| self.pending_game_detail_name.as_deref() == Some(&game_name))
+                    .map(|p| p.auto_sync)
+                    .unwrap_or_else(|| self.sync_games_config.get_auto_sync(&game_name));
+
                 let header = Container::new(
                     Row::new()
                         .padding([0, 24])
@@ -3444,6 +3450,65 @@ impl App {
                                 .padding([7, 14])
                                 .class(style::Button::Ghost)
                                 .on_press(Message::SwitchScreen(Screen::Games)),
+                        )
+                        .push(crate::gui::widget::Space::new().width(8))
+                        .push_if(
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync),
+                            || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Sync now").size(13)
+                                )
+                                .padding([7, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::SwitchScreen(Screen::Games))
+                            }
+                        )
+                        .push_if(
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud) && auto_sync_current,
+                            || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Scan now").size(13)
+                                )
+                                .padding([7, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Backup(BackupPhase::Start {
+                                    preview: true,
+                                    repair: false,
+                                    jump: false,
+                                    games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
+                                }))
+                            }
+                        )
+                        .push_if(
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud) && !auto_sync_current,
+                            || {
+                                Row::new()
+                                    .spacing(8)
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Backup").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Primary)
+                                        .on_press(Message::Backup(BackupPhase::Start {
+                                            preview: false,
+                                            repair: false,
+                                            jump: false,
+                                            games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
+                                        }))
+                                    )
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Restore").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::Restore(RestorePhase::Start {
+                                            preview: false,
+                                            games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
+                                        }))
+                                    )
+                            }
                         ),
                 )
                 .width(Length::Fill)
