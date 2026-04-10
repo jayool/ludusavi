@@ -3329,6 +3329,7 @@ impl App {
                             Row::new()
                                 .padding([12, 16])
                                 .align_y(Alignment::Center)
+                                .height(56)
                                 .push(
                                     Container::new(crate::gui::widget::Space::new())
                                         .width(10)
