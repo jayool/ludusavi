@@ -285,8 +285,26 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
         let mut any_changes = false;
 
+        let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
+
         for game_id in &ready_games {
             if let Some(game) = game_list.get_game_mut(game_id) {
+                let mode = sync_config.get_mode(&game.name);
+                match mode {
+                    crate::sync::sync_config::SaveMode::None => {
+                        log::debug!("[sync daemon] Skipping upload for {} — mode is None", game.name);
+                        debounce_state.lock().unwrap().remove(game_id);
+                        continue;
+                    }
+                    crate::sync::sync_config::SaveMode::Local => {
+                        log::info!("[sync daemon] Local backup only for {}", game.name);
+                        // TODO: crear ZIP local sin subir al cloud
+                        debounce_state.lock().unwrap().remove(game_id);
+                        continue;
+                    }
+                    _ => {} // Cloud y Sync: comportamiento normal
+                }
+
                 let local_path = game.path_by_device.get(&device.id).cloned();
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
                 let status = determine_sync_type(game, &scan);
@@ -460,9 +478,15 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
         .collect();
 
     let mut any_changes = false;
+    let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
 
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
+            let mode = sync_config.get_mode(&game.name);
+            if matches!(mode, crate::sync::sync_config::SaveMode::None | crate::sync::sync_config::SaveMode::Local) {
+                log::debug!("[sync daemon] Skipping download for {} — mode is {:?}", game.name, mode);
+                continue;
+            }
             let local_path = game.path_by_device.get(&device.id).cloned();
             let scan = DirectoryScanResult::scan(local_path.as_deref());
             log::info!(
@@ -553,9 +577,15 @@ fn check_downloads_and_rewatch(
         .collect();
 
     let mut any_changes = false;
+    let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
 
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
+            let mode = sync_config.get_mode(&game.name);
+            if matches!(mode, crate::sync::sync_config::SaveMode::None | crate::sync::sync_config::SaveMode::Local) {
+                log::debug!("[sync daemon] Skipping download for {} — mode is {:?}", game.name, mode);
+                continue;
+            }
             let local_path = game.path_by_device.get(&device.id).cloned();
             let scan = DirectoryScanResult::scan(local_path.as_deref());
             let status = determine_sync_type(game, &scan);
