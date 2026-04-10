@@ -89,21 +89,55 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     log::info!("[sync daemon] Running as device: {} ({})", device.name, device.id);
 
-    // Paso 2: auto-registrar rutas para juegos sin ruta en este dispositivo
-    log::info!("[sync daemon] Auto-registering paths for unregistered games...");
+    if stop_flag.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
+    if stop_flag.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
+    // Paso 3: construir watched_paths desde sync-games.json + game-list del cloud
+    let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
+    let managed_games: Vec<String> = sync_config.games.iter()
+        .filter(|(_, cfg)| cfg.mode != crate::sync::sync_config::SaveMode::None)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    // Leer o crear el game-list del cloud
+    let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+
+    // Para juegos en sync-games.json sin ruta registrada en el cloud, auto-registrar
+    let needs_registration: Vec<String> = managed_games.iter()
+        .filter(|name| !game_list.games.iter().any(|g| &g.id == *name))
+        .cloned()
+        .collect();
+
+    if !needs_registration.is_empty() {
+        log::info!("[sync daemon] Registering {} new game(s) from sync-games.json", needs_registration.len());
+        for game_name in &needs_registration {
+            // Crear entrada vacía en el game-list para que auto_register_paths la encuentre
+            game_list.games.push(crate::sync::game_list::GameEntry {
+                id: game_name.clone(),
+                name: game_name.clone(),
+                path_by_device: std::collections::HashMap::new(),
+                last_synced_from: None,
+                last_sync_time_utc: None,
+                latest_write_time_utc: None,
+                storage_bytes: 0,
+            });
+        }
+        if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
+            log::warn!("[sync daemon] Could not write initial game-list to cloud: {e}");
+        }
+    }
+
+    // Auto-registrar rutas para juegos sin ruta en este dispositivo
     if let Err(e) = auto_register_paths(&config, &device) {
         log::error!("[sync daemon] Error during path auto-registration: {e}");
     }
 
-    if stop_flag.load(Ordering::Relaxed) {
-        return Ok(());
-    }
-
-    if stop_flag.load(Ordering::Relaxed) {
-        return Ok(());
-    }
-
-    // Paso 3: leer el game list para saber qué rutas vigilar
+    // Releer el game-list después de auto-registro
     let game_list = read_game_list_from_cloud(&config).unwrap_or_default();
 
     let watched_paths: HashMap<String, String> = game_list
@@ -116,8 +150,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         })
         .collect();
 
-    if watched_paths.is_empty() {
-        log::info!("[sync daemon] No games registered for this device, will retry in 30s...");
+    // Si sync-games.json tiene juegos pero ninguno tiene ruta aún, arrancar igual
+    // y monitorizar cuando se registren
+    if watched_paths.is_empty() && managed_games.is_empty() {
+        log::info!("[sync daemon] No games configured in sync-games.json, will retry in 30s...");
         let mut wait = 0u64;
         while !stop_flag.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_secs(1));
@@ -128,8 +164,18 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             }
         }
         return Ok(());
+    } else if watched_paths.is_empty() {
+        log::info!("[sync daemon] Games configured but no paths resolved yet, will retry in 30s...");
+        let mut wait = 0u64;
+        while !stop_flag.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(1));
+            wait += 1;
+            if wait >= 30 {
+                return run_daemon(stop_flag);
+            }
+        }
+        return Ok(());
     }
-
     log::info!("[sync daemon] Watching {} game(s) for changes", watched_paths.len());
 
     // Paso 4: estado de debounce compartido
