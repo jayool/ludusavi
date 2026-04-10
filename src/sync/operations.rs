@@ -613,3 +613,47 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
 
     None
 }
+/// Resuelve la ruta de saves de un juego usando el manifiesto de Ludusavi.
+/// Primero intenta encontrar saves existentes, luego la ruta esperada.
+/// Equivale a lo que hace auto_register_paths en el daemon.
+pub fn resolve_game_path_from_manifest(config: &Config, game_name: &str) -> Option<String> {
+    use crate::resource::manifest::Manifest;
+    use crate::scan::{layout::BackupLayout, scan_game_for_backup, Launchers, SteamShortcuts, TitleFinder};
+    use crate::resource::config::{BackupFilter, ToggledPaths, ToggledRegistry};
+    use crate::prelude::app_dir;
+
+    let manifest = Manifest::load().ok()?.with_extensions(config);
+    let game_entry = manifest.0.get(game_name)?;
+
+    let app_dir = app_dir();
+    let roots = config.expanded_roots();
+    let layout = BackupLayout::new(config.backup.path.clone());
+    let title_finder = TitleFinder::new(config, &manifest, layout.restorable_game_set());
+    let steam_shortcuts = SteamShortcuts::scan(&title_finder);
+    let launchers = Launchers::scan(&roots, &manifest, &[game_name.to_string()], &title_finder, None);
+
+    let scan_info = scan_game_for_backup(
+        game_entry,
+        game_name,
+        &roots,
+        &app_dir,
+        &launchers,
+        &BackupFilter::default(),
+        None,
+        &ToggledPaths::default(),
+        &ToggledRegistry::default(),
+        None,
+        &config.redirects,
+        config.restore.reverse_redirects,
+        &steam_shortcuts,
+        false,
+    );
+
+    // Primero intentar con ficheros existentes
+    if let Some(path) = extract_root_from_scan(&scan_info.found_files) {
+        return Some(path);
+    }
+
+    // Si no hay ficheros, resolver la ruta esperada
+    resolve_expected_save_path(config, game_entry)
+}
