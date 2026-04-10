@@ -3598,7 +3598,7 @@ impl App {
                                 )
                                 .padding([7, 14])
                                 .class(style::Button::Primary)
-                                .on_press(Message::SwitchScreen(Screen::Games))
+                                .on_press(Message::SyncNow(game_name.clone()))
                             }
                         )
                         .push_if(
@@ -3622,30 +3622,22 @@ impl App {
                             || {
                                 Row::new()
                                     .spacing(8)
-                                    .push(
-                                        crate::gui::widget::Button::new(
-                                            crate::gui::widget::text("Backup").size(13)
-                                        )
-                                        .padding([7, 14])
-                                        .class(style::Button::Primary)
-                                        .on_press(Message::Backup(BackupPhase::Start {
-                                            preview: false,
-                                            repair: false,
-                                            jump: false,
-                                            games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
-                                        }))
-                                    )
-                                    .push(
-                                        crate::gui::widget::Button::new(
-                                            crate::gui::widget::text("Restore").size(13)
-                                        )
-                                        .padding([7, 14])
-                                        .class(style::Button::Ghost)
-                                        .on_press(Message::Restore(RestorePhase::Start {
-                                            preview: false,
-                                            games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
-                                        }))
-                                    )
+                        .push(
+                            crate::gui::widget::Button::new(
+                                crate::gui::widget::text("Backup").size(13)
+                            )
+                            .padding([7, 14])
+                            .class(style::Button::Primary)
+                            .on_press(Message::SyncBackupGame(game_name.clone()))
+                        )
+                        .push(
+                            crate::gui::widget::Button::new(
+                                crate::gui::widget::text("Restore").size(13)
+                            )
+                            .padding([7, 14])
+                            .class(style::Button::Ghost)
+                            .on_press(Message::SyncRestoreGame(game_name.clone()))
+                        )
                             }
                         ),
                 )
