@@ -3337,10 +3337,10 @@ impl App {
                                 )
                                 .push(crate::gui::widget::Space::new().width(10))
                                 .push(
-                                    Column::new()
-                                        .width(Length::Fill)
-                                        .push(crate::gui::widget::text(name.clone()).size(13))
-                                        .push(crate::gui::widget::text(size_text).size(11).class(style::Text::Muted)),
+                                    crate::gui::widget::text(name.clone())
+                                        .size(13)
+                                        .width(Length::Fill),
+                                )
                                 )
                                 .push(
                                     crate::gui::widget::text(mode_text)
