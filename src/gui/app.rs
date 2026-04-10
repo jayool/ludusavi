@@ -2115,35 +2115,61 @@ impl App {
                     async move {
                         let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
                         let mode = sync_config.get_mode(&game_name);
-                        let game = match game_list.games.iter().find(|g| g.id == game_name) {
-                            Some(g) => g.clone(),
-                            None => return Err(format!("Game not found in game list: {}", game_name)),
+
+                        // Obtener o resolver la ruta local
+                        let local_path = if let Some(game) = game_list.games.iter().find(|g| g.id == game_name) {
+                            if let Some(path) = game.path_by_device.get(&device.id) {
+                                path.clone()
+                            } else {
+                                // Ruta no registrada para este device, intentar resolverla
+                                ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                    .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
+                            }
+                        } else {
+                            // Juego no está en el game-list, intentar resolverlo
+                            ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
                         };
-                        let local_path = match game.path_by_device.get(&device.id) {
-                            Some(p) => p.clone(),
-                            None => return Err(format!("No local path for game: {}", game_name)),
-                        };
+
+                        log::info!("[SyncBackupGame] Resolved path for {}: {}", game_name, local_path);
+
+                        // Leer o crear el game-list
+                        let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                            .unwrap_or_default();
+
+                        // Asegurar que el juego está registrado con la ruta correcta
+                        match gl.get_game_mut(&game_name) {
+                            Some(existing) => {
+                                existing.path_by_device.insert(device.id.clone(), local_path.clone());
+                            }
+                            None => {
+                                let mut meta = ludusavi::sync::game_list::GameMetaData::new(
+                                    game_name.clone(),
+                                    game_name.clone(),
+                                );
+                                meta.path_by_device.insert(device.id.clone(), local_path.clone());
+                                gl.upsert_game(meta);
+                            }
+                        }
 
                         match mode {
                             ludusavi::sync::sync_config::SaveMode::Local => {
                                 let zip_dir = app_dir.joined("local-backups");
                                 let zip_path = zip_dir.joined(&format!("{}.zip", game_name));
                                 ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
-                                    .map_err(|e| e.to_string())
+                                    .map_err(|e| e.to_string())?;
+                                log::info!("[SyncBackupGame] Local ZIP created for {}", game_name);
+                                Ok(())
                             }
                             ludusavi::sync::sync_config::SaveMode::Cloud => {
-                                let zip_dir = app_dir.joined("local-backups");
-                                let zip_path = zip_dir.joined(&format!("{}.zip", game_name));
-                                ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
+                                let game_mut = gl.get_game_mut(&game_name)
+                                    .ok_or_else(|| "Game not found after upsert".to_string())?;
+                                ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game_mut)
                                     .map_err(|e| e.to_string())?;
-                                let mut game_mut = game.clone();
-                                ludusavi::sync::operations::upload_game(&config, &app_dir, &device, &mut game_mut)
-                                    .map_err(|e| e.to_string())?;
-                                let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
-                                    .unwrap_or_default();
-                                gl.upsert_game(game_mut);
                                 ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl)
-                                    .map_err(|e| e.to_string())
+                                    .map_err(|e| e.to_string())?;
+                                log::info!("[SyncBackupGame] Cloud upload complete for {}", game_name);
+                                Ok(())
                             }
                             _ => Err(format!("SyncBackupGame called for unsupported mode: {:?}", mode)),
                         }
