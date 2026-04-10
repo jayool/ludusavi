@@ -338,8 +338,21 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                         continue;
                     }
                     crate::sync::sync_config::SaveMode::Local => {
-                        log::info!("[sync daemon] Local backup only for {}", game.name);
-                        // TODO: crear ZIP local sin subir al cloud
+                        let auto_sync = sync_config.get_auto_sync(&game.name);
+                        if !auto_sync {
+                            log::debug!("[sync daemon] Local mode, auto-sync off — skipping for {}", game.name);
+                            debounce_state.lock().unwrap().remove(game_id);
+                            continue;
+                        }
+                        log::info!("[sync daemon] Local backup for {}", game.name);
+                        if let Some(local_path) = game.path_by_device.get(&device.id).cloned() {
+                            let zip_dir = crate::prelude::app_dir().joined("local-backups");
+                            let zip_path = zip_dir.joined(&format!("{}.zip", game.id));
+                            match crate::sync::operations::create_zip_from_folder(&local_path, &zip_path) {
+                                Ok(_) => log::info!("[sync daemon] Local backup complete: {}", game.name),
+                                Err(e) => log::error!("[sync daemon] Local backup failed for {}: {e}", game.name),
+                            }
+                        }
                         debounce_state.lock().unwrap().remove(game_id);
                         continue;
                     }
