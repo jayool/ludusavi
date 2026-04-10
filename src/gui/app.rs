@@ -3327,7 +3327,7 @@ impl App {
 
                         let row = Container::new(
                             Row::new()
-                                .padding([12, 16])
+                                .padding([0, 16])
                                 .align_y(Alignment::Center)
                                 .height(56)
                                 .push(
