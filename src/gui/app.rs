@@ -3339,7 +3339,6 @@ impl App {
                                 .push(
                                     Column::new()
                                         .width(Length::Fill)
-                                        .justify(iced::alignment::Vertical::Center)
                                         .push(crate::gui::widget::text(name.clone()).size(13))
                                         .push(crate::gui::widget::text(size_text).size(11).class(style::Text::Muted)),
                                 )
