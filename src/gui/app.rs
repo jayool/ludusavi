@@ -3320,11 +3320,6 @@ impl App {
                             })
                             .unwrap_or_else(|| "Never".to_string());
 
-                        // Size
-                        let size_text = meta
-                            .map(|m| TRANSLATOR.adjusted_size(m.storage_bytes))
-                            .unwrap_or_default();
-
                         let row = Container::new(
                             Row::new()
                                 .padding([12, 16])
@@ -3656,7 +3651,14 @@ impl App {
                         Column::new()
                             .spacing(6)
                             .push(crate::gui::widget::text(status_text).size(13))
-                            .push(crate::gui::widget::text(status_detail).size(12).class(style::Text::Muted)),
+                            .push(crate::gui::widget::text(status_detail).size(12).class(style::Text::Muted))
+                            .push_if(meta.map(|m| m.storage_bytes > 0).unwrap_or(false), || {
+                                crate::gui::widget::text(
+                                    TRANSLATOR.adjusted_size(meta.unwrap().storage_bytes)
+                                )
+                                .size(11)
+                                .class(style::Text::Muted)
+                            }),
                     )
                     .width(Length::Fill)
                     .padding(14)
