@@ -2105,6 +2105,105 @@ impl App {
             Message::Restore(phase) => self.handle_restore(phase),
             Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::CancelOperation => self.cancel_operation(),
+            Message::SyncBackupGame(game_name) => {
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+                let sync_config = self.sync_games_config.clone();
+
+                Task::perform(
+                    async move {
+                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                        let mode = sync_config.get_mode(&game_name);
+                        let game = match game_list.games.iter().find(|g| g.id == game_name) {
+                            Some(g) => g.clone(),
+                            None => return Err(format!("Game not found in game list: {}", game_name)),
+                        };
+                        let local_path = match game.path_by_device.get(&device.id) {
+                            Some(p) => p.clone(),
+                            None => return Err(format!("No local path for game: {}", game_name)),
+                        };
+
+                        match mode {
+                            ludusavi::sync::sync_config::SaveMode::Local => {
+                                let zip_dir = app_dir.joined("local-backups");
+                                let zip_path = zip_dir.joined(&format!("{}.zip", game_name));
+                                ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
+                                    .map_err(|e| e.to_string())
+                            }
+                            ludusavi::sync::sync_config::SaveMode::Cloud => {
+                                let zip_dir = app_dir.joined("local-backups");
+                                let zip_path = zip_dir.joined(&format!("{}.zip", game_name));
+                                ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
+                                    .map_err(|e| e.to_string())?;
+                                let mut game_mut = game.clone();
+                                ludusavi::sync::operations::upload_game(&config, &app_dir, &device, &mut game_mut)
+                                    .map_err(|e| e.to_string())?;
+                                let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                    .unwrap_or_default();
+                                gl.upsert_game(game_mut);
+                                ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl)
+                                    .map_err(|e| e.to_string())
+                            }
+                            _ => Err(format!("SyncBackupGame called for unsupported mode: {:?}", mode)),
+                        }
+                    },
+                    |result| match result {
+                        Ok(_) => Message::Ignore,
+                        Err(e) => {
+                            log::error!("[SyncBackupGame] {}", e);
+                            Message::Ignore
+                        }
+                    },
+                )
+            }
+            Message::SyncRestoreGame(game_name) => {
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+                let sync_config = self.sync_games_config.clone();
+
+                Task::perform(
+                    async move {
+                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                        let mode = sync_config.get_mode(&game_name);
+                        let game = match game_list.games.iter().find(|g| g.id == game_name) {
+                            Some(g) => g.clone(),
+                            None => return Err(format!("Game not found in game list: {}", game_name)),
+                        };
+
+                        match mode {
+                            ludusavi::sync::sync_config::SaveMode::Local => {
+                                let zip_path = app_dir.joined("local-backups").joined(&format!("{}.zip", game_name));
+                                let local_path = match game.path_by_device.get(&device.id) {
+                                    Some(p) => p.clone(),
+                                    None => return Err(format!("No local path for game: {}", game_name)),
+                                };
+                                ludusavi::sync::operations::extract_zip_to_directory(&zip_path, &local_path, None)
+                                    .map_err(|e| e.to_string())
+                            }
+                            ludusavi::sync::sync_config::SaveMode::Cloud
+                            | ludusavi::sync::sync_config::SaveMode::Sync => {
+                                ludusavi::sync::operations::download_game(&config, &app_dir, &device, &game)
+                                    .map_err(|e| e.to_string())
+                            }
+                            _ => Err(format!("SyncRestoreGame called for unsupported mode: {:?}", mode)),
+                        }
+                    },
+                    |result| match result {
+                        Ok(_) => Message::Ignore,
+                        Err(e) => {
+                            log::error!("[SyncRestoreGame] {}", e);
+                            Message::Ignore
+                        }
+                    },
+                )
+            }
+            Message::SyncNow(game_name) => {
+                // Por ahora Ignore — implementar force sync con el daemon más adelante
+                log::info!("[SyncNow] Requested for: {}", game_name);
+                Task::none()
+            }
             Message::ShowGameNotes { game, notes } => self.show_modal(Modal::GameNotes { game, notes }),
             Message::FindRoots => {
                 let missing = self.config.find_missing_roots();
