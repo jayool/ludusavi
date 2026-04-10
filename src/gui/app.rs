@@ -3341,7 +3341,6 @@ impl App {
                                         .size(13)
                                         .width(Length::Fill),
                                 )
-                                )
                                 .push(
                                     crate::gui::widget::text(mode_text)
                                         .size(11)
