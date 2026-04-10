@@ -217,6 +217,9 @@ pub enum Message {
     ShowScanActiveGames,
     CopyText(String),
     OpenRegistry(RegistryItem),
+    SyncBackupGame(String),
+    SyncRestoreGame(String),
+    SyncNow(String),
 }
 
 impl Message {
