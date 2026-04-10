@@ -117,15 +117,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         log::info!("[sync daemon] Registering {} new game(s) from sync-games.json", needs_registration.len());
         for game_name in &needs_registration {
             // Crear entrada vacía en el game-list para que auto_register_paths la encuentre
-            game_list.games.push(crate::sync::game_list::GameEntry {
-                id: game_name.clone(),
-                name: game_name.clone(),
-                path_by_device: std::collections::HashMap::new(),
-                last_synced_from: None,
-                last_sync_time_utc: None,
-                latest_write_time_utc: None,
-                storage_bytes: 0,
-            });
+            game_list.games.push(crate::sync::game_list::GameMetaData::new(
+                game_name.clone(),
+                game_name.clone(),
+            ));
         }
         if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
             log::warn!("[sync daemon] Could not write initial game-list to cloud: {e}");
