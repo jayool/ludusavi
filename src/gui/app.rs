@@ -3339,6 +3339,7 @@ impl App {
                                 .push(
                                     Column::new()
                                         .width(Length::Fill)
+                                        .justify(iced::alignment::Vertical::Center)
                                         .push(crate::gui::widget::text(name.clone()).size(13))
                                         .push(crate::gui::widget::text(size_text).size(11).class(style::Text::Muted)),
                                 )
@@ -3798,7 +3799,13 @@ impl App {
                 .class(style::Container::GamesTable);
 
                 let has_pending = self.pending_game_detail_name.as_deref() == Some(&game_name)
-                    && self.pending_game_detail.is_some();
+                    && self.pending_game_detail.as_ref().map(|pending| {
+                        let original = self.sync_games_config.games
+                            .get(&game_name)
+                            .cloned()
+                            .unwrap_or_default();
+                        pending.mode != original.mode || pending.auto_sync != original.auto_sync
+                    }).unwrap_or(false);
 
                 let save_button = crate::gui::widget::Button::new(
                     crate::gui::widget::text("Save changes").size(13)
