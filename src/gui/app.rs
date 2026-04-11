@@ -3614,7 +3614,7 @@ impl App {
                                 .class(style::Container::Divider),
                         );
                     }
-
+                }
                 let table = Container::new(
                     Column::new()
                         .push(
