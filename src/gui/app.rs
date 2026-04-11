@@ -3288,7 +3288,7 @@ impl App {
                             .class(style::Text::Muted)
                             .width(Length::Fill),
                     )
-                    .padding(iced::padding::top(12).bottom(4).left(10).right(10)),
+                    .padding(iced::padding::top(20).bottom(6).left(10).right(10)),
                 )
                 .push(nav_item("📦  Backup", Screen::Backup))
                 .push(nav_item("↩  Restore", Screen::Restore))
