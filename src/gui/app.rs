@@ -4461,11 +4461,16 @@ impl App {
             )
             .push(
                 self.timed_notification.as_ref().map(|x| {
-                    Container::new(x.view())
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_bottom(Length::Shrink)
-                        .align_x(iced::alignment::Horizontal::Center)
+                    Container::new(
+                        Column::new()
+                            .push(crate::gui::widget::Space::new().height(Length::Fill))
+                            .push(
+                                Container::new(x.view())
+                                    .center_x(Length::Fill)
+                            )
+                    )
+                    .width(Length::Fill)
+                    .height(Length::Fill)
                 })
             );
 
