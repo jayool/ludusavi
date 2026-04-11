@@ -123,6 +123,7 @@ pub struct App {
     pending_game_detail_name: Option<String>,
     game_list: ludusavi::sync::game_list::GameListFile,
     sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
+    sync_in_progress: Option<String>,
 }
 
 impl App {
@@ -2107,6 +2108,7 @@ impl App {
             Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::CancelOperation => self.cancel_operation(),
             Message::SyncBackupGame(game_name) => {
+                self.sync_in_progress = Some("⏳ Backing up...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -2181,6 +2183,7 @@ impl App {
                 )
             }
             Message::SyncRestoreGame(game_name) => {
+                self.sync_in_progress = Some("⏳ Restoring...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -2221,6 +2224,7 @@ impl App {
             }
             Message::ShowTimedNotification(msg) => {
                 self.timed_notification = Some(Notification::new(msg).expires(3));
+                self.sync_in_progress = None;
                 Task::none()
             }
             Message::SyncNow(game_name) => {
@@ -2229,6 +2233,7 @@ impl App {
                 Task::none()
             }
             Message::ForceUploadGame(game_name) => {
+                self.sync_in_progress = Some("⏳ Uploading...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let _game_list = self.game_list.clone();
@@ -2264,6 +2269,7 @@ impl App {
                 )
             }
             Message::ForceDownloadGame(game_name) => {
+                self.sync_in_progress = Some("⏳ Downloading...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -3680,15 +3686,16 @@ impl App {
                         .align_y(Alignment::Center)
                         .push(crate::gui::widget::text(game_name.clone()).size(15).width(Length::Fill))
                         .push_if(
-                            self.timed_notification.is_some(),
-                            || {
-                                crate::gui::widget::text(
-                                    self.timed_notification.as_ref().unwrap().text.clone()
+                                    self.sync_in_progress.is_some() || self.timed_notification.is_some(),
+                                    || {
+                                        let msg = self.sync_in_progress.clone()
+                                            .or_else(|| self.timed_notification.as_ref().map(|n| n.text.clone()))
+                                            .unwrap_or_default();
+                                        crate::gui::widget::text(msg)
+                                            .size(12)
+                                            .class(style::Text::Muted)
+                                    }
                                 )
-                                .size(12)
-                                .class(style::Text::Muted)
-                            }
-                        )
                         .push(crate::gui::widget::Space::new().width(16))
                         .push(
                             crate::gui::widget::Button::new(crate::gui::widget::text("← Back").size(13))
