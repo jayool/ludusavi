@@ -220,6 +220,8 @@ pub enum Message {
     SyncBackupGame(String),
     SyncRestoreGame(String),
     SyncNow(String),
+    ForceUploadGame(String),
+    ForceDownloadGame(String),
 }
 
 impl Message {
