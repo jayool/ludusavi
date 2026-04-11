@@ -3475,14 +3475,9 @@ impl App {
                         let last_from = match mode {
                             ludusavi::sync::sync_config::SaveMode::Cloud |
                             ludusavi::sync::sync_config::SaveMode::Sync => {
-                                let full = meta
-                                    .and_then(|m| m.last_synced_from.as_deref())
-                                    .unwrap_or("—");
-                                if full.len() > 8 {
-                                    format!("{}...", &full[..8])
-                                } else {
-                                    full.to_string()
-                                }
+                                meta.and_then(|m| m.last_synced_from.as_deref())
+                                    .map(|id| game_list.get_device_name(id).to_string())
+                                    .unwrap_or_else(|| "—".to_string())
                             }
                             _ => "—".to_string(),
                         };
@@ -3751,7 +3746,7 @@ impl App {
 
                     let last_sync_from = meta
                         .and_then(|m| m.last_synced_from.as_deref())
-                        .map(|id| if id.len() > 8 { format!("{}...", &id[..8]) } else { id.to_string() });
+                        .map(|id| game_list.get_device_name(id).to_string());
 
                     let (status_text, status_detail) = match mode {
                         ludusavi::sync::sync_config::SaveMode::None => (
@@ -4361,7 +4356,7 @@ impl App {
                             })
                             .unwrap_or_else(|| "Never".to_string());
 
-                        let uuid_display = dev_id.clone();
+                        let uuid_display = self.game_list.get_device_name(&dev_id).to_string();
 
                         let device_card = Container::new(
                             Column::new()
