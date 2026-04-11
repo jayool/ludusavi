@@ -222,6 +222,7 @@ pub enum Message {
     SyncNow(String),
     ForceUploadGame(String),
     ForceDownloadGame(String),
+    ShowTimedNotification(String),
 }
 
 impl Message {
