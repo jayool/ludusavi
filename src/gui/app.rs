@@ -3622,6 +3622,12 @@ impl App {
                                 .width(Length::Fill)
                                 .class(style::Container::GamesTableRow),
                         )
+                        .push(
+                            Container::new(crate::gui::widget::Space::new())
+                                .width(Length::Fill)
+                                .height(1)
+                                .class(style::Container::Divider),
+                        )
                         .push(rows),
                 )
                 .width(Length::Fill)
