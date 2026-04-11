@@ -455,7 +455,7 @@ impl container::Catalog for Theme {
                     Container::Sidebar => 1.0,
                     Container::TopBar => 1.0,
                     Container::GamesTable => 1.0,
-                    Container::GamesTableRow => 0.0,
+                    Container::GamesTableRow => 1.0,
                     Container::DaemonStatus => 1.0,
                     Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
@@ -474,7 +474,7 @@ impl container::Catalog for Theme {
                     Container::GamesTable => 10.0.into(),
                     Container::GamesTableRow => 0.0.into(),
                     Container::DaemonStatus => 8.0.into(),
-                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 4.0.into(),
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 50.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge
