@@ -3746,7 +3746,7 @@ impl App {
 
                     let last_sync_from = meta
                         .and_then(|m| m.last_synced_from.as_deref())
-                        .map(|id| game_list.get_device_name(id).to_string());
+                        .map(|id| self.game_list.get_device_name(id).to_string());
 
                     let (status_text, status_detail) = match mode {
                         ludusavi::sync::sync_config::SaveMode::None => (
