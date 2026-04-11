@@ -292,7 +292,7 @@ where
                 None,
                 &self.menu_style,
             )
-            .width(150.0)
+            .width(160.0)
             .padding(self.padding)
             .font(self.font.unwrap_or_else(|| renderer.default_font()))
             .text_shaping(text::Shaping::Advanced);
@@ -301,8 +301,10 @@ where
                 menu = menu.text_size(text_size);
             }
 
+            let mut pos = layout.position() + translation;
+            pos.x = pos.x - 160.0 + bounds.width;
             Some(menu.overlay(
-                layout.position() + translation,
+                pos,
                 *viewport,
                 bounds.height,
                 Length::Shrink,
