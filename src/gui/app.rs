@@ -4470,20 +4470,6 @@ impl App {
                     .last()
                     .map(|modal| modal.view(&self.config, &self.text_histories, &self.operation)),
             )
-            .push(
-                self.timed_notification.as_ref().map(|x| {
-                    Container::new(
-                        Column::new()
-                            .push(crate::gui::widget::Space::new().height(Length::Fill))
-                            .push(
-                                Container::new(x.view())
-                                    .center_x(Length::Fill)
-                            )
-                    )
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                })
-            );
 
         Column::new()
             .width(Length::Fill)
