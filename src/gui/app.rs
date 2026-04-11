@@ -3440,7 +3440,9 @@ impl App {
                     );
                 } else {
                     let search_lower = self.games_search.to_lowercase();
-                    for entry in entries {
+                    let mut peekable_entries = entries.iter().peekable();
+                    while let Some(entry) = peekable_entries.next() {
+                        let is_last = peekable_entries.peek().is_none();
                         let name = &entry.scan_info.game_name;
                         if !search_lower.is_empty() && !name.to_lowercase().contains(&search_lower) {
                             continue;
@@ -3607,12 +3609,14 @@ impl App {
                             .class(style::Button::SidebarItem);
 
                         rows = rows.push(clickable_row);
-                        rows = rows.push(
-                            Container::new(crate::gui::widget::Space::new())
-                                .width(Length::Fill)
-                                .height(1)
-                                .class(style::Container::Divider),
-                        );
+                        if !is_last {
+                            rows = rows.push(
+                                Container::new(crate::gui::widget::Space::new())
+                                    .width(Length::Fill)
+                                    .height(1)
+                                    .class(style::Container::Divider),
+                            );
+                        }
                     }
                 }
                 let table = Container::new(
