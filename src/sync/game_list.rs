@@ -18,11 +18,17 @@ pub fn game_zip_file_name(game_id: &str) -> String {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GameListFile {
     pub games: Vec<GameMetaData>,
+    #[serde(default)]
+    pub device_names: HashMap<String, String>,
 }
 
 impl GameListFile {
     pub fn get_game(&self, id: &str) -> Option<&GameMetaData> {
         self.games.iter().find(|g| g.id == id)
+    }
+
+    pub fn get_device_name<'a>(&'a self, device_id: &'a str) -> &'a str {
+        self.device_names.get(device_id).map(|s| s.as_str()).unwrap_or(device_id)
     }
 
     pub fn get_game_mut(&mut self, id: &str) -> Option<&mut GameMetaData> {
