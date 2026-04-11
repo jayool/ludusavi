@@ -245,10 +245,19 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     save_last_mod_time(&app_dir, &last_known_mod_time);
     let mut poll_counter: u64 = 0;
     const POLL_EVERY_N_SECONDS: u64 = 30;
+    let mut last_sync_games_mtime = get_sync_games_mtime();
 
     while !stop_flag.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_secs(1));
         poll_counter += 1;
+
+        // Detectar cambios en sync-games.json y reiniciar si cambió
+        let current_sync_games_mtime = get_sync_games_mtime();
+        if current_sync_games_mtime != last_sync_games_mtime && last_sync_games_mtime.is_some() {
+            log::info!("[sync daemon] sync-games.json changed, restarting to pick up new config...");
+            return run_daemon(stop_flag);
+        }
+        last_sync_games_mtime = current_sync_games_mtime;
 
         let ready_games: Vec<String> = {
             let state = debounce_state.lock().unwrap();
@@ -711,4 +720,12 @@ fn write_sync_status(app_dir: &StrictPath, synced_games: &std::collections::Hash
 
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
+}
+
+fn get_sync_games_mtime() -> Option<std::time::SystemTime> {
+    let app_dir = crate::prelude::app_dir();
+    let path = app_dir.joined("sync-games.json");
+    path.as_std_path_buf().ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .and_then(|m| m.modified().ok())
 }
