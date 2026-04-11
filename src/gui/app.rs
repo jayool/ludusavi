@@ -3471,33 +3471,45 @@ impl App {
                             ludusavi::sync::sync_config::SaveMode::Sync => "SYNC",
                         };
 
-                        // Last synced from
-                        let last_from_full = meta
-                            .and_then(|m| m.last_synced_from.as_deref())
-                            .unwrap_or("—");
-                        let last_from = if last_from_full.len() > 8 {
-                            format!("{}...", &last_from_full[..8])
-                        } else {
-                            last_from_full.to_string()
+                        // Last synced from — solo aplica a CLOUD y SYNC
+                        let last_from = match mode {
+                            ludusavi::sync::sync_config::SaveMode::Cloud |
+                            ludusavi::sync::sync_config::SaveMode::Sync => {
+                                let full = meta
+                                    .and_then(|m| m.last_synced_from.as_deref())
+                                    .unwrap_or("—");
+                                if full.len() > 8 {
+                                    format!("{}...", &full[..8])
+                                } else {
+                                    full.to_string()
+                                }
+                            }
+                            _ => "—".to_string(),
                         };
 
-                        // Last synced time — simple format
-                        let last_synced = meta
-                            .and_then(|m| m.last_sync_time_utc)
-                            .map(|t| {
-                                let now = chrono::Utc::now();
-                                let diff = now.signed_duration_since(t);
-                                if diff.num_minutes() < 1 {
-                                    "just now".to_string()
-                                } else if diff.num_hours() < 1 {
-                                    format!("{} min ago", diff.num_minutes())
-                                } else if diff.num_hours() < 24 {
-                                    format!("{} hours ago", diff.num_hours())
-                                } else {
-                                    format!("{} days ago", diff.num_days())
-                                }
-                            })
-                            .unwrap_or_else(|| "Never".to_string());
+                        // Last synced time — solo aplica a CLOUD y SYNC
+                        let last_synced = match mode {
+                            ludusavi::sync::sync_config::SaveMode::Cloud |
+                            ludusavi::sync::sync_config::SaveMode::Sync => {
+                                meta
+                                    .and_then(|m| m.last_sync_time_utc)
+                                    .map(|t| {
+                                        let now = chrono::Utc::now();
+                                        let diff = now.signed_duration_since(t);
+                                        if diff.num_minutes() < 1 {
+                                            "just now".to_string()
+                                        } else if diff.num_hours() < 1 {
+                                            format!("{} min ago", diff.num_minutes())
+                                        } else if diff.num_hours() < 24 {
+                                            format!("{} hours ago", diff.num_hours())
+                                        } else {
+                                            format!("{} days ago", diff.num_days())
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "Never".to_string())
+                            }
+                            _ => "—".to_string(),
+                        };
 
                         let row = Container::new(
                             Row::new()
