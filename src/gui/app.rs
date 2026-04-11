@@ -2232,7 +2232,7 @@ impl App {
             Message::ForceUploadGame(game_name) => {
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
-                let game_list = self.game_list.clone();
+                let _game_list = self.game_list.clone();
 
                 Task::perform(
                     async move {
