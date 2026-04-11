@@ -3679,12 +3679,15 @@ impl App {
                         .height(52)
                         .align_y(Alignment::Center)
                         .push(crate::gui::widget::text(game_name.clone()).size(15).width(Length::Fill))
-                        .push_maybe(
-                            self.timed_notification.as_ref().map(|n| {
-                                crate::gui::widget::text(n.text.clone())
-                                    .size(12)
-                                    .class(style::Text::Muted)
-                            })
+                        .push_if(
+                            self.timed_notification.is_some(),
+                            || {
+                                crate::gui::widget::text(
+                                    self.timed_notification.as_ref().unwrap().text.clone()
+                                )
+                                .size(12)
+                                .class(style::Text::Muted)
+                            }
                         )
                         .push(crate::gui::widget::Space::new().width(16))
                         .push(
