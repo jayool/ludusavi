@@ -3521,16 +3521,9 @@ impl App {
                                                     jump: false,
                                                     games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
                                                 }),
-                                                "Backup" => Message::Backup(BackupPhase::Start {
-                                                    preview: false,
-                                                    repair: false,
-                                                    jump: false,
-                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
-                                                }),
-                                                "Restore" => Message::Restore(RestorePhase::Start {
-                                                    preview: false,
-                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
-                                                }),
+                                                "Backup" => Message::SyncBackupGame(game_for_menu.clone()),
+                                                "Restore" => Message::SyncRestoreGame(game_for_menu.clone()),
+                                                "Sync now" => Message::SyncNow(game_for_menu.clone()),
                                                 _ => Message::Ignore,
                                             },
                                         )
