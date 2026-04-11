@@ -3604,7 +3604,7 @@ impl App {
                             .on_press(Message::SwitchScreen(Screen::GameDetail(name_for_click)))
                             .width(Length::Fill)
                             .padding(0)
-                            .class(style::Button::Bare);
+                            .class(style::Button::SidebarItem);
 
                         rows = rows.push(clickable_row);
                         rows = rows.push(
