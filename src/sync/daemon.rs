@@ -457,7 +457,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
     let steam_shortcuts = SteamShortcuts::scan(&title_finder);
     let launchers = Launchers::scan(&roots, &manifest, &unregistered, &title_finder, None);
 
-    let mut any_changes = false;
+    let mut _any_changes = false;
 
     for game_id in &unregistered {
         let game_entry = match manifest.0.get(game_id.as_str()) {
@@ -490,7 +490,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
                 log::info!("[sync daemon] Auto-registered path for {}: {}", game_id, root_path);
                 if let Some(game) = game_list.get_game_mut(game_id) {
                     game.path_by_device.insert(device.id.clone(), root_path);
-                    any_changes = true;
+                    _any_changes = true;
                 }
             }
             None => {
@@ -504,7 +504,7 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
                         );
                         if let Some(game) = game_list.get_game_mut(game_id) {
                             game.path_by_device.insert(device.id.clone(), expected_path);
-                            any_changes = true;
+                            _any_changes = true;
                         }
                     }
                     None => {
