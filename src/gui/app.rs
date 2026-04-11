@@ -2154,7 +2154,7 @@ impl App {
 
                         match mode {
                             ludusavi::sync::sync_config::SaveMode::Local => {
-                                let zip_dir = app_dir.joined("local-backups");
+                                let zip_dir = config.backup.path.joined("local-backups");
                                 let zip_path = zip_dir.joined(&format!("{}.zip", game_name));
                                 ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
                                     .map_err(|e| e.to_string())?;
@@ -2200,7 +2200,7 @@ impl App {
 
                         match mode {
                             ludusavi::sync::sync_config::SaveMode::Local => {
-                                let zip_path = app_dir.joined("local-backups").joined(&format!("{}.zip", game_name));
+                                let zip_path = config.backup.path.joined("local-backups").joined(&format!("{}.zip", game_name));
                                 let local_path = match game.path_by_device.get(&device.id) {
                                     Some(p) => p.clone(),
                                     None => return Err(format!("No local path for game: {}", game_name)),
