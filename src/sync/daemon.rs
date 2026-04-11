@@ -138,6 +138,16 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     let watched_paths: HashMap<String, String> = game_list
         .games
         .iter()
+        .filter(|g| {
+            let mode = sync_config.get_mode(&g.id);
+            let auto_sync = sync_config.get_auto_sync(&g.id);
+            match mode {
+                crate::sync::sync_config::SaveMode::None => false,
+                crate::sync::sync_config::SaveMode::Local => auto_sync,
+                crate::sync::sync_config::SaveMode::Cloud => auto_sync,
+                crate::sync::sync_config::SaveMode::Sync => true,
+            }
+        })
         .filter_map(|g| {
             g.path_by_device
                 .get(&device.id)
