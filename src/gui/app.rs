@@ -3613,7 +3613,7 @@ impl App {
                                 .height(1)
                                 .class(style::Container::Divider),
                         );
-                }
+                    }
 
                 let table = Container::new(
                     Column::new()
