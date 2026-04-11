@@ -3607,7 +3607,12 @@ impl App {
                             .class(style::Button::Bare);
 
                         rows = rows.push(clickable_row);
-                    }
+                        rows = rows.push(
+                            Container::new(crate::gui::widget::Space::new())
+                                .width(Length::Fill)
+                                .height(1)
+                                .class(style::Container::Divider),
+                        );
                 }
 
                 let table = Container::new(
