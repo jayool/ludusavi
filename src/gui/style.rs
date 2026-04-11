@@ -395,6 +395,7 @@ pub enum Container {
     DaemonDotActive,
     DaemonDotPending,
     DaemonDotInactive,
+    Divider,
 }
 impl container::Catalog for Theme {
     type Class<'a> = Container;
@@ -423,6 +424,7 @@ impl container::Catalog for Theme {
                 Container::DaemonDotPending => self.yellow.into(),
                 Container::DaemonDotInactive => self.text_muted.into(),
                 Container::BadgeActivated => self.negative.into(),
+                Container::Divider => self.border.into(),
                 _ => self.background.into(),
             }),
             border: Border {
@@ -455,8 +457,9 @@ impl container::Catalog for Theme {
                     Container::Sidebar => 1.0,
                     Container::TopBar => 1.0,
                     Container::GamesTable => 1.0,
-                    Container::GamesTableRow => 1.0,
+                    Container::GamesTableRow => 0.0,
                     Container::DaemonStatus => 1.0,
+                    Container::Divider => 0.0,
                     Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
@@ -474,6 +477,7 @@ impl container::Catalog for Theme {
                     Container::GamesTable => 10.0.into(),
                     Container::GamesTableRow => 0.0.into(),
                     Container::DaemonStatus => 8.0.into(),
+                    Container::Divider => 0.0.into(),
                     Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 50.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
