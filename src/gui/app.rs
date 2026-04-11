@@ -4469,7 +4469,7 @@ impl App {
                 self.modals
                     .last()
                     .map(|modal| modal.view(&self.config, &self.text_histories, &self.operation)),
-            )
+            );
 
         Column::new()
             .width(Length::Fill)
