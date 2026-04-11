@@ -355,7 +355,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                         }
                         log::info!("[sync daemon] Local backup for {}", game.name);
                         if let Some(local_path) = game.path_by_device.get(&device.id).cloned() {
-                            let zip_dir = config.backup.path.joined("local-backups");
+                            let zip_dir = config.backup.path.clone();
                             let zip_path = zip_dir.joined(&format!("{}.zip", game.id));
                             match crate::sync::operations::create_zip_from_folder(&local_path, &zip_path) {
                                 Ok(_) => log::info!("[sync daemon] Local backup complete: {}", game.name),
