@@ -8,7 +8,7 @@ use crate::gui::{
 };
 
 pub struct Notification {
-    text: String,
+    pub text: String,
     created: Instant,
     expires: Option<u64>,
 }
