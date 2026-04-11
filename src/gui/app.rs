@@ -3516,7 +3516,7 @@ impl App {
                                         .height(10)
                                         .class(dot_class),
                                 )
-                                .push(crate::gui::widget::Space::new().width(10))
+                                .push(crate::gui::widget::Space::new().width(16))
                                 .push(
                                     crate::gui::widget::text(name.clone())
                                         .size(13)
