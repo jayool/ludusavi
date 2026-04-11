@@ -2175,7 +2175,7 @@ impl App {
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Backup completado".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Backup completed".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
@@ -2214,7 +2214,7 @@ impl App {
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Restore completado".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Restore completed".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
@@ -2258,7 +2258,7 @@ impl App {
                             .map_err(|e| e.to_string())
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Upload completado".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Upload completed".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
@@ -2278,7 +2278,7 @@ impl App {
                             .map_err(|e| e.to_string())
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Download completado".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Download completed".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
@@ -4458,6 +4458,15 @@ impl App {
                 self.modals
                     .last()
                     .map(|modal| modal.view(&self.config, &self.text_histories, &self.operation)),
+            )
+            .push(
+                self.timed_notification.as_ref().map(|x| {
+                    Container::new(x.view())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_bottom(Length::Shrink)
+                        .align_x(iced::alignment::Horizontal::Center)
+                })
             );
 
         Column::new()
@@ -4465,7 +4474,6 @@ impl App {
             .height(Length::Fill)
             .push(stack)
             .push_if(self.progress.visible(), || self.progress.view(&self.operation))
-            .push(self.timed_notification.as_ref().map(|x| x.view()))
             .push(self.manifest_notification.as_ref().map(|x| x.view()))
             .into()
     }
