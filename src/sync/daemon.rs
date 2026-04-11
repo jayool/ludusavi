@@ -555,8 +555,13 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
             let mode = sync_config.get_mode(&game.name);
+            let auto_sync = sync_config.get_auto_sync(&game.name);
             if matches!(mode, crate::sync::sync_config::SaveMode::None | crate::sync::sync_config::SaveMode::Local) {
                 log::debug!("[sync daemon] Skipping download for {} — mode is {:?}", game.name, mode);
+                continue;
+            }
+            if matches!(mode, crate::sync::sync_config::SaveMode::Cloud) && !auto_sync {
+                log::debug!("[sync daemon] Skipping startup sync for {} — CLOUD auto sync off", game.name);
                 continue;
             }
             let local_path = game.path_by_device.get(&device.id).cloned();
@@ -654,8 +659,13 @@ fn check_downloads_and_rewatch(
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
             let mode = sync_config.get_mode(&game.name);
+            let auto_sync = sync_config.get_auto_sync(&game.name);
             if matches!(mode, crate::sync::sync_config::SaveMode::None | crate::sync::sync_config::SaveMode::Local) {
                 log::debug!("[sync daemon] Skipping download for {} — mode is {:?}", game.name, mode);
+                continue;
+            }
+            if matches!(mode, crate::sync::sync_config::SaveMode::Cloud) && !auto_sync {
+                log::debug!("[sync daemon] Skipping startup sync for {} — CLOUD auto sync off", game.name);
                 continue;
             }
             let local_path = game.path_by_device.get(&device.id).cloned();
