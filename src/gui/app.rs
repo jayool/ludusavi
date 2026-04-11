@@ -1516,6 +1516,7 @@ impl App {
                 if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
                     self.sync_games_config.games.insert(name, pending);
                     self.sync_games_config.save();
+                    self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
                 }
                 Task::none()
             }
@@ -2174,11 +2175,8 @@ impl App {
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::Ignore,
-                        Err(e) => {
-                            log::error!("[SyncBackupGame] {}", e);
-                            Message::Ignore
-                        }
+                        Ok(_) => Message::ShowTimedNotification("✓ Backup completado".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
             }
@@ -2216,13 +2214,14 @@ impl App {
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::Ignore,
-                        Err(e) => {
-                            log::error!("[SyncRestoreGame] {}", e);
-                            Message::Ignore
-                        }
+                        Ok(_) => Message::ShowTimedNotification("✓ Restore completado".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
+            }
+            Message::ShowTimedNotification(msg) => {
+                self.timed_notification = Some(Notification::new(msg).expires(3));
+                Task::none()
             }
             Message::SyncNow(game_name) => {
                 // Por ahora Ignore — implementar force sync con el daemon más adelante
@@ -2259,8 +2258,8 @@ impl App {
                             .map_err(|e| e.to_string())
                     },
                     |result| match result {
-                        Ok(_) => Message::Ignore,
-                        Err(e) => { log::error!("[ForceUpload] {}", e); Message::Ignore }
+                        Ok(_) => Message::ShowTimedNotification("✓ Upload completado".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
             }
@@ -2279,8 +2278,8 @@ impl App {
                             .map_err(|e| e.to_string())
                     },
                     |result| match result {
-                        Ok(_) => Message::Ignore,
-                        Err(e) => { log::error!("[ForceDownload] {}", e); Message::Ignore }
+                        Ok(_) => Message::ShowTimedNotification("✓ Download completado".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
                     },
                 )
             }
