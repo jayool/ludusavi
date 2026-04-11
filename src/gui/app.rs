@@ -2229,6 +2229,61 @@ impl App {
                 log::info!("[SyncNow] Requested for: {}", game_name);
                 Task::none()
             }
+            Message::ForceUploadGame(game_name) => {
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+
+                Task::perform(
+                    async move {
+                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                        let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                            .unwrap_or_default();
+                        let game = match gl.get_game_mut(&game_name) {
+                            Some(g) => g,
+                            None => {
+                                // Intentar resolver la ruta y registrar
+                                let path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                    .ok_or_else(|| format!("Cannot resolve path for: {}", game_name))?;
+                                let mut meta = ludusavi::sync::game_list::GameMetaData::new(
+                                    game_name.clone(), game_name.clone(),
+                                );
+                                meta.path_by_device.insert(device.id.clone(), path);
+                                gl.upsert_game(meta);
+                                gl.get_game_mut(&game_name).unwrap()
+                            }
+                        };
+                        ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
+                            .map_err(|e| e.to_string())?;
+                        ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl)
+                            .map_err(|e| e.to_string())
+                    },
+                    |result| match result {
+                        Ok(_) => Message::Ignore,
+                        Err(e) => { log::error!("[ForceUpload] {}", e); Message::Ignore }
+                    },
+                )
+            }
+            Message::ForceDownloadGame(game_name) => {
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+
+                Task::perform(
+                    async move {
+                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                        let game = game_list.games.iter().find(|g| g.id == game_name)
+                            .ok_or_else(|| format!("Game not found in game list: {}", game_name))?
+                            .clone();
+                        ludusavi::sync::operations::download_game(&config, &app_dir, &device, &game)
+                            .map_err(|e| e.to_string())
+                    },
+                    |result| match result {
+                        Ok(_) => Message::Ignore,
+                        Err(e) => { log::error!("[ForceDownload] {}", e); Message::Ignore }
+                    },
+                )
+            }
             Message::ShowGameNotes { game, notes } => self.show_modal(Modal::GameNotes { game, notes }),
             Message::FindRoots => {
                 let missing = self.config.find_missing_roots();
@@ -3524,6 +3579,8 @@ impl App {
                                                 "Backup" => Message::SyncBackupGame(game_for_menu.clone()),
                                                 "Restore" => Message::SyncRestoreGame(game_for_menu.clone()),
                                                 "Sync now" => Message::SyncNow(game_for_menu.clone()),
+                                                "Force upload" => Message::ForceUploadGame(game_for_menu.clone()),
+                                                "Force download" => Message::ForceDownloadGame(game_for_menu.clone()),
                                                 _ => Message::Ignore,
                                             },
                                         )
