@@ -515,10 +515,9 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
         }
     }
 
-    if any_changes {
-        write_game_list_to_cloud(config, &game_list).map_err(|e| format!("Failed to write game list: {e}"))?;
-        log::info!("[sync daemon] Updated game list with auto-registered paths");
-    }
+    game_list.device_names.insert(device.id.clone(), device.name.clone());
+    write_game_list_to_cloud(config, &game_list).map_err(|e| format!("Failed to write game list: {e}"))?;
+    log::info!("[sync daemon] Updated game list with device name and auto-registered paths");
 
     Ok(())
 }
