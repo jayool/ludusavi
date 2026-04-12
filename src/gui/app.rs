@@ -3495,7 +3495,7 @@ impl App {
                 .push(nav_item("📦  Backup", Screen::Backup))
                 .push(nav_item("↩  Restore", Screen::Restore))
                 .push(nav_item("🎮  Custom games", Screen::CustomGames))
-                .push(nav_item("ℹ  Other", Screen::Other));
+                .push(nav_item("⚙  Settings", Screen::Other))
 
             // Daemon status pill
             let daemon_pill = Container::new(
