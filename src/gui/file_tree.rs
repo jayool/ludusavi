@@ -154,7 +154,7 @@ impl FileTreeNode {
                 Row::new()
                     .align_y(Alignment::Center)
                     .padding(padding::left(35 * level).right(10))
-                    .spacing(10)
+                    .spacing(5)
                     .push(match self.node_type {
                         FileTreeNodeType::File | FileTreeNodeType::RegistryValue(_) => {
                             Container::new(Icon::SubdirectoryArrowRight.text().height(25).width(25).size(25))
@@ -227,7 +227,7 @@ impl FileTreeNode {
                     Row::new()
                         .align_y(Alignment::Center)
                         .padding(padding::left(35 * level).right(10))
-                        .spacing(10)
+                        .spacing(5)
                         .push(button::expand(
                             expanded,
                             Message::ToggleGameListEntryTreeExpanded {
