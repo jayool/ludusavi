@@ -231,6 +231,7 @@ pub enum Message {
     ForceUploadGame(String),
     ForceDownloadGame(String),
     ShowTimedNotification(String),
+    GameDetailFilesToggled,
 }
 
 impl Message {
