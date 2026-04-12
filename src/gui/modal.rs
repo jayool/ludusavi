@@ -874,7 +874,14 @@ impl Modal {
                             Container::new(opaque(self.content(config, histories, operation)))
                                 .class(style::Container::ModalBackground)
                                 .width(Length::Fill)
-                                .height(Length::FillPortion(self.body_height_portion())),
+                                .height(match self {
+                                    Self::ConfirmSyncBackup { .. }
+                                    | Self::ConfirmSyncRestore { .. }
+                                    | Self::ConfirmForceUpload { .. }
+                                    | Self::ConfirmForceDownload { .. }
+                                    | Self::ConfirmSyncModeChange { .. } => Length::Shrink,
+                                    _ => Length::FillPortion(self.body_height_portion()),
+                                }),
                         )
                         .push(vertical()),
                 )
