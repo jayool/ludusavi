@@ -790,6 +790,7 @@ pub enum ScrollSubject {
     CustomGames,
     Other,
     Modal,
+    GameDetail,
 }
 
 impl ScrollSubject {
@@ -807,6 +808,7 @@ impl ScrollSubject {
             Self::CustomGames => crate::gui::widget::id::custom_games_scroll(),
             Self::Other => crate::gui::widget::id::other_scroll(),
             Self::Modal => crate::gui::widget::id::modal_scroll(),
+            Self::GameDetail => crate::gui::widget::id::game_detail_scroll(),
         }
     }
 
