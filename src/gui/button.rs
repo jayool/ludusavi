@@ -37,9 +37,9 @@ fn template_small(content: Text, action: Option<Message>, style: Option<style::B
     Button::new(content.align_x(alignment::Horizontal::Center))
         .on_press_maybe(action)
         .class(style.unwrap_or(style::Button::Primary))
-        .padding(3)
-        .height(20)
-        .width(20)
+        .padding(4)
+        .height(28)
+        .width(28)
         .into()
 }
 
@@ -603,9 +603,9 @@ pub fn expand<'a>(expanded: bool, on_press: Message) -> Element<'a> {
     )
     .on_press(on_press)
     .class(style::Button::Primary)
-    .padding(5)
-    .height(25)
-    .width(25)
+    .padding(3)
+    .height(20)
+    .width(20)
     .into()
 }
 pub fn remove_small<'a>(action: impl Fn(EditAction) -> Message, index: usize) -> Element<'a> {
