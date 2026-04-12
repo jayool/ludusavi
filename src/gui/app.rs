@@ -2505,6 +2505,12 @@ impl App {
                 // Lanzar scan automático al entrar a GameDetail
                 if let Screen::GameDetail(ref game_name) = screen {
                     self.game_detail_files_expanded = false;
+                    self.backup_screen.log.expand_game(
+                        game_name,
+                        &self.backup_screen.duplicate_detector,
+                        &self.config,
+                        ScanKind::Backup,
+                    );
                     let scan_task = self.handle_backup(BackupPhase::Start {
                         preview: true,
                         repair: false,
@@ -4453,32 +4459,16 @@ impl App {
                                             .class(style::Text::Muted)
                                     ).padding([8, 0]))
                                 } else {
-                                    match e.tree.as_ref() {
-                                        Some(tree) => Some(Container::new(
+                                    e.tree.as_ref().map(|tree| {
+                                        Container::new(
                                             tree.view(&game_name, &self.config, ScanKind::Backup)
                                                 .width(Length::Fill)
-                                        ).padding([8, 0])),
-                                        None => {
-                                            let mut files_col = Column::new().spacing(4).padding([8, 0]);
-                                            for (path, _) in &e.scan_info.found_files {
-                                                files_col = files_col.push(
-                                                    crate::gui::widget::text(path.render())
-                                                        .size(11)
-                                                        .class(style::Text::Dim)
-                                                );
-                                            }
-                                            Some(Container::new(files_col))
-                                        }
-                                    }
+                                        ).padding([8, 0])
+                                    })
                                 }
                             }
-                            Some(_) => Some(Container::new(
+                            _ => Some(Container::new(
                                 crate::gui::widget::text("Scanning...")
-                                    .size(12)
-                                    .class(style::Text::Muted)
-                            ).padding([8, 0])),
-                            None => Some(Container::new(
-                                crate::gui::widget::text("No scan data available.")
                                     .size(12)
                                     .class(style::Text::Muted)
                             ).padding([8, 0])),
