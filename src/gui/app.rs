@@ -2107,6 +2107,49 @@ impl App {
             Message::Restore(phase) => self.handle_restore(phase),
             Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::CancelOperation => self.cancel_operation(),
+            Message::RequestSyncBackup(game_name) => {
+                self.show_modal(Modal::ConfirmSyncBackup { game: game_name })
+            }
+            Message::RequestSyncRestore(game_name) => {
+                self.show_modal(Modal::ConfirmSyncRestore { game: game_name })
+            }
+            Message::RequestForceUpload(game_name) => {
+                self.show_modal(Modal::ConfirmForceUpload { game: game_name })
+            }
+            Message::RequestForceDownload(game_name) => {
+                self.show_modal(Modal::ConfirmForceDownload { game: game_name })
+            }
+            Message::ConfirmSyncModeChange { game, previous_mode } => {
+                // Ejecutar el cambio de modo que ya estaba pendiente
+                if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
+                    self.sync_games_config.games.insert(name.clone(), pending);
+                    self.sync_games_config.save();
+                    self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
+                    // Si el modo anterior era CLOUD o SYNC, borrar ZIP del cloud
+                    let should_delete = matches!(previous_mode,
+                        ludusavi::sync::sync_config::SaveMode::Cloud |
+                        ludusavi::sync::sync_config::SaveMode::Sync
+                    );
+                    if should_delete {
+                        let config = self.config.clone();
+                        let game_name = game.clone();
+                        return Task::batch([
+                            self.close_modal(),
+                            Task::perform(
+                                async move {
+                                    ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name)
+                                        .map_err(|e| e.to_string())
+                                },
+                                |result| match result {
+                                    Ok(_) => Message::ShowTimedNotification("✓ Saved. Cloud backup removed.".to_string()),
+                                    Err(e) => Message::ShowTimedNotification(format!("✓ Saved. Warning: could not remove cloud backup: {}", e)),
+                                },
+                            ),
+                        ]);
+                    }
+                }
+                self.close_modal()
+            }
             Message::SyncBackupGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Backing up...".to_string());
                 let config = self.config.clone();
