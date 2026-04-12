@@ -832,8 +832,8 @@ impl From<Screen> for ScrollSubject {
         match value {
             Screen::Backup => Self::Backup,
             Screen::Restore => Self::Restore,
-            Screen::CustomGames => Self::CustomGames,
-            Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => Self::Other,
+            Screen::GameDetail(_) => Self::GameDetail,
+            Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => Self::Other,
         }
     }
 }
