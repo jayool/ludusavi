@@ -124,6 +124,7 @@ pub struct App {
     game_list: ludusavi::sync::game_list::GameListFile,
     sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
     sync_in_progress: Option<String>,
+    game_detail_files_expanded: bool,
 }
 
 impl App {
@@ -2501,6 +2502,17 @@ impl App {
                     self.pending_game_detail = None;
                     self.pending_game_detail_name = None;
                 }
+                // Lanzar scan automático al entrar a GameDetail
+                if let Screen::GameDetail(ref game_name) = screen {
+                    self.game_detail_files_expanded = false;
+                    let scan_task = self.handle_backup(BackupPhase::Start {
+                        preview: true,
+                        repair: false,
+                        jump: false,
+                        games: Some(GameSelection::single(game_name.clone())),
+                    });
+                    return Task::batch([self.switch_screen(screen), scan_task]);
+                }
                 self.switch_screen(screen)
             }
             Message::ToggleGameListEntryExpanded { name } => {
@@ -3061,6 +3073,10 @@ impl App {
             }
             Message::OpenUrl(url) => Self::open_url(url),
             Message::OpenUrlAndCloseModal(url) => Task::batch([Self::open_url(url), self.close_modal()]),
+            Message::GameDetailFilesToggled => {
+                self.game_detail_files_expanded = !self.game_detail_files_expanded;
+                Task::none()
+            }
             Message::EditedCloudRemote(choice) => {
                 if let Ok(remote) = Remote::try_from(choice) {
                     match &remote {
@@ -4390,6 +4406,74 @@ impl App {
                         .class(style::Container::GamesTable)
                 };
 
+                // FILES expandible
+                let entry = self.backup_screen.log.entries.iter().find(|e| e.scan_info.game_name == game_name);
+
+                let is_scanning = !self.operation.idle()
+                    && self.operation.games().is_some_and(|g| g.contains(&game_name));
+
+                let files_card = {
+                    let header_button = crate::gui::widget::Button::new(
+                        Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(crate::gui::widget::text(if self.game_detail_files_expanded { "▼" } else { "▶" }).size(11))
+                            .push(crate::gui::widget::text("FILES").size(11).class(style::Text::Muted))
+                            .push_if(is_scanning, || {
+                                crate::gui::widget::text("Scanning...").size(11).class(style::Text::Muted)
+                            })
+                    )
+                    .padding([6, 0])
+                    .class(style::Button::Bare)
+                    .on_press(Message::GameDetailFilesToggled);
+
+                    let files_content = if self.game_detail_files_expanded {
+                        match entry {
+                            Some(e) if e.scanned => {
+                                let file_count = e.scan_info.found_files.len();
+                                if file_count == 0 {
+                                    Some(Container::new(
+                                        crate::gui::widget::text("No save files detected.")
+                                            .size(12)
+                                            .class(style::Text::Muted)
+                                    ).padding([8, 0]))
+                                } else {
+                                    let mut files_col = Column::new().spacing(4).padding([8, 0]);
+                                    for (path, _) in &e.scan_info.found_files {
+                                        files_col = files_col.push(
+                                            crate::gui::widget::text(path.render())
+                                                .size(11)
+                                                .class(style::Text::Dim)
+                                        );
+                                    }
+                                    Some(Container::new(files_col))
+                                }
+                            }
+                            Some(_) => Some(Container::new(
+                                crate::gui::widget::text("Scanning...")
+                                    .size(12)
+                                    .class(style::Text::Muted)
+                            ).padding([8, 0])),
+                            None => Some(Container::new(
+                                crate::gui::widget::text("No scan data available.")
+                                    .size(12)
+                                    .class(style::Text::Muted)
+                            ).padding([8, 0])),
+                        }
+                    } else {
+                        None
+                    };
+
+                    Container::new(
+                        Column::new()
+                            .push(header_button)
+                            .push_if(files_content.is_some(), || files_content.unwrap())
+                    )
+                    .width(Length::Fill)
+                    .padding(16)
+                    .class(style::Container::GamesTable)
+                };
+
                 let content = Column::new()
                     .push(header)
                     .push(
@@ -4400,7 +4484,8 @@ impl App {
                                 .push(status_card)
                                 .push(settings_card)
                                 .push(devices_card)
-                                .push(save_button),
+                                .push(save_button)
+                                .push(files_card),
                         )
                         .width(Length::Fill),
                     );
