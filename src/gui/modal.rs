@@ -358,7 +358,7 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::BackupValidation { .. }
             | Self::GameNotes { .. }
-            Self::ActiveScanGames => Some(Message::CloseModal),
+            | Self::ActiveScanGames => Some(Message::CloseModal),
             Self::ConfirmSyncBackup { game } => Some(Message::SyncBackupGame(game.clone())),
             Self::ConfirmSyncRestore { game } => Some(Message::SyncRestoreGame(game.clone())),
             Self::ConfirmForceUpload { game } => Some(Message::ForceUploadGame(game.clone())),
@@ -499,7 +499,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. } => vec![],
         }
     }
 
@@ -701,7 +701,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. } => (),
         }
     }
 
@@ -745,7 +745,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. } => (),
         }
     }
 
@@ -773,7 +773,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. } => (),
         }
     }
 
@@ -825,7 +825,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. } => 2,
         }
     }
 
