@@ -3746,12 +3746,18 @@ impl App {
                                     let game_for_menu = name.clone();
                                     let options = match mode {
                                         ludusavi::sync::sync_config::SaveMode::None => vec![],
-                                        ludusavi::sync::sync_config::SaveMode::Local |
+                                        ludusavi::sync::sync_config::SaveMode::Local => {
+                                            if self.sync_games_config.get_auto_sync(name) {
+                                                vec!["Sync now", "Backup", "Restore"]
+                                            } else {
+                                                vec!["Backup", "Restore"]
+                                            }
+                                        }
                                         ludusavi::sync::sync_config::SaveMode::Cloud => {
                                             if self.sync_games_config.get_auto_sync(name) {
                                                 vec!["Sync now", "Force upload", "Force download", "Backup", "Restore"]
                                             } else {
-                                                vec!["Backup", "Restore"]
+                                                vec!["Force upload", "Force download", "Backup", "Restore"]
                                             }
                                         }
                                         ludusavi::sync::sync_config::SaveMode::Sync => vec![
@@ -3908,7 +3914,18 @@ impl App {
                             }
                         )
                         .push_if(
-                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud) && auto_sync_current,
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local) && auto_sync_current,
+                            || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Sync now").size(13)
+                                )
+                                .padding([7, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::SyncNow(game_name.clone()))
+                            }
+                        )
+                        .push_if(
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Cloud) && auto_sync_current,
                             || {
                                 Row::new()
                                     .spacing(8)
@@ -3939,10 +3956,67 @@ impl App {
                             }
                         )
                         .push_if(
-                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud) && !auto_sync_current,
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Local) && !auto_sync_current,
                             || {
                                 Row::new()
                                     .spacing(8)
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Backup").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Primary)
+                                        .on_press(Message::RequestSyncBackup(game_name.clone()))
+                                    )
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Restore").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::RequestSyncRestore(game_name.clone()))
+                                    )
+                            }
+                        )
+                        .push_if(
+                            matches!(mode, ludusavi::sync::sync_config::SaveMode::Cloud) && !auto_sync_current,
+                            || {
+                                Row::new()
+                                    .spacing(8)
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Backup").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Primary)
+                                        .on_press(Message::RequestSyncBackup(game_name.clone()))
+                                    )
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Restore").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::RequestSyncRestore(game_name.clone()))
+                                    )
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Force upload").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::RequestForceUpload(game_name.clone()))
+                                    )
+                                    .push(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("Force download").size(13)
+                                        )
+                                        .padding([7, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::RequestForceDownload(game_name.clone()))
+                                    )
+                            }
+                        )
                         .push(
                             crate::gui::widget::Button::new(
                                 crate::gui::widget::text("Backup").size(13)
