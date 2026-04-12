@@ -673,7 +673,7 @@ impl Modal {
                     Container::new(
                         ScrollSubject::Modal.into_widget(self.body(config, histories, operation).padding([0, 30])),
                     )
-                    .padding(padding::top(30).right(5))
+                    .padding(padding::top(15).right(5))
                     .width(Length::Fill)
                     .height(Length::Fill),
                 )
@@ -870,7 +870,7 @@ impl Modal {
                 .push(horizontal())
                 .push(
                     Column::new()
-                        .width(Length::FillPortion(5))
+                        .width(Length::FillPortion(4))
                         .push(vertical())
                         .push(
                             Container::new(opaque(self.content(config, histories, operation)))
