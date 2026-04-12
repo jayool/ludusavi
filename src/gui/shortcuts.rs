@@ -535,13 +535,16 @@ impl TextHistories {
         )
         .into()
     }
-    pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
+pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
         let current = match &subject {
             UndoSubject::BackupTarget => self.backup_target.current(),
             UndoSubject::RcloneExecutable => self.rclone_executable.current(),
             UndoSubject::RcloneArguments => self.rclone_arguments.current(),
             UndoSubject::CloudPath => self.cloud_path.current(),
             UndoSubject::CloudRemoteId => self.cloud_remote_id.current(),
+            UndoSubject::RootPath(i) => self.roots.get(*i).map(|x| x.path.current()).unwrap_or_default(),
+            UndoSubject::RootLutrisDatabase(i) => self.roots.get(*i).map(|x| x.lutris_database.current()).unwrap_or_default(),
+            UndoSubject::SecondaryManifest(i) => self.secondary_manifests.get(*i).map(|x| x.current()).unwrap_or_default(),
             _ => return self.input(subject),
         };
 
@@ -551,6 +554,15 @@ impl TextHistories {
             UndoSubject::RcloneArguments => Box::new(Message::config(config::Event::RcloneArguments)),
             UndoSubject::CloudPath => Box::new(Message::config(config::Event::CloudPath)),
             UndoSubject::CloudRemoteId => Box::new(Message::config(config::Event::CloudRemoteId)),
+            UndoSubject::RootPath(i) => Box::new(Message::config(move |value| {
+                config::Event::Root(EditAction::Change(i, value))
+            })),
+            UndoSubject::RootLutrisDatabase(i) => Box::new(Message::config(move |value| {
+                config::Event::RootLutrisDatabase(i, value)
+            })),
+            UndoSubject::SecondaryManifest(i) => Box::new(Message::config(move |value| {
+                config::Event::SecondaryManifest(EditAction::Change(i, value))
+            })),
             _ => return self.input(subject),
         };
 
