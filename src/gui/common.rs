@@ -833,7 +833,7 @@ impl From<Screen> for ScrollSubject {
             Screen::Backup => Self::Backup,
             Screen::Restore => Self::Restore,
             Screen::GameDetail(_) => Self::GameDetail,
-            Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices => Self::Other,
+            Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::CustomGames => Self::Other,
         }
     }
 }
