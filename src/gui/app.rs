@@ -684,7 +684,7 @@ impl App {
                             &jump,
                             &self.backup_screen.duplicate_detector,
                             &self.config,
-                            SCAN_KIND,
+                            ScanKind::Backup,
                         );
 
                         return self
@@ -4267,13 +4267,30 @@ impl App {
                         .push(
                             meta.and_then(|m| m.path_by_device.get(&device_id))
                                 .map(|path| {
+                                    let p = path.clone();
                                     Container::new(
-                                        crate::gui::widget::text(path.clone())
-                                            .size(12)
-                                            .class(style::Text::Dim),
+                                        Row::new()
+                                            .spacing(8)
+                                            .align_y(Alignment::Center)
+                                            .push(
+                                                crate::gui::widget::text(p.clone())
+                                                    .size(12)
+                                                    .class(style::Text::Dim)
+                                                    .width(Length::Fill)
+                                            )
+                                            .push(
+                                                crate::gui::widget::Button::new(
+                                                    crate::gui::widget::text("Open").size(12)
+                                                )
+                                                .padding([4, 10])
+                                                .class(style::Button::Ghost)
+                                                .on_press(Message::OpenDir {
+                                                    path: crate::prelude::StrictPath::new(p),
+                                                })
+                                            )
                                     )
                                     .width(Length::Fill)
-                                    .padding([8, 10])
+                                    .padding([4, 10])
                                     .class(style::Container::GamesTableRow)
                                 })
                                 .unwrap_or_else(|| {
@@ -4417,7 +4434,6 @@ impl App {
                         Row::new()
                             .spacing(8)
                             .align_y(Alignment::Center)
-                            .push(crate::gui::widget::text(if self.game_detail_files_expanded { "▼" } else { "▶" }).size(11))
                             .push(crate::gui::widget::text("FILES").size(11).class(style::Text::Muted))
                             .push_if(is_scanning, || {
                                 crate::gui::widget::text("Scanning...").size(11).class(style::Text::Muted)
@@ -4430,23 +4446,30 @@ impl App {
                     let files_content = if self.game_detail_files_expanded {
                         match entry {
                             Some(e) if e.scanned => {
-                                let file_count = e.scan_info.found_files.len();
-                                if file_count == 0 {
+                                if e.scan_info.found_files.is_empty() {
                                     Some(Container::new(
                                         crate::gui::widget::text("No save files detected.")
                                             .size(12)
                                             .class(style::Text::Muted)
                                     ).padding([8, 0]))
                                 } else {
-                                    let mut files_col = Column::new().spacing(4).padding([8, 0]);
-                                    for (path, _) in &e.scan_info.found_files {
-                                        files_col = files_col.push(
-                                            crate::gui::widget::text(path.render())
-                                                .size(11)
-                                                .class(style::Text::Dim)
-                                        );
+                                    match e.tree.as_ref() {
+                                        Some(tree) => Some(Container::new(
+                                            tree.view(&game_name, &self.config, ScanKind::Backup)
+                                                .width(Length::Fill)
+                                        ).padding([8, 0])),
+                                        None => {
+                                            let mut files_col = Column::new().spacing(4).padding([8, 0]);
+                                            for (path, _) in &e.scan_info.found_files {
+                                                files_col = files_col.push(
+                                                    crate::gui::widget::text(path.render())
+                                                        .size(11)
+                                                        .class(style::Text::Dim)
+                                                );
+                                            }
+                                            Some(Container::new(files_col))
+                                        }
                                     }
-                                    Some(Container::new(files_col))
                                 }
                             }
                             Some(_) => Some(Container::new(
