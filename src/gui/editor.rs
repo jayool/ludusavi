@@ -36,20 +36,21 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                 Store::Lutris => parent
                     .push(
                         Row::new()
-                            .spacing(20)
+                            .spacing(10)
                             .push(button::move_up(Message::config(config::Event::Root), i))
                             .push(button::move_down(
                                 Message::config(config::Event::Root),
                                 i,
                                 config.roots.len(),
                             ))
-                            .push(histories.input(UndoSubject::RootPath(i)))
+                            .push(histories.input_small(UndoSubject::RootPath(i)))
                             .push(
                                 pick_list(
                                     Store::ALL,
                                     Some(root.store()),
                                     Message::config(move |v| config::Event::RootStore(i, v)),
                                 )
+                                .text_size(12)
                                 .class(style::PickList::Primary),
                             )
                             .push(button::choose_folder(BrowseSubject::Root(i), modifiers))
@@ -57,29 +58,30 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                     )
                     .push(
                         Row::new()
-                            .spacing(20)
+                            .spacing(10)
                             .align_y(Alignment::Center)
                             .push(space::horizontal().width(70))
                             .push(text(TRANSLATOR.field("pga.db")))
-                            .push(histories.input(UndoSubject::RootLutrisDatabase(i)))
+                            .push(histories.input_small(UndoSubject::RootLutrisDatabase(i)))
                             .push(button::choose_file(BrowseFileSubject::RootLutrisDatabase(i), modifiers)),
                     ),
                 _ => parent.push(
                     Row::new()
-                        .spacing(20)
+                        .spacing(10)
                         .push(button::move_up(Message::config(config::Event::Root), i))
                         .push(button::move_down(
                             Message::config(config::Event::Root),
                             i,
                             config.roots.len(),
                         ))
-                        .push(histories.input(UndoSubject::RootPath(i)))
+                        .push(histories.input_small(UndoSubject::RootPath(i)))
                         .push(
                             pick_list(
                                 Store::ALL,
                                 Some(root.store()),
                                 Message::config(move |v| config::Event::RootStore(i, v)),
                             )
+                            .text_size(12)
                             .class(style::PickList::Primary),
                         )
                         .push(button::choose_folder(BrowseSubject::Root(i), modifiers))
