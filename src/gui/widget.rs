@@ -73,6 +73,7 @@ pub mod id {
     pub static CUSTOM_GAMES_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static OTHER_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static MODAL_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
+    pub static GAME_DETAIL_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
 
     pub static BACKUP_SEARCH: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static RESTORE_SEARCH: LazyLock<Id> = LazyLock::new(Id::unique);
@@ -108,6 +109,9 @@ pub mod id {
 
     pub fn custom_games_search() -> Id {
         (*CUSTOM_GAMES_SEARCH).clone()
+    }
+    pub fn game_detail_scroll() -> Id {
+        (*GAME_DETAIL_SCROLL).clone()
     }
 }
 
