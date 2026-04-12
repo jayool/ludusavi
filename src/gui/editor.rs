@@ -92,9 +92,9 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
 
     content = content.push(
         Row::new()
-            .spacing(20)
-            .push(button::add(Message::config(config::Event::Root)))
-            .push(button::search(Message::FindRoots)),
+            .spacing(10)
+            .push(button::add_small(Message::config(config::Event::Root)))
+            .push(button::search_small(Message::FindRoots)),
     );
 
     Container::new(content)
