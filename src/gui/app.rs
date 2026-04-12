@@ -1514,7 +1514,49 @@ impl App {
                 Task::none()
             }
             Message::SaveGameDetail => {
-                if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
+                if let (Some(name), Some(pending)) = (self.pending_game_detail_name.clone(), self.pending_game_detail.clone()) {
+                    let previous_mode = self.sync_games_config.games
+                        .get(&name)
+                        .map(|g| g.mode.clone())
+                        .unwrap_or(ludusavi::sync::sync_config::SaveMode::None);
+
+                    let new_mode = pending.mode.clone();
+
+                    // Cambio destructivo: CLOUD/SYNC → LOCAL/NONE borra el ZIP del cloud
+                    let cloud_to_local = matches!(previous_mode,
+                        ludusavi::sync::sync_config::SaveMode::Cloud |
+                        ludusavi::sync::sync_config::SaveMode::Sync
+                    ) && matches!(new_mode,
+                        ludusavi::sync::sync_config::SaveMode::Local |
+                        ludusavi::sync::sync_config::SaveMode::None
+                    );
+
+                    // Cambio a NONE borra también el backup local
+                    let to_none = matches!(new_mode, ludusavi::sync::sync_config::SaveMode::None)
+                        && !matches!(previous_mode, ludusavi::sync::sync_config::SaveMode::None);
+
+                    if cloud_to_local || to_none {
+                        let warning = if to_none {
+                            format!(
+                                "Set \"{}\" to None?\n\nThe cloud backup and local backup will be deleted. This cannot be undone.",
+                                name
+                            )
+                        } else {
+                            format!(
+                                "Switch \"{}\" to Local mode?\n\nThe cloud backup will be deleted. This cannot be undone.",
+                                name
+                            )
+                        };
+                        return self.show_modal(Modal::ConfirmSyncModeChange {
+                            game: name,
+                            warning,
+                            previous_mode,
+                        });
+                    }
+
+                    // Sin warning necesario — guardar directamente
+                    self.pending_game_detail_name.take();
+                    self.pending_game_detail.take();
                     self.sync_games_config.games.insert(name, pending);
                     self.sync_games_config.save();
                     self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
@@ -3713,11 +3755,11 @@ impl App {
                                         crate::gui::popup_menu::PopupMenu::new(
                                             options,
                                             move |action| match action {
+                                                "Backup" => Message::RequestSyncBackup(game_for_menu.clone()),
+                                                "Restore" => Message::RequestSyncRestore(game_for_menu.clone()),
                                                 "Sync now" => Message::SyncNow(game_for_menu.clone()),
-                                                "Backup" => Message::SyncBackupGame(game_for_menu.clone()),
-                                                "Restore" => Message::SyncRestoreGame(game_for_menu.clone()),
-                                                "Force upload" => Message::ForceUploadGame(game_for_menu.clone()),
-                                                "Force download" => Message::ForceDownloadGame(game_for_menu.clone()),
+                                                "Force upload" => Message::RequestForceUpload(game_for_menu.clone()),
+                                                "Force download" => Message::RequestForceDownload(game_for_menu.clone()),
                                                 _ => Message::Ignore,
                                             },
                                         )
@@ -3860,7 +3902,7 @@ impl App {
                             )
                             .padding([7, 14])
                             .class(style::Button::Primary)
-                            .on_press(Message::SyncBackupGame(game_name.clone()))
+                            .on_press(Message::RequestSyncBackup(game_name.clone()))
                         )
                         .push(
                             crate::gui::widget::Button::new(
@@ -3868,7 +3910,7 @@ impl App {
                             )
                             .padding([7, 14])
                             .class(style::Button::Ghost)
-                            .on_press(Message::SyncRestoreGame(game_name.clone()))
+                            .on_press(Message::RequestSyncRestore(game_name.clone()))
                         )
                             }
                         ),
