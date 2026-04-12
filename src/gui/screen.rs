@@ -407,7 +407,6 @@ pub fn other<'a>(
                         text("Updating...").size(12).class(style::Text::Muted)
                     }),
             )
-            .push(text("Path").size(11).class(style::Text::Muted))
             .push(editor::manifest(config, cache, histories, modifiers).padding(padding::top(5))),
     )
     .width(Length::Fill)
