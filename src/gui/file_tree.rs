@@ -162,9 +162,9 @@ impl FileTreeNode {
                         FileTreeNodeType::RegistryKey => Container::new(
                             Button::new(Icon::KeyboardArrowDown.text_small())
                                 .class(style::Button::Primary)
-                                .padding(4)
-                                .height(22)
-                                .width(22),
+                                .padding(5)
+                                .height(25)
+                                .width(25),
                         ),
                     })
                     .push(make_enabler())
