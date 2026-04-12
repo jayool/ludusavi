@@ -37,8 +37,8 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                     .push(
                         Row::new()
                             .spacing(10)
-                            .push(button::move_up(Message::config(config::Event::Root), i))
-                            .push(button::move_down(
+                            .push(button::move_up_small(Message::config(config::Event::Root), i))
+                            .push(button::move_down_small(
                                 Message::config(config::Event::Root),
                                 i,
                                 config.roots.len(),
@@ -53,8 +53,8 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                                 .text_size(12)
                                 .class(style::PickList::Primary),
                             )
-                            .push(button::choose_folder(BrowseSubject::Root(i), modifiers))
-                            .push(button::remove(Message::config(config::Event::Root), i)),
+                            .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
+                            .push(button::remove_small(Message::config(config::Event::Root), i)),
                     )
                     .push(
                         Row::new()
@@ -68,8 +68,8 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                 _ => parent.push(
                     Row::new()
                         .spacing(10)
-                        .push(button::move_up(Message::config(config::Event::Root), i))
-                        .push(button::move_down(
+                        .push(button::move_up_small(Message::config(config::Event::Root), i))
+                        .push(button::move_down_small(
                             Message::config(config::Event::Root),
                             i,
                             config.roots.len(),
@@ -84,8 +84,8 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                             .text_size(12)
                             .class(style::PickList::Primary),
                         )
-                        .push(button::choose_folder(BrowseSubject::Root(i), modifiers))
-                        .push(button::remove(Message::config(config::Event::Root), i)),
+                        .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
+                        .push(button::remove_small(Message::config(config::Event::Root), i)),
                 ),
             });
     };
@@ -181,8 +181,8 @@ pub fn manifest<'a>(
                         .spacing(0)
                         .class(style::Checkbox),
                     )
-                    .push(button::move_up(Message::config(config::Event::SecondaryManifest), i))
-                    .push(button::move_down(
+                    .push(button::move_up_small(Message::config(config::Event::SecondaryManifest), i))
+                    .push(button::move_down_small(
                         Message::config(config::Event::SecondaryManifest),
                         i,
                         config.manifest.secondary.len(),
@@ -205,7 +205,7 @@ pub fn manifest<'a>(
                         }
                         SecondaryManifestConfigKind::Remote => None,
                     })
-                    .push(button::remove(Message::config(config::Event::SecondaryManifest), i)),
+                    .push(button::remove_small(Message::config(config::Event::SecondaryManifest), i)),
             )
         });
 
@@ -228,11 +228,11 @@ pub fn redirect<'a>(config: &Config, histories: &TextHistories, modifiers: &keyb
             parent.push(
                 Row::new()
                     .spacing(20)
-                    .push(button::move_up(
+                    .push(button::move_up_small(
                         Message::config(move |x| config::Event::Redirect(x, None)),
                         i,
                     ))
-                    .push(button::move_down(
+                    .push(button::move_down_small(
                         Message::config(move |x| config::Event::Redirect(x, None)),
                         i,
                         config.redirects.len(),
@@ -246,10 +246,10 @@ pub fn redirect<'a>(config: &Config, histories: &TextHistories, modifiers: &keyb
                         .class(style::PickList::Primary),
                     )
                     .push(histories.input(UndoSubject::RedirectSource(i)))
-                    .push(button::choose_folder(BrowseSubject::RedirectSource(i), modifiers))
+                    .push(button::choose_folder_small(BrowseSubject::RedirectSource(i), modifiers))
                     .push(histories.input(UndoSubject::RedirectTarget(i)))
-                    .push(button::choose_folder(BrowseSubject::RedirectTarget(i), modifiers))
-                    .push(button::remove(
+                    .push(button::choose_folder_small(BrowseSubject::RedirectTarget(i), modifiers))
+                    .push(button::remove_small(
                         Message::config(move |x| config::Event::Redirect(x, None)),
                         i,
                     )),
@@ -446,7 +446,7 @@ pub fn custom_games<'a>(
                                                         x.files.len(),
                                                     ))
                                                     .push(histories.input(UndoSubject::CustomGameFile(i, ii)))
-                                                    .push(button::choose_folder(
+                                                    .push(button::choose_folder_small(
                                                         BrowseSubject::CustomGameFile(i, ii),
                                                         modifiers,
                                                     ))
@@ -622,21 +622,21 @@ pub fn ignored_items<'a>(config: &Config, histories: &TextHistories, modifiers: 
                                         column.push(
                                             Row::new()
                                                 .spacing(20)
-                                                .push(button::move_up(
+                                                .push(button::move_up_small(
                                                     Message::config(config::Event::BackupFilterIgnoredPath),
                                                     ii,
                                                 ))
-                                                .push(button::move_down(
+                                                .push(button::move_down_small(
                                                     Message::config(config::Event::BackupFilterIgnoredPath),
                                                     ii,
                                                     config.backup.filter.ignored_paths.len(),
                                                 ))
                                                 .push(histories.input(UndoSubject::BackupFilterIgnoredPath(ii)))
-                                                .push(button::choose_folder(
+                                                .push(button::choose_folder_small(
                                                     BrowseSubject::BackupFilterIgnoredPath(ii),
                                                     modifiers,
                                                 ))
-                                                .push(button::remove(
+                                                .push(button::remove_small(
                                                     Message::config(config::Event::BackupFilterIgnoredPath),
                                                     ii,
                                                 )),
@@ -659,17 +659,17 @@ pub fn ignored_items<'a>(config: &Config, histories: &TextHistories, modifiers: 
                                         column.push(
                                             Row::new()
                                                 .spacing(20)
-                                                .push(button::move_up(
+                                                .push(button::move_up_small(
                                                     Message::config(config::Event::BackupFilterIgnoredRegistry),
                                                     ii,
                                                 ))
-                                                .push(button::move_down(
+                                                .push(button::move_down_small(
                                                     Message::config(config::Event::BackupFilterIgnoredRegistry),
                                                     ii,
                                                     config.backup.filter.ignored_registry.len(),
                                                 ))
                                                 .push(histories.input(UndoSubject::BackupFilterIgnoredRegistry(ii)))
-                                                .push(button::remove(
+                                                .push(button::remove_small(
                                                     Message::config(config::Event::BackupFilterIgnoredRegistry),
                                                     ii,
                                                 )),
