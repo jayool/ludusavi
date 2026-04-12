@@ -508,8 +508,8 @@ impl Modal {
             .width(Length::Fill)
             .spacing(15)
             .padding(padding::right(10))
-            .align_x(Alignment::Start)
-            .push(text(self.text(config)).size(14));
+            .align_x(Alignment::Center)
+            .push(text(self.text(config)));
 
         match self {
             Self::Error { .. }
@@ -825,7 +825,7 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => 2,
+            | Self::ConfirmSyncModeChange { .. } => 1,
         }
     }
 
@@ -847,7 +847,7 @@ impl Modal {
                 .push(horizontal())
                 .push(
                     Column::new()
-                        .width(Length::FillPortion(8))
+                        .width(Length::FillPortion(5))
                         .push(vertical())
                         .push(
                             Container::new(opaque(self.content(config, histories, operation)))
