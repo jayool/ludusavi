@@ -217,6 +217,10 @@ pub enum Message {
     ShowScanActiveGames,
     CopyText(String),
     OpenRegistry(RegistryItem),
+    RequestSyncBackup(String),
+    RequestSyncRestore(String),
+    RequestForceUpload(String),
+    RequestForceDownload(String),
     SyncBackupGame(String),
     ConfirmSyncModeChange {
         game: String,
