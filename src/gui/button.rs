@@ -639,3 +639,10 @@ pub fn choose_folder_small<'a>(subject: BrowseSubject, modifiers: &keyboard::Mod
         template_small(Icon::FolderOpen.text_small(), Some(Message::BrowseDir(subject)), None)
     }
 }
+pub fn add_small<'a>(action: impl Fn(EditAction) -> Message) -> Element<'a> {
+    template_small(Icon::AddCircle.text_small(), Some(action(EditAction::Add)), None)
+}
+
+pub fn search_small<'a>(action: Message) -> Element<'a> {
+    template_small(Icon::Search.text_small(), Some(action), None)
+}
