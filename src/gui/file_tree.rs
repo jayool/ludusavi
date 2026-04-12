@@ -228,7 +228,6 @@ impl FileTreeNode {
                         .align_y(Alignment::Center)
                         .padding(padding::left(25 * level).right(10))
                         .spacing(5)
-                        .push_if(level > 0, || crate::gui::widget::Space::new().width(25))
                         .push(button::expand(
                             expanded,
                             Message::ToggleGameListEntryTreeExpanded {
