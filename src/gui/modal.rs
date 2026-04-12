@@ -134,6 +134,11 @@ pub enum Kind {
     ConfigureWebDavRemote,
     GameNotes,
     ActiveScanGames,
+    ConfirmSyncBackup,
+    ConfirmSyncRestore,
+    ConfirmForceUpload,
+    ConfirmForceDownload,
+    ConfirmSyncModeChange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,6 +184,23 @@ pub enum Modal {
         notes: Vec<manifest::Note>,
     },
     ActiveScanGames,
+    ConfirmSyncBackup {
+        game: String,
+    },
+    ConfirmSyncRestore {
+        game: String,
+    },
+    ConfirmForceUpload {
+        game: String,
+    },
+    ConfirmForceDownload {
+        game: String,
+    },
+    ConfirmSyncModeChange {
+        game: String,
+        warning: String,
+        previous_mode: ludusavi::sync::sync_config::SaveMode,
+    },
 }
 
 impl Modal {
@@ -200,6 +222,11 @@ impl Modal {
             Modal::ConfigureWebDavRemote { .. } => Kind::ConfigureWebDavRemote,
             Modal::GameNotes { .. } => Kind::GameNotes,
             Modal::ActiveScanGames => Kind::ActiveScanGames,
+            Modal::ConfirmSyncBackup { .. } => Kind::ConfirmSyncBackup,
+            Modal::ConfirmSyncRestore { .. } => Kind::ConfirmSyncRestore,
+            Modal::ConfirmForceUpload { .. } => Kind::ConfirmForceUpload,
+            Modal::ConfirmForceDownload { .. } => Kind::ConfirmForceDownload,
+            Modal::ConfirmSyncModeChange { .. } => Kind::ConfirmSyncModeChange,
         }
     }
 
@@ -222,6 +249,11 @@ impl Modal {
             Modal::ConfigureWebDavRemote { .. } => false,
             Modal::GameNotes { .. } => false,
             Modal::ActiveScanGames => false,
+            Modal::ConfirmSyncBackup { .. } => false,
+            Modal::ConfirmSyncRestore { .. } => false,
+            Modal::ConfirmForceUpload { .. } => false,
+            Modal::ConfirmForceDownload { .. } => false,
+            Modal::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -247,6 +279,11 @@ impl Modal {
                     ModalVariant::Confirm
                 }
             }
+            Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => ModalVariant::Confirm,
             Self::ConfirmCloudSync { state, .. } => {
                 if state.done() {
                     ModalVariant::Info
@@ -298,6 +335,19 @@ impl Modal {
             Self::ConfigureWebDavRemote { .. } => RemoteChoice::WebDav.to_string(),
             Self::GameNotes { game, .. } => game.clone(),
             Self::ActiveScanGames => "".to_string(),
+            Self::ConfirmSyncBackup { game } => {
+                format!("Back up saves for \"{}\"?\n\nThis will overwrite the existing backup with the current save files.", game)
+            }
+            Self::ConfirmSyncRestore { game } => {
+                format!("Restore saves for \"{}\"?\n\nThis will overwrite your current save files with the backup. This cannot be undone.", game)
+            }
+            Self::ConfirmForceUpload { game } => {
+                format!("Force upload saves for \"{}\"?\n\nThis will overwrite the cloud backup with your local save files, regardless of which is newer.", game)
+            }
+            Self::ConfirmForceDownload { game } => {
+                format!("Force download saves for \"{}\"?\n\nThis will overwrite your local save files with the cloud backup, regardless of which is newer.", game)
+            }
+            Self::ConfirmSyncModeChange { warning, .. } => warning.clone(),
         }
     }
 
@@ -308,7 +358,17 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::BackupValidation { .. }
             | Self::GameNotes { .. }
-            | Self::ActiveScanGames => Some(Message::CloseModal),
+            Self::ActiveScanGames => Some(Message::CloseModal),
+            Self::ConfirmSyncBackup { game } => Some(Message::SyncBackupGame(game.clone())),
+            Self::ConfirmSyncRestore { game } => Some(Message::SyncRestoreGame(game.clone())),
+            Self::ConfirmForceUpload { game } => Some(Message::ForceUploadGame(game.clone())),
+            Self::ConfirmForceDownload { game } => Some(Message::ForceDownloadGame(game.clone())),
+            Self::ConfirmSyncModeChange { game, previous_mode, .. } => {
+                Some(Message::ConfirmSyncModeChange {
+                    game: game.clone(),
+                    previous_mode: previous_mode.clone(),
+                })
+            }
             Self::Exiting => None,
             Self::ConfirmBackup { games } => Some(Message::Backup(BackupPhase::Start {
                 preview: false,
@@ -435,6 +495,11 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => vec![],
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -455,7 +520,12 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::AppUpdate { .. }
-            | Self::UpdatingManifest => (),
+            | Self::UpdatingManifest
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => (),
             Self::BackupValidation { games } => {
                 for game in games.iter().sorted() {
                     col = col.push(text(game))
@@ -627,6 +697,11 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -666,6 +741,11 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -689,6 +769,11 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -709,7 +794,12 @@ impl Modal {
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
-            | Self::ActiveScanGames => false,
+            | Self::ActiveScanGames
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
@@ -731,6 +821,11 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => 2,
+            | Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. } => false,
         }
     }
 
