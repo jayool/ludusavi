@@ -2564,6 +2564,7 @@ impl App {
                         }
                     }
                     Screen::GameDetail(_) => {
+                        log::info!("[DEBUG] ToggleGameListEntryTreeExpanded received for: {}", name);
                         for entry in &mut self.backup_screen.log.entries {
                             if entry.scan_info.game_name == name {
                                 if let Some(tree) = entry.tree.as_mut() {
