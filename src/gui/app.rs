@@ -4016,24 +4016,6 @@ impl App {
                                         .on_press(Message::RequestForceDownload(game_name.clone()))
                                     )
                             }
-                        )
-                        .push(
-                            crate::gui::widget::Button::new(
-                                crate::gui::widget::text("Backup").size(13)
-                            )
-                            .padding([7, 14])
-                            .class(style::Button::Primary)
-                            .on_press(Message::RequestSyncBackup(game_name.clone()))
-                        )
-                        .push(
-                            crate::gui::widget::Button::new(
-                                crate::gui::widget::text("Restore").size(13)
-                            )
-                            .padding([7, 14])
-                            .class(style::Button::Ghost)
-                            .on_press(Message::RequestSyncRestore(game_name.clone()))
-                        )
-                            }
                         ),
                 )
                 .width(Length::Fill)
