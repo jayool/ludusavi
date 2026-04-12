@@ -657,3 +657,22 @@ pub fn resolve_game_path_from_manifest(config: &Config, game_name: &str) -> Opti
     // Si no hay ficheros, resolver la ruta esperada
     resolve_expected_save_path(config, game_entry)
 }
+/// Borra el ZIP de un juego del cloud.
+pub fn delete_game_zip_from_cloud(config: &Config, game_name: &str) -> Result<(), SyncError> {
+    let rclone = make_rclone(config).ok_or(SyncError::NoRcloneConfig)?;
+    let cloud_path = &config.cloud.path;
+    let remote_file = format!("{}/{}", cloud_path, game_zip_file_name(game_name));
+
+    let args = ["deletefile".to_string(), rclone.path(&remote_file)];
+
+    crate::prelude::run_command(
+        config.apps.rclone.path.raw(),
+        &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        &[0],
+        crate::prelude::Privacy::Public,
+    )
+    .map_err(|e| SyncError::RcloneError(e.command()))?;
+
+    log::info!("[{}] Cloud ZIP deleted", game_name);
+    Ok(())
+}
