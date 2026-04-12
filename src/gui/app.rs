@@ -3673,7 +3673,6 @@ impl App {
                                                 "Sync now" => Message::SyncNow(game_for_menu.clone()),
                                                 "Backup" => Message::SyncBackupGame(game_for_menu.clone()),
                                                 "Restore" => Message::SyncRestoreGame(game_for_menu.clone()),
-                                                "Sync now" => Message::SyncNow(game_for_menu.clone()),
                                                 "Force upload" => Message::ForceUploadGame(game_for_menu.clone()),
                                                 "Force download" => Message::ForceDownloadGame(game_for_menu.clone()),
                                                 _ => Message::Ignore,
