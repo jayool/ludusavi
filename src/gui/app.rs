@@ -4513,7 +4513,7 @@ impl App {
                         .width(Length::Fill),
                     );
 
-                ScrollSubject::Other.into_widget(content).into()
+                ScrollSubject::GameDetail.into_widget(content).into()
             }
             Screen::ThisDevice => {
                 let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
