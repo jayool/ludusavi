@@ -373,15 +373,7 @@ pub fn other<'a>(
             .spacing(10)
             .push(text("ROOTS").size(11).class(style::Text::Muted))
             .push(text("Game roots are required to detect save file locations automatically.").size(12).class(style::Text::Muted))
-            .push(
-                Container::new(
-                    Column::new()
-                        .padding(5)
-                        .spacing(4)
-                        .push(editor::root(config, histories, modifiers)),
-                )
-                .class(style::Container::GamesTable),
-            ),
+            .push(editor::root(config, histories, modifiers)),
     )
     .width(Length::Fill)
     .padding(16)
@@ -407,7 +399,11 @@ pub fn other<'a>(
                         text("Updating...").size(12).class(style::Text::Muted)
                     }),
             )
-            .push(editor::manifest(config, cache, histories, modifiers).padding(padding::top(5))),
+            .push(
+                editor::manifest(config, cache, histories, modifiers)
+                    .padding(padding::top(5))
+                    .class(style::Container::Wrapper),
+            ),
     )
     .width(Length::Fill)
     .padding(16)
