@@ -2228,9 +2228,95 @@ impl App {
                 Task::none()
             }
             Message::SyncNow(game_name) => {
-                // Por ahora Ignore — implementar force sync con el daemon más adelante
-                log::info!("[SyncNow] Requested for: {}", game_name);
-                Task::none()
+                self.sync_in_progress = Some("⏳ Syncing...".to_string());
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+                let sync_config = self.sync_games_config.clone();
+
+                Task::perform(
+                    async move {
+                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                        let mode = sync_config.get_mode(&game_name);
+
+                        let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                            .unwrap_or_default();
+
+                        let local_path = if let Some(game) = game_list.games.iter().find(|g| g.id == game_name) {
+                            if let Some(path) = game.path_by_device.get(&device.id) {
+                                path.clone()
+                            } else {
+                                ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                    .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
+                            }
+                        } else {
+                            ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
+                        };
+
+                        match gl.get_game_mut(&game_name) {
+                            Some(existing) => {
+                                existing.path_by_device.insert(device.id.clone(), local_path.clone());
+                            }
+                            None => {
+                                let mut meta = ludusavi::sync::game_list::GameMetaData::new(
+                                    game_name.clone(), game_name.clone(),
+                                );
+                                meta.path_by_device.insert(device.id.clone(), local_path.clone());
+                                gl.upsert_game(meta);
+                            }
+                        }
+
+                        let game = gl.get_game_mut(&game_name)
+                            .ok_or_else(|| "Game not found after upsert".to_string())?;
+
+                        let scan = ludusavi::sync::conflict::DirectoryScanResult::scan(Some(&local_path));
+                        let sync_type = ludusavi::sync::conflict::determine_sync_type(game, &scan);
+
+                        match mode {
+                            ludusavi::sync::sync_config::SaveMode::Local => {
+                                match sync_type {
+                                    ludusavi::sync::conflict::SyncStatus::RequiresUpload => {
+                                        let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+                                        ludusavi::sync::operations::create_zip_from_folder(&local_path, &zip_path)
+                                            .map_err(|e| e.to_string())?;
+                                        Ok("✓ Backup complete".to_string())
+                                    }
+                                    ludusavi::sync::conflict::SyncStatus::InSync => {
+                                        Ok("✓ Already in sync".to_string())
+                                    }
+                                    _ => Ok("✓ Already in sync".to_string()),
+                                }
+                            }
+                            ludusavi::sync::sync_config::SaveMode::Cloud |
+                            ludusavi::sync::sync_config::SaveMode::Sync => {
+                                match sync_type {
+                                    ludusavi::sync::conflict::SyncStatus::RequiresUpload => {
+                                        ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
+                                            .map_err(|e| e.to_string())?;
+                                        ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl)
+                                            .map_err(|e| e.to_string())?;
+                                        Ok("✓ Upload complete".to_string())
+                                    }
+                                    ludusavi::sync::conflict::SyncStatus::RequiresDownload => {
+                                        ludusavi::sync::operations::download_game(&config, &app_dir, &device, game)
+                                            .map_err(|e| e.to_string())?;
+                                        Ok("✓ Download complete".to_string())
+                                    }
+                                    ludusavi::sync::conflict::SyncStatus::InSync => {
+                                        Ok("✓ Already in sync".to_string())
+                                    }
+                                    _ => Ok("✓ Already in sync".to_string()),
+                                }
+                            }
+                            _ => Err(format!("SyncNow called for unsupported mode: {:?}", mode)),
+                        }
+                    },
+                    |result| match result {
+                        Ok(msg) => Message::ShowTimedNotification(msg),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
             }
             Message::ForceUploadGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Uploading...".to_string());
@@ -3578,18 +3664,13 @@ impl App {
                                             "Backup",
                                             "Restore",
                                         ],
-                                        _ => vec!["Scan now", "Backup", "Restore"],
+                                        _ => vec!["Sync now", "Backup", "Restore"],
                                     };
                                     Container::new(
                                         crate::gui::popup_menu::PopupMenu::new(
                                             options,
                                             move |action| match action {
-                                                "Scan now" => Message::Backup(BackupPhase::Start {
-                                                    preview: true,
-                                                    repair: false,
-                                                    jump: false,
-                                                    games: Some(crate::gui::common::GameSelection::single(game_for_menu.clone())),
-                                                }),
+                                                "Sync now" => Message::SyncNow(game_for_menu.clone()),
                                                 "Backup" => Message::SyncBackupGame(game_for_menu.clone()),
                                                 "Restore" => Message::SyncRestoreGame(game_for_menu.clone()),
                                                 "Sync now" => Message::SyncNow(game_for_menu.clone()),
@@ -3719,16 +3800,11 @@ impl App {
                             matches!(mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud) && auto_sync_current,
                             || {
                                 crate::gui::widget::Button::new(
-                                    crate::gui::widget::text("Scan now").size(13)
+                                    crate::gui::widget::text("Sync now").size(13)
                                 )
                                 .padding([7, 14])
-                                .class(style::Button::Ghost)
-                                .on_press(Message::Backup(BackupPhase::Start {
-                                    preview: true,
-                                    repair: false,
-                                    jump: false,
-                                    games: Some(crate::gui::common::GameSelection::single(game_name.clone())),
-                                }))
+                                .class(style::Button::Primary)
+                                .on_press(Message::SyncNow(game_name.clone()))
                             }
                         )
                         .push_if(
