@@ -218,6 +218,10 @@ pub enum Message {
     CopyText(String),
     OpenRegistry(RegistryItem),
     SyncBackupGame(String),
+    ConfirmSyncModeChange {
+        game: String,
+        previous_mode: ludusavi::sync::sync_config::SaveMode,
+    },
     SyncRestoreGame(String),
     SyncNow(String),
     ForceUploadGame(String),
