@@ -168,7 +168,7 @@ impl FileTreeNode {
                         ),
                     })
                     .push(make_enabler())
-                    .push(text(label))
+                    .push(text(label).size(12))
                     .push({
                         match self.change {
                             ScanChange::Same | ScanChange::Unknown => None,
@@ -244,7 +244,7 @@ impl FileTreeNode {
                                     "/".to_string()
                                 } else {
                                     label
-                                }))
+                                }).size(12))
                                 .push(
                                     self.error
                                         .as_ref()
