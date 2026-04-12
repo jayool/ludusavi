@@ -416,6 +416,7 @@ impl container::Catalog for Theme {
                 Container::GamesTableRow => Color::TRANSPARENT.into(),
                 Container::DaemonStatus => self.added.alpha(0.12).into(),
                 Container::GameListEntry => self.field.alpha(0.15).into(),
+                Container::ModalForeground => self.surface.into(),
                 Container::ModalBackground => self.field.alpha(0.75).into(),
                 Container::Notification => self.surface2.alpha(0.9).into(),
                 Container::Tooltip => self.surface2.into(),
@@ -450,7 +451,8 @@ impl container::Catalog for Theme {
                     }
                     Container::BadgeActivated => self.negative,
                     Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => Color::TRANSPARENT,
-                    Container::ModalForeground | Container::BadgeFaded => self.disabled,
+                    Container::ModalForeground => self.border,
+                    Container::BadgeFaded => self.disabled,
                     _ => self.border,
                 },
                 width: match class {
