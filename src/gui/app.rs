@@ -2194,6 +2194,7 @@ impl App {
             }
             Message::SyncBackupGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Backing up...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmSyncBackup);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -2269,6 +2270,7 @@ impl App {
             }
             Message::SyncRestoreGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Restoring...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmSyncRestore);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -2405,6 +2407,7 @@ impl App {
             }
             Message::ForceUploadGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Uploading...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmForceUpload);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let _game_list = self.game_list.clone();
@@ -2441,6 +2444,7 @@ impl App {
             }
             Message::ForceDownloadGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Downloading...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmForceDownload);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
@@ -3742,14 +3746,13 @@ impl App {
                                     let game_for_menu = name.clone();
                                     let options = match mode {
                                         ludusavi::sync::sync_config::SaveMode::None => vec![],
-                                        ludusavi::sync::sync_config::SaveMode::Sync => vec![
+                                        _ => vec![
                                             "Sync now",
                                             "Force upload",
                                             "Force download",
                                             "Backup",
                                             "Restore",
                                         ],
-                                        _ => vec!["Sync now", "Backup", "Restore"],
                                     };
                                     Container::new(
                                         crate::gui::popup_menu::PopupMenu::new(
