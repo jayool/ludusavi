@@ -362,7 +362,7 @@ pub fn other<'a>(
             .padding([0, 24])
             .height(52)
             .align_y(Alignment::Center)
-            .push(text("Other").size(15).width(Length::Fill)),
+            .push(text("Settings").size(15).width(Length::Fill)),
     )
     .width(Length::Fill)
     .class(style::Container::TopBar);
