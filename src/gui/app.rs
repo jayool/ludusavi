@@ -4488,13 +4488,9 @@ impl App {
                     };
 
                     Container::new(
-                        match files_content {
-                            Some(fc) => Column::new()
-                                .push(header_button)
-                                .push(fc),
-                            None => Column::new()
-                                .push(header_button),
-                        }
+                        Column::new()
+                            .push(header_button)
+                            .push_if(files_content.is_some(), || files_content.unwrap())
                     )
                     .width(Length::Fill)
                     .padding(16)
