@@ -2563,6 +2563,15 @@ impl App {
                             }
                         }
                     }
+                    Screen::GameDetail(_) => {
+                        for entry in &mut self.backup_screen.log.entries {
+                            if entry.scan_info.game_name == name {
+                                if let Some(tree) = entry.tree.as_mut() {
+                                    tree.expand_or_collapse_keys(&keys);
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 Task::none()
