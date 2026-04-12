@@ -407,6 +407,7 @@ pub fn other<'a>(
                         text("Updating...").size(12).class(style::Text::Muted)
                     }),
             )
+            .push(text("Path").size(11).class(style::Text::Muted))
             .push(editor::manifest(config, cache, histories, modifiers).padding(padding::top(5))),
     )
     .width(Length::Fill)
@@ -518,7 +519,7 @@ pub fn other<'a>(
     let sync_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("SYNC").size(11).class(style::Text::Muted))
+            .push(text("LOCAL").size(11).class(style::Text::Muted))
             .push(
                 Row::new()
                     .spacing(10)
