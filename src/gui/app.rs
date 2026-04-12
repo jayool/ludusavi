@@ -2504,14 +2504,8 @@ impl App {
                 }
                 // Lanzar scan automático al entrar a GameDetail
                 if let Screen::GameDetail(ref game_name) = screen {
-                    self.game_detail_files_expanded = false;
-                    self.backup_screen.log.expand_game(
-                        game_name,
-                        &self.backup_screen.duplicate_detector,
-                        &self.config,
-                        ScanKind::Backup,
-                    );
-                    let scan_task = self.handle_backup(BackupPhase::Start {
+                        self.game_detail_files_expanded = false;
+                        let scan_task = self.handle_backup(BackupPhase::Start {
                         preview: true,
                         repair: false,
                         jump: false,
@@ -3091,6 +3085,16 @@ impl App {
             Message::OpenUrlAndCloseModal(url) => Task::batch([Self::open_url(url), self.close_modal()]),
             Message::GameDetailFilesToggled => {
                 self.game_detail_files_expanded = !self.game_detail_files_expanded;
+                if self.game_detail_files_expanded {
+                    if let Screen::GameDetail(ref game_name) = self.screen.clone() {
+                        self.backup_screen.log.expand_game(
+                            game_name,
+                            &self.backup_screen.duplicate_detector,
+                            &self.config,
+                            ScanKind::Backup,
+                        );
+                    }
+                }
                 Task::none()
             }
             Message::EditedCloudRemote(choice) => {
