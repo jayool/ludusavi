@@ -451,7 +451,7 @@ impl container::Catalog for Theme {
                     }
                     Container::BadgeActivated => self.negative,
                     Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => Color::TRANSPARENT,
-                    Container::ModalForeground => self.border,
+                    Container::ModalForeground => self.positive,
                     Container::BadgeFaded => self.disabled,
                     _ => self.border,
                 },
