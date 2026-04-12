@@ -535,6 +535,36 @@ impl TextHistories {
         )
         .into()
     }
+    pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
+        let current = match &subject {
+            UndoSubject::BackupTarget => self.backup_target.current(),
+            UndoSubject::RcloneExecutable => self.rclone_executable.current(),
+            UndoSubject::RcloneArguments => self.rclone_arguments.current(),
+            UndoSubject::CloudPath => self.cloud_path.current(),
+            UndoSubject::CloudRemoteId => self.cloud_remote_id.current(),
+            _ => return self.input(subject),
+        };
+
+        let event: Box<dyn Fn(String) -> Message> = match subject.clone() {
+            UndoSubject::BackupTarget => Box::new(Message::config(config::Event::BackupTarget)),
+            UndoSubject::RcloneExecutable => Box::new(Message::config(config::Event::RcloneExecutable)),
+            UndoSubject::RcloneArguments => Box::new(Message::config(config::Event::RcloneArguments)),
+            UndoSubject::CloudPath => Box::new(Message::config(config::Event::CloudPath)),
+            UndoSubject::CloudRemoteId => Box::new(Message::config(config::Event::CloudRemoteId)),
+            _ => return self.input(subject),
+        };
+
+        Undoable::new(
+            TextInput::new("", &current)
+                .on_input(event)
+                .class(style::TextInput)
+                .width(Length::Fill)
+                .padding([3, 5])
+                .size(12),
+            move |action| Message::UndoRedo(action, subject.clone()),
+        )
+        .into()
+    }
 }
 
 #[cfg(test)]
