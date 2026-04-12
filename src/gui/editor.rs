@@ -138,7 +138,6 @@ pub fn manifest<'a>(
             Row::new()
                 .spacing(20)
                 .align_y(Alignment::Center)
-                .push(Space::new().width(20))
                 .push(text("PATH").size(11).class(style::Text::Muted).width(Length::Fill))
                 .push(Container::new(text(TRANSLATOR.checked_label())).width(label_width))
                 .push(Container::new(text(TRANSLATOR.updated_label())).width(label_width))
@@ -150,15 +149,6 @@ pub fn manifest<'a>(
             Row::new()
                 .spacing(20)
                 .align_y(Alignment::Center)
-                .push(
-                    checkbox(
-                        "",
-                        config.manifest.enable,
-                        Message::config(move |enabled| config::Event::PrimaryManifestEnabled { enabled }),
-                    )
-                    .spacing(0)
-                    .class(style::Checkbox),
-                )
                 .push(iced::widget::TextInput::new("", config.manifest.url()).width(Length::Fill))
                 .push(get_checked(Some(config.manifest.url()), cache))
                 .push(get_updated(Some(config.manifest.url()), cache))
