@@ -138,6 +138,7 @@ pub fn manifest<'a>(
             Row::new()
                 .spacing(20)
                 .align_y(Alignment::Center)
+                .push(Space::new().width(20))
                 .push(text("PATH").size(11).class(style::Text::Muted).width(Length::Fill))
                 .push(Container::new(text(TRANSLATOR.checked_label())).width(label_width))
                 .push(Container::new(text(TRANSLATOR.updated_label())).width(label_width))
