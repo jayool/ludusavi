@@ -162,9 +162,9 @@ impl FileTreeNode {
                         FileTreeNodeType::RegistryKey => Container::new(
                             Button::new(Icon::KeyboardArrowDown.text_small())
                                 .class(style::Button::Primary)
-                                .padding(5)
-                                .height(25)
-                                .width(25),
+                                .padding(3)
+                                .height(20)
+                                .width(20),
                         ),
                     })
                     .push(make_enabler())
@@ -255,8 +255,8 @@ impl FileTreeNode {
                                         Button::new(Icon::OpenInNew.text_small())
                                             .on_press(Message::OpenDir { path: path.clone() })
                                             .class(style::Button::Primary)
-                                            .padding(5)
-                                            .height(25),
+                                            .padding(3)
+                                            .height(20),
                                     ),
                                     _ => None,
                                 })
@@ -265,8 +265,8 @@ impl FileTreeNode {
                                         Button::new(Icon::OpenInNew.text_small())
                                             .on_press(Message::OpenRegistry(item.clone()))
                                             .class(style::Button::Primary)
-                                            .padding(5)
-                                            .height(25),
+                                            .padding(3)
+                                            .height(20),
                                     ),
                                     _ => None,
                                 })
@@ -275,8 +275,8 @@ impl FileTreeNode {
                                         Button::new(Icon::Copy.text_small())
                                             .on_press(Message::CopyText(item.interpret()))
                                             .class(style::Button::Primary)
-                                            .padding(5)
-                                            .height(25),
+                                            .padding(3)
+                                            .height(20),
                                     ),
                                     _ => None,
                                 })
