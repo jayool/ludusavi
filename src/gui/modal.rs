@@ -827,12 +827,12 @@ impl Modal {
     pub fn body_height_portion(&self) -> u16 {
         match self {
             Self::ConfirmCloudSync { .. } => 4,
+            Self::NoMissingRoots => 1,
             Self::Error { .. }
             | Self::Errors { .. }
             | Self::Exiting
             | Self::ConfirmBackup { .. }
             | Self::ConfirmRestore { .. }
-            | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
             | Self::AppUpdate { .. }
@@ -879,7 +879,8 @@ impl Modal {
                                     | Self::ConfirmSyncRestore { .. }
                                     | Self::ConfirmForceUpload { .. }
                                     | Self::ConfirmForceDownload { .. }
-                                    | Self::ConfirmSyncModeChange { .. } => Length::Shrink,
+                                    | Self::ConfirmSyncModeChange { .. }
+                                    | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
                         )
