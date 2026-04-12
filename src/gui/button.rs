@@ -603,9 +603,9 @@ pub fn expand<'a>(expanded: bool, on_press: Message) -> Element<'a> {
     )
     .on_press(on_press)
     .class(style::Button::Primary)
-    .padding(3)
-    .height(20)
-    .width(20)
+    .padding(4)
+    .height(22)
+    .width(22)
     .into()
 }
 pub fn remove_small<'a>(action: impl Fn(EditAction) -> Message, index: usize) -> Element<'a> {
