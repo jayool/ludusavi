@@ -603,7 +603,7 @@ pub fn expand<'a>(expanded: bool, on_press: Message) -> Element<'a> {
     )
     .on_press(on_press)
     .class(style::Button::Primary)
-    .padding(1)
+    .padding(10)
     .height(20)
     .width(20)
     .into()
