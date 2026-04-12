@@ -33,6 +33,16 @@ fn template_bare(content: Text, action: Option<Message>, style: Option<style::Bu
         .into()
 }
 
+fn template_small(content: Text, action: Option<Message>, style: Option<style::Button>) -> Element {
+    Button::new(content.align_x(alignment::Horizontal::Center))
+        .on_press_maybe(action)
+        .class(style.unwrap_or(style::Button::Primary))
+        .padding(3)
+        .height(20)
+        .width(20)
+        .into()
+}
+
 fn template_extended(
     content: Text,
     action: Option<Message>,
@@ -597,4 +607,35 @@ pub fn expand<'a>(expanded: bool, on_press: Message) -> Element<'a> {
     .height(25)
     .width(25)
     .into()
+}
+pub fn remove_small<'a>(action: impl Fn(EditAction) -> Message, index: usize) -> Element<'a> {
+    template_small(
+        Icon::RemoveCircle.text_small(),
+        Some(action(EditAction::Remove(index))),
+        Some(style::Button::Negative),
+    )
+}
+
+pub fn move_up_small<'a>(action: impl Fn(EditAction) -> Message, index: usize) -> Element<'a> {
+    template_small(
+        Icon::ArrowUpward.text_small(),
+        (index > 0).then(|| action(EditAction::move_up(index))),
+        None,
+    )
+}
+
+pub fn move_down_small<'a>(action: impl Fn(EditAction) -> Message, index: usize, max: usize) -> Element<'a> {
+    template_small(
+        Icon::ArrowDownward.text_small(),
+        (index < max - 1).then(|| action(EditAction::move_down(index))),
+        None,
+    )
+}
+
+pub fn choose_folder_small<'a>(subject: BrowseSubject, modifiers: &keyboard::Modifiers) -> Element<'a> {
+    if modifiers.shift() {
+        template_small(Icon::OpenInNew.text_small(), Some(Message::OpenDirSubject(subject)), None)
+    } else {
+        template_small(Icon::FolderOpen.text_small(), Some(Message::BrowseDir(subject)), None)
+    }
 }
