@@ -508,8 +508,8 @@ impl Modal {
             .width(Length::Fill)
             .spacing(15)
             .padding(padding::right(10))
-            .align_x(Alignment::Center)
-            .push(text(self.text(config)));
+            .align_x(Alignment::Start)
+            .push(text(self.text(config)).size(14));
 
         match self {
             Self::Error { .. }
@@ -663,8 +663,8 @@ impl Modal {
                                 .push_if(!matches!(self, Modal::BackupValidation { .. }), || positive_button)
                                 .push(negative_button),
                         }
-                        .padding([30, 0])
-                        .spacing(20)
+                        .padding([20, 0])
+                        .spacing(12)
                         .align_y(Alignment::Center),
                     )
                     .width(Length::Fill)
