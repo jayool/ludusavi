@@ -504,12 +504,35 @@ impl Modal {
     }
 
     pub fn body(&self, config: &Config, histories: &TextHistories, operation: &Operation) -> Column {
-        let mut col = Column::new()
-            .width(Length::Fill)
-            .spacing(15)
-            .padding(padding::right(10))
-            .align_x(Alignment::Center)
-            .push(text(self.text(config)));
+        // Para los modales de sync usamos layout propio con título + descripción separados
+        let is_sync_modal = matches!(self,
+            Self::ConfirmSyncBackup { .. }
+            | Self::ConfirmSyncRestore { .. }
+            | Self::ConfirmForceUpload { .. }
+            | Self::ConfirmForceDownload { .. }
+            | Self::ConfirmSyncModeChange { .. }
+        );
+
+        let mut col = if is_sync_modal {
+            let full = self.text(config);
+            let mut parts = full.splitn(2, "\n\n");
+            let title = parts.next().unwrap_or("").to_string();
+            let description = parts.next().unwrap_or("").to_string();
+            Column::new()
+                .width(Length::Fill)
+                .spacing(10)
+                .padding(padding::right(10))
+                .align_x(Alignment::Center)
+                .push(text(title).size(16))
+                .push(text(description).size(13).class(style::Text::Muted))
+        } else {
+            Column::new()
+                .width(Length::Fill)
+                .spacing(15)
+                .padding(padding::right(10))
+                .align_x(Alignment::Center)
+                .push(text(self.text(config)))
+        };
 
         match self {
             Self::Error { .. }
