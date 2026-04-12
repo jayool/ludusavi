@@ -448,6 +448,7 @@ pub fn other<'a>(
                                             Some(choice),
                                             Message::EditedCloudRemote,
                                         )
+                                        .text_size(12)
                                     });
 
                                 if let Some(Remote::Custom { .. }) = &config.cloud.remote {
