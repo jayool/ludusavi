@@ -671,11 +671,10 @@ impl Modal {
                 .height(Length::Fill)
                 .push(
                     Container::new(
-                        ScrollSubject::Modal.into_widget(self.body(config, histories, operation).padding([0, 30])),
+                        ScrollSubject::Modal.into_widget(self.body(config, histories, operation).padding([0, 15])),
                     )
                     .padding(padding::top(15).right(5))
                     .width(Length::Fill)
-                    .height(Length::Fill),
                 )
                 .push(
                     Container::new(
