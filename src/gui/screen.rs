@@ -145,7 +145,7 @@ impl Backup {
                     .spacing(20)
                     .align_y(Alignment::Center)
                     .push(text(TRANSLATOR.backup_target_label()))
-                    .push(histories.input(UndoSubject::BackupTarget))
+                    .push(histories.input_small(UndoSubject::BackupTarget))
                     .push(button::choose_folder(BrowseSubject::BackupTarget, modifiers))
                     .push("|")
                     .push(text(TRANSLATOR.sort_label()))
@@ -421,12 +421,12 @@ pub fn other<'a>(
                             .spacing(10)
                             .align_y(Alignment::Center)
                             .push(text("rclone executable").size(12).class(style::Text::Muted).width(140))
-                            .push(histories.input(UndoSubject::RcloneExecutable))
+                            .push(histories.input_small(UndoSubject::RcloneExecutable))
                             .push_if(!is_rclone_valid, || {
                                 Icon::Error.text().width(Length::Shrink).class(style::Text::Failure)
                             })
                             .push(button::choose_file(BrowseFileSubject::RcloneExecutable, modifiers))
-                            .push(histories.input(UndoSubject::RcloneArguments)),
+                            .push(histories.input_small(UndoSubject::RcloneArguments)),
                     );
 
                     if is_rclone_valid {
@@ -453,7 +453,7 @@ pub fn other<'a>(
                                 if let Some(Remote::Custom { .. }) = &config.cloud.remote {
                                     row = row
                                         .push(text(TRANSLATOR.remote_name_label()).size(12))
-                                        .push(histories.input(UndoSubject::CloudRemoteId));
+                                        .push(histories.input_small(UndoSubject::CloudRemoteId));
                                 }
 
                                 if let Some(description) = config.cloud.remote.as_ref().and_then(|x| x.description()) {
@@ -467,7 +467,7 @@ pub fn other<'a>(
                                     .spacing(10)
                                     .align_y(Alignment::Center)
                                     .push(text("Cloud path").size(12).class(style::Text::Muted).width(140))
-                                    .push(histories.input(UndoSubject::CloudPath))
+                                    .push(histories.input_small(UndoSubject::CloudPath))
                                     .push_if(!is_cloud_path_valid, || {
                                         Icon::Error.text().width(Length::Shrink).class(style::Text::Failure)
                                     })
@@ -520,7 +520,7 @@ pub fn other<'a>(
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text("Backup path").size(12).class(style::Text::Muted).width(140))
-                    .push(histories.input(UndoSubject::BackupTarget))
+                    .push(histories.input_small(UndoSubject::BackupTarget))
                     .push(button::choose_folder(BrowseSubject::BackupTarget, modifiers)),
             )
             .push(text("Local ZIP backups are stored in this directory.").size(11).class(style::Text::Muted)),
