@@ -232,6 +232,8 @@ pub enum Message {
     ForceDownloadGame(String),
     ShowTimedNotification(String),
     GameDetailFilesToggled,
+    InstallService,
+    UninstallService,
 }
 
 impl Message {
