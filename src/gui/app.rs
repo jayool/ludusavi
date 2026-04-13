@@ -4270,6 +4270,9 @@ impl App {
                 .class(style::Container::TopBar);
 
                 // Sync status card
+                // Detectar si el juego está disponible en el cloud pero no tiene SYNC local
+                let is_cloud_available = self.game_list.games.iter().any(|g| g.id == game_name)
+                    && !matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync);
                 let status_card = {
                     let last_sync_str = meta
                         .and_then(|m| m.last_sync_time_utc)
@@ -4668,6 +4671,29 @@ impl App {
                             Column::new()
                                 .spacing(16)
                                 .padding([24, 24])
+                                .push_if(is_cloud_available, || {
+                                    Container::new(
+                                        Row::new()
+                                            .spacing(12)
+                                            .align_y(Alignment::Center)
+                                            .push(
+                                                crate::gui::widget::text("☁ This game is synced from another device.")
+                                                    .size(13)
+                                                    .width(Length::Fill)
+                                            )
+                                            .push(
+                                                crate::gui::widget::Button::new(
+                                                    crate::gui::widget::text("Enable Sync").size(13)
+                                                )
+                                                .padding([7, 14])
+                                                .class(style::Button::Primary)
+                                                .on_press(Message::EnableCloudSync(game_name.clone()))
+                                            )
+                                    )
+                                    .width(Length::Fill)
+                                    .padding([12, 16])
+                                    .class(style::Container::GameListEntry)
+                                })
                                 .push(status_card)
                                 .push(settings_card)
                                 .push(devices_card)
