@@ -1487,22 +1487,22 @@ impl App {
                                 .and_then(|p| p.parent().map(|d| d.join("ludusavi-daemon.exe")))
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| "ludusavi-daemon.exe".to_string());
-
+            
                             let script = std::env::current_exe()
                                 .ok()
                                 .and_then(|p| p.parent().map(|d| d.join("install-service-windows.ps1")))
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| "install-service-windows.ps1".to_string());
-
+            
                             std::process::Command::new("powershell.exe")
-                                .args([
-                                    "-ExecutionPolicy", "Bypass",
-                                    "-File", &script,
-                                    "-ExePath", &exe,
-                                ])
-                                .spawn()
-                                .map(|_| ())
+                                .args(["-ExecutionPolicy", "Bypass", "-File", &script, "-ExePath", &exe])
+                                .output()
                                 .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
                         }
                         #[cfg(not(target_os = "windows"))]
                         {
@@ -1511,16 +1511,20 @@ impl App {
                                 .and_then(|p| p.parent().map(|d| d.join("install-service-linux.sh")))
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| "install-service-linux.sh".to_string());
-
+            
                             std::process::Command::new("bash")
                                 .arg(&script)
-                                .spawn()
-                                .map(|_| ())
+                                .output()
                                 .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Service install started".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Service installed".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Install failed: {}", e)),
                     },
                 )
@@ -1535,15 +1539,16 @@ impl App {
                                 .and_then(|p| p.parent().map(|d| d.join("uninstall-service-windows.ps1")))
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| "uninstall-service-windows.ps1".to_string());
-
+            
                             std::process::Command::new("powershell.exe")
-                                .args([
-                                    "-ExecutionPolicy", "Bypass",
-                                    "-File", &script,
-                                ])
-                                .spawn()
-                                .map(|_| ())
+                                .args(["-ExecutionPolicy", "Bypass", "-File", &script])
+                                .output()
                                 .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
                         }
                         #[cfg(not(target_os = "windows"))]
                         {
@@ -1552,16 +1557,20 @@ impl App {
                                 .and_then(|p| p.parent().map(|d| d.join("uninstall-service-linux.sh")))
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| "uninstall-service-linux.sh".to_string());
-
+            
                             std::process::Command::new("bash")
                                 .arg(&script)
-                                .spawn()
-                                .map(|_| ())
+                                .output()
                                 .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
                         }
                     },
                     |result| match result {
-                        Ok(_) => Message::ShowTimedNotification("✓ Service uninstall started".to_string()),
+                        Ok(_) => Message::ShowTimedNotification("✓ Service uninstalled".to_string()),
                         Err(e) => Message::ShowTimedNotification(format!("✗ Uninstall failed: {}", e)),
                     },
                 )
