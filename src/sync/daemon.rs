@@ -107,28 +107,8 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Leer o crear el game-list del cloud
     let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
 
-    // Para juegos en sync-games.json sin ruta registrada en el cloud, auto-registrar
-    let needs_registration: Vec<String> = managed_games.iter()
-        .filter(|name| !game_list.games.iter().any(|g| &g.id == *name))
-        .cloned()
-        .collect();
-
-    if !needs_registration.is_empty() {
-        log::info!("[sync daemon] Registering {} new game(s) from sync-games.json", needs_registration.len());
-        for game_name in &needs_registration {
-            // Crear entrada vacía en el game-list para que auto_register_paths la encuentre
-            game_list.games.push(crate::sync::game_list::GameMetaData::new(
-                game_name.clone(),
-                game_name.clone(),
-            ));
-        }
-        if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
-            log::warn!("[sync daemon] Could not write initial game-list to cloud: {e}");
-        }
-    }
-
     // Auto-registrar rutas para juegos sin ruta en este dispositivo
-    if let Err(e) = auto_register_paths(&config, &device) {
+    if let Err(e) = auto_register_paths(&config, &device, &sync_config) {
         log::error!("[sync daemon] Error during path auto-registration: {e}");
     }
 
@@ -429,29 +409,39 @@ fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
 
 /// Para cada juego en el game-list sin ruta registrada para este dispositivo,
 /// usa el manifiesto de Ludusavi para encontrar los saves automáticamente.
-fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), String> {
+fn auto_register_paths(
+    config: &Config,
+    device: &DeviceIdentity,
+    sync_config: &crate::sync::sync_config::SyncGamesConfig,
+) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
         None => return Ok(()),
     };
 
-    let unregistered: Vec<String> = game_list
-        .games
+    // Solo juegos configurados como SYNC en este dispositivo
+    // que no tienen ruta registrada para este dispositivo en game-list
+    let unregistered: Vec<String> = sync_config.games
         .iter()
-        .filter(|g| !g.path_by_device.contains_key(&device.id))
-        .map(|g| g.id.clone())
+        .filter(|(_, cfg)| cfg.mode == crate::sync::sync_config::SaveMode::Sync)
+        .filter(|(name, _)| {
+            !game_list.games.iter()
+                .any(|g| &g.id == *name && g.path_by_device.contains_key(&device.id))
+        })
+        .map(|(name, _)| name.clone())
         .collect();
 
     if unregistered.is_empty() {
-        log::debug!("[sync daemon] All games already have a path for this device");
+        log::debug!("[sync daemon] All SYNC games already have a path for this device");
         return Ok(());
     }
 
     log::info!(
-        "[sync daemon] Auto-registering {} game(s) for this device",
+        "[sync daemon] Auto-registering {} SYNC game(s) for this device",
         unregistered.len()
     );
 
+    // El resto de la función no cambia
     let manifest = match Manifest::load() {
         Ok(m) => m.with_extensions(config),
         Err(e) => {
@@ -470,6 +460,14 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
     let mut _any_changes = false;
 
     for game_id in &unregistered {
+        // Si el juego no está en game-list todavía, crear entrada vacía
+        if !game_list.games.iter().any(|g| &g.id == game_id) {
+            game_list.games.push(crate::sync::game_list::GameMetaData::new(
+                game_id.clone(),
+                game_id.clone(),
+            ));
+        }
+
         let game_entry = match manifest.0.get(game_id.as_str()) {
             Some(g) => g,
             None => {
@@ -504,7 +502,6 @@ fn auto_register_paths(config: &Config, device: &DeviceIdentity) -> Result<(), S
                 }
             }
             None => {
-                // No hay saves locales — intentar resolver la ruta esperada via manifiesto
                 match crate::sync::operations::resolve_expected_save_path(config, game_entry) {
                     Some(expected_path) => {
                         log::info!(
