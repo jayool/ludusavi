@@ -255,8 +255,8 @@ impl FileTreeNode {
                                         Button::new(Icon::OpenInNew.text_small())
                                             .on_press(Message::OpenDir { path: path.clone() })
                                             .class(style::Button::Primary)
-                                            .padding(3)
-                                            .height(20),
+                                            .padding(5)
+                                            .height(25),
                                     ),
                                     _ => None,
                                 })
@@ -265,8 +265,8 @@ impl FileTreeNode {
                                         Button::new(Icon::OpenInNew.text_small())
                                             .on_press(Message::OpenRegistry(item.clone()))
                                             .class(style::Button::Primary)
-                                            .padding(3)
-                                            .height(20),
+                                            .padding(5)
+                                            .height(25),
                                     ),
                                     _ => None,
                                 })
@@ -275,8 +275,8 @@ impl FileTreeNode {
                                         Button::new(Icon::Copy.text_small())
                                             .on_press(Message::CopyText(item.interpret()))
                                             .class(style::Button::Primary)
-                                            .padding(3)
-                                            .height(20),
+                                            .padding(5)
+                                            .height(25),
                                     ),
                                     _ => None,
                                 })
