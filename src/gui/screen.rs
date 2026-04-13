@@ -552,17 +552,13 @@ pub fn other<'a>(
                         Button::new(text("Install service").size(13))
                             .padding([7, 14])
                             .class(style::Button::Primary)
-                            .on_press(Message::OpenDir {
-                                path: crate::prelude::StrictPath::new(install_script.to_string()),
-                            })
+                            .on_press(Message::InstallService)
                     )
                     .push(
                         Button::new(text("Uninstall service").size(13))
                             .padding([7, 14])
                             .class(style::Button::Ghost)
-                            .on_press(Message::OpenDir {
-                                path: crate::prelude::StrictPath::new(uninstall_script.to_string()),
-                            })
+                            .on_press(Message::UninstallService)
                     ),
             )
             .push(text("Install or uninstall the sync daemon as a system service.").size(11).class(style::Text::Muted)),
