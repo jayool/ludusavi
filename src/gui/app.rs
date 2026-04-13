@@ -1466,6 +1466,18 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::EnableCloudSync(game_name) => {
+                self.sync_games_config.games.insert(
+                    game_name.clone(),
+                    ludusavi::sync::sync_config::GameSyncConfig {
+                        mode: ludusavi::sync::sync_config::SaveMode::Sync,
+                        auto_sync: true,
+                    },
+                );
+                self.sync_games_config.save();
+                self.timed_notification = Some(Notification::new("✓ Sync enabled".to_string()).expires(2));
+                Task::none()
+            }
             Message::Ignore => Task::none(),
             Message::CloseModal => self.close_modal(),
             Message::Exit { user } => {
