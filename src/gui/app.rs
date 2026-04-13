@@ -3742,7 +3742,17 @@ impl App {
 
                 let mut rows = Column::new().width(Length::Fill);
 
-                if entries.is_empty() {
+                // Juegos disponibles en el cloud sin SYNC local
+                let cloud_available: Vec<&ludusavi::sync::game_list::GameMetaData> = self.game_list.games
+                    .iter()
+                    .filter(|g| {
+                        let local_mode = self.sync_games_config.get_mode(&g.id);
+                        !matches!(local_mode, ludusavi::sync::sync_config::SaveMode::Sync)
+                        && !entries.iter().any(|e| e.scan_info.game_name == g.id)
+                    })
+                    .collect();
+                
+                if entries.is_empty() && cloud_available.is_empty() {
                     rows = rows.push(
                         Container::new(
                             crate::gui::widget::text("No games found. Run a backup scan first.")
@@ -3934,6 +3944,58 @@ impl App {
                                     .class(style::Container::Divider),
                             );
                         }
+                    }
+                    // Filas de juegos disponibles en el cloud
+                    for cloud_game in &cloud_available {
+                        let name = &cloud_game.id;
+                        if !search_lower.is_empty() && !name.to_lowercase().contains(&search_lower) {
+                            continue;
+                        }
+                
+                        let row = Container::new(
+                            Row::new()
+                                .padding([12, 16])
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(10)
+                                        .height(10)
+                                        .class(style::Container::DaemonDotInactive),
+                                )
+                                .push(crate::gui::widget::Space::new().width(16))
+                                .push(
+                                    crate::gui::widget::text(name.clone())
+                                        .size(13)
+                                        .width(Length::Fill),
+                                )
+                                .push(
+                                    crate::gui::widget::text("☁ Available")
+                                        .size(11)
+                                        .class(style::Text::Accent)
+                                        .width(80),
+                                )
+                                .push(crate::gui::widget::text("—").size(12).class(style::Text::Muted).width(100))
+                                .push(crate::gui::widget::text("—").size(12).class(style::Text::Muted).width(160))
+                                .push(crate::gui::widget::text("—").size(12).class(style::Text::Muted).width(140))
+                                .push(crate::gui::widget::Space::new().width(50)),
+                        )
+                        .width(Length::Fill)
+                        .class(style::Container::GamesTableRow);
+                
+                        let name_for_click = name.clone();
+                        let clickable_row = crate::gui::widget::Button::new(row)
+                            .on_press(Message::SwitchScreen(Screen::GameDetail(name_for_click)))
+                            .width(Length::Fill)
+                            .padding(0)
+                            .class(style::Button::SidebarItem);
+                
+                        rows = rows.push(
+                            Container::new(crate::gui::widget::Space::new())
+                                .width(Length::Fill)
+                                .height(1)
+                                .class(style::Container::Divider),
+                        );
+                        rows = rows.push(clickable_row);
                     }
                 }
                 let table = Container::new(
