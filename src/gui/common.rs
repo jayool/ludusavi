@@ -234,6 +234,7 @@ pub enum Message {
     GameDetailFilesToggled,
     InstallService,
     UninstallService,
+    EnableCloudSync(String),
 }
 
 impl Message {
