@@ -3530,7 +3530,13 @@ impl App {
                             .and_then(|g| g.as_object())
                             .map(|obj| {
                                 obj.iter()
-                                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                                    .map(|(k, v)| {
+                                        let status = v.get("status")
+                                            .and_then(|s| s.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        (k.clone(), status)
+                                    })
                                     .collect::<std::collections::HashMap<String, String>>()
                             })
                             .unwrap_or_default()
@@ -4307,6 +4313,30 @@ impl App {
                         .map(|id| self.game_list.get_device_name(id).to_string());
 
                     let (status_text, status_detail) = match mode {
+                        ludusavi::sync::sync_config::SaveMode::Sync => {
+                            match status {
+                                "synced" => ("✓ Up to date", "Save files are in sync across all devices.".to_string()),
+                                "pending_backup" => ("⏳ Pending upload", "Local saves are newer than the cloud. Syncing soon.".to_string()),
+                                "pending_restore" => ("⬇ Pending download", "Cloud saves are newer than local. Syncing soon.".to_string()),
+                                _ => ("⚠ Unknown", "Sync status unknown.".to_string()),
+                            }
+                        }
+                        ludusavi::sync::sync_config::SaveMode::Cloud => {
+                            match status {
+                                "synced" => ("☁ Backed up", "Save files are backed up to the cloud.".to_string()),
+                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
+                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists in the cloud. Restore to get the latest saves.".to_string()),
+                                _ => ("☁ Cloud", "Cloud backup mode.".to_string()),
+                            }
+                        }
+                        ludusavi::sync::sync_config::SaveMode::Local => {
+                            match status {
+                                "synced" => ("💾 Backed up", "Save files are backed up locally.".to_string()),
+                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
+                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists. Restore to get the latest saves.".to_string()),
+                                _ => ("💾 Local", "Local backup mode.".to_string()),
+                            }
+                        }
                         ludusavi::sync::sync_config::SaveMode::None => (
                             "— Not managed",
                             "This game is not managed by Save Sync.".to_string(),
