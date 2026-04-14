@@ -4313,22 +4313,10 @@ impl App {
                         .map(|id| self.game_list.get_device_name(id).to_string());
 
                     let (status_text, status_detail) = match mode {
-                        ludusavi::sync::sync_config::SaveMode::Sync => {
-                            match status {
-                                "synced" => ("✓ Up to date", "Save files are in sync across all devices.".to_string()),
-                                "pending_backup" => ("⏳ Pending upload", "Local saves are newer than the cloud. Syncing soon.".to_string()),
-                                "pending_restore" => ("⬇ Pending download", "Cloud saves are newer than local. Syncing soon.".to_string()),
-                                _ => ("⚠ Unknown", "Sync status unknown.".to_string()),
-                            }
-                        }
-                        ludusavi::sync::sync_config::SaveMode::Cloud => {
-                            match status {
-                                "synced" => ("☁ Backed up", "Save files are backed up to the cloud.".to_string()),
-                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
-                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists in the cloud. Restore to get the latest saves.".to_string()),
-                                _ => ("☁ Cloud", "Cloud backup mode.".to_string()),
-                            }
-                        }
+                        ludusavi::sync::sync_config::SaveMode::None => (
+                            "— Not managed",
+                            "This game is not managed by Save Sync.".to_string(),
+                        ),
                         ludusavi::sync::sync_config::SaveMode::Local => {
                             match status {
                                 "synced" => ("💾 Backed up", "Save files are backed up locally.".to_string()),
@@ -4337,73 +4325,26 @@ impl App {
                                 _ => ("💾 Local", "Local backup mode.".to_string()),
                             }
                         }
-                        ludusavi::sync::sync_config::SaveMode::None => (
-                            "— Not managed",
-                            "This game is not managed by Save Sync.".to_string(),
-                        ),
-                        ludusavi::sync::sync_config::SaveMode::Local => {
-                            if auto_sync_current {
-                                (
-                                    "💾 Local — auto-sync on",
-                                    "Saves will be backed up automatically when they change.".to_string(),
-                                )
-                            } else {
-                                (
-                                    "💾 Local — auto-sync off",
-                                    "Saves are backed up manually only.".to_string(),
-                                )
-                            }
-                        }
                         ludusavi::sync::sync_config::SaveMode::Cloud => {
-                            match (auto_sync_current, &last_sync_str, &last_sync_from) {
-                                (_, None, _) => (
-                                    "☁ Cloud — never backed up",
-                                    "This game has not been backed up to the cloud yet.".to_string(),
-                                ),
-                                (false, Some(when), Some(from)) => (
-                                    "☁ Cloud — manual sync",
-                                    format!("Last backed up {} from {}.", when, from),
-                                ),
-                                (false, Some(when), None) => (
-                                    "☁ Cloud — manual sync",
-                                    format!("Last backed up {}.", when),
-                                ),
-                                (true, Some(when), Some(from)) => (
-                                    "☁ Cloud — auto-sync on",
-                                    format!("Last backed up {} from {}.", when, from),
-                                ),
-                                (true, Some(when), None) => (
-                                    "☁ Cloud — auto-sync on",
-                                    format!("Last backed up {}.", when),
-                                ),
+                            match status {
+                                "synced" => ("☁ Backed up", format!("Last backed up{}{}.",
+                                    last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
+                                    last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
+                                )),
+                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
+                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists in the cloud. Restore to get the latest saves.".to_string()),
+                                _ => ("☁ Cloud", "Never backed up.".to_string()),
                             }
                         }
                         ludusavi::sync::sync_config::SaveMode::Sync => {
-                            match (status, &last_sync_str, &last_sync_from) {
-                                ("synced", Some(when), Some(from)) => (
-                                    "✓ Up to date",
-                                    format!("Last synced {} from {}.", when, from),
-                                ),
-                                ("synced", Some(when), None) => (
-                                    "✓ Up to date",
-                                    format!("Last synced {}.", when),
-                                ),
-                                ("synced", None, _) => (
-                                    "✓ Up to date",
-                                    "Game files are in sync.".to_string(),
-                                ),
-                                (_, None, _) => (
-                                    "⚠ Never synced",
-                                    "This game has not been synced yet. Run a sync to get started.".to_string(),
-                                ),
-                                (_, Some(when), Some(from)) => (
-                                    "⚠ Sync pending",
-                                    format!("Last synced {} from {}. A new sync may be needed.", when, from),
-                                ),
-                                (_, Some(when), None) => (
-                                    "⚠ Sync pending",
-                                    format!("Last synced {}. A new sync may be needed.", when),
-                                ),
+                            match status {
+                                "synced" => ("✓ Up to date", format!("Last synced{}{}.",
+                                    last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
+                                    last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
+                                )),
+                                "pending_backup" => ("⏳ Pending upload", "Local saves are newer than the cloud. Syncing soon.".to_string()),
+                                "pending_restore" => ("⬇ Pending download", "Cloud saves are newer than local. Syncing soon.".to_string()),
+                                _ => ("⚠ Never synced", "This game has not been synced yet. Run a sync to get started.".to_string()),
                             }
                         }
                     };
