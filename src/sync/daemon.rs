@@ -327,37 +327,40 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
         let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
 
-        for game_id in &ready_games {
-            if let Some(game) = game_list.get_game_mut(game_id) {
-                let mode = sync_config.get_mode(&game.name);
-                match mode {
-                    crate::sync::sync_config::SaveMode::None => {
-                        log::debug!("[sync daemon] Skipping upload for {} — mode is None", game.name);
-                        debounce_state.lock().unwrap().remove(game_id);
-                        continue;
-                    }
-                    crate::sync::sync_config::SaveMode::Local => {
-                        let auto_sync = sync_config.get_auto_sync(&game.name);
-                        if !auto_sync {
-                            log::debug!("[sync daemon] Local mode, auto-sync off — skipping for {}", game.name);
-                            debounce_state.lock().unwrap().remove(game_id);
-                            continue;
-                        }
-                        log::info!("[sync daemon] Local backup for {}", game.name);
-                        if let Some(local_path) = game.path_by_device.get(&device.id).cloned() {
-                            let zip_dir = config.backup.path.clone();
-                            let zip_path = zip_dir.joined(&format!("{}.zip", game.id));
-                            match crate::sync::operations::create_zip_from_folder(&local_path, &zip_path) {
-                                Ok(_) => log::info!("[sync daemon] Local backup complete: {}", game.name),
-                                Err(e) => log::error!("[sync daemon] Local backup failed for {}: {e}", game.name),
-                            }
-                        }
-                        debounce_state.lock().unwrap().remove(game_id);
-                        continue;
-                    }
-                    _ => {} // Cloud y Sync: comportamiento normal
-                }
+    for game_id in &ready_games {
+            let mode = sync_config.get_mode(game_id);
 
+            if matches!(mode, crate::sync::sync_config::SaveMode::None) {
+                log::debug!("[sync daemon] Skipping — mode is None for {}", game_id);
+                debounce_state.lock().unwrap().remove(game_id);
+                continue;
+            }
+
+            if matches!(mode, crate::sync::sync_config::SaveMode::Local) {
+                let auto_sync = sync_config.get_auto_sync(game_id);
+                if !auto_sync {
+                    log::debug!("[sync daemon] Local mode, auto-sync off — skipping for {}", game_id);
+                    debounce_state.lock().unwrap().remove(game_id);
+                    continue;
+                }
+                let local_path = game_list.get_game(game_id)
+                    .and_then(|g| g.path_by_device.get(&device.id).cloned())
+                    .or_else(|| crate::sync::operations::resolve_game_path_from_manifest(&config, game_id));
+                if let Some(path) = local_path {
+                    let zip_path = config.backup.path.joined(&format!("{}.zip", game_id));
+                    match crate::sync::operations::create_zip_from_folder(&path, &zip_path) {
+                        Ok(_) => log::info!("[sync daemon] Local backup complete: {}", game_id),
+                        Err(e) => log::error!("[sync daemon] Local backup failed for {}: {e}", game_id),
+                    }
+                } else {
+                    log::warn!("[sync daemon] Cannot resolve local path for: {}", game_id);
+                }
+                debounce_state.lock().unwrap().remove(game_id);
+                continue;
+            }
+
+            // CLOUD y SYNC — requieren game_list
+            if let Some(game) = game_list.get_game_mut(game_id) {
                 let local_path = game.path_by_device.get(&device.id).cloned();
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
                 let status = determine_sync_type(game, &scan);
