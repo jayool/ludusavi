@@ -2290,8 +2290,14 @@ impl App {
                             self.close_modal(),
                             Task::perform(
                                 async move {
-                                    ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name)
-                                        .map_err(|e| e.to_string())
+                                    // Borrar ZIP del cloud
+                                    let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
+                                    // Eliminar la entrada del juego en game-list.json del cloud
+                                    if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                        game_list.games.retain(|g| g.id != game_name);
+                                        let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
+                                    }
+                                    Ok::<(), String>(())
                                 },
                                 |result| match result {
                                     Ok(_) => Message::ShowTimedNotification("✓ Saved. Cloud backup removed.".to_string()),
