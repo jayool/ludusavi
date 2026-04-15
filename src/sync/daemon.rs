@@ -100,7 +100,12 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Paso 3: construir watched_paths desde sync-games.json + game-list del cloud
     let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
     let managed_games: Vec<String> = sync_config.games.iter()
-        .filter(|(_, cfg)| cfg.mode != crate::sync::sync_config::SaveMode::None)
+        .filter(|(_, cfg)| match cfg.mode {
+            crate::sync::sync_config::SaveMode::None => false,
+            crate::sync::sync_config::SaveMode::Local => cfg.auto_sync,
+            crate::sync::sync_config::SaveMode::Cloud => cfg.auto_sync,
+            crate::sync::sync_config::SaveMode::Sync => true,
+        })
         .map(|(name, _)| name.clone())
         .collect();
 
