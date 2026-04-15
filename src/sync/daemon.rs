@@ -115,7 +115,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     // Releer el game-list después de auto-registro
     let game_list = read_game_list_from_cloud(&config).unwrap_or_default();
 
-    let watched_paths: HashMap<String, String> = game_list
+    let mut watched_paths: HashMap<String, String> = game_list
         .games
         .iter()
         .filter(|g| {
@@ -123,7 +123,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             let auto_sync = sync_config.get_auto_sync(&g.id);
             match mode {
                 crate::sync::sync_config::SaveMode::None => false,
-                crate::sync::sync_config::SaveMode::Local => auto_sync,
+                crate::sync::sync_config::SaveMode::Local => false, // LOCAL se maneja abajo
                 crate::sync::sync_config::SaveMode::Cloud => auto_sync,
                 crate::sync::sync_config::SaveMode::Sync => true,
             }
@@ -134,6 +134,22 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 .map(|path| (g.id.clone(), path.clone()))
         })
         .collect();
+    
+    // Para LOCAL + auto sync ON, resolver la ruta directamente sin game_list
+    for (game_id, cfg) in &sync_config.games {
+        if cfg.mode != crate::sync::sync_config::SaveMode::Local || !cfg.auto_sync {
+            continue;
+        }
+        if watched_paths.contains_key(game_id) {
+            continue;
+        }
+        if let Some(path) = crate::sync::operations::resolve_game_path_from_manifest(&config, game_id) {
+            log::info!("[sync daemon] Resolved LOCAL path for {}: {}", game_id, path);
+            watched_paths.insert(game_id.clone(), path);
+        } else {
+            log::warn!("[sync daemon] Cannot resolve LOCAL path for: {}", game_id);
+        }
+    }
 
     // Si sync-games.json tiene juegos pero ninguno tiene ruta aún, arrancar igual
     // y monitorizar cuando se registren
