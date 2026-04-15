@@ -1641,20 +1641,30 @@ impl App {
                         ludusavi::sync::sync_config::SaveMode::Local |
                         ludusavi::sync::sync_config::SaveMode::None
                     );
-
+                    // LOCAL → CLOUD/SYNC borra el ZIP local
+                    let local_to_cloud = matches!(previous_mode,
+                        ludusavi::sync::sync_config::SaveMode::Local
+                    ) && matches!(new_mode,
+                        ludusavi::sync::sync_config::SaveMode::Cloud |
+                        ludusavi::sync::sync_config::SaveMode::Sync
+                    );
                     // Cambio a NONE borra también el backup local
                     let to_none = matches!(new_mode, ludusavi::sync::sync_config::SaveMode::None)
                         && !matches!(previous_mode, ludusavi::sync::sync_config::SaveMode::None);
-
-                    if cloud_to_local || to_none {
+                    if cloud_to_local || to_none || local_to_cloud {
                         let warning = if to_none {
                             format!(
                                 "Set \"{}\" to None?\n\nThe cloud backup and local backup will be deleted. This cannot be undone.",
                                 name
                             )
-                        } else {
+                        } else if cloud_to_local {
                             format!(
                                 "Switch \"{}\" to Local mode?\n\nThe cloud backup will be deleted. This cannot be undone.",
+                                name
+                            )
+                        } else {
+                            format!(
+                                "Switch \"{}\" to Cloud/Sync mode?\n\nThe local backup will be deleted. This cannot be undone.",
                                 name
                             )
                         };
