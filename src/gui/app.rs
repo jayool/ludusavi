@@ -2273,26 +2273,60 @@ impl App {
                 self.show_modal(Modal::ConfirmForceDownload { game: game_name })
             }
             Message::ConfirmSyncModeChange { game, previous_mode } => {
-                // Ejecutar el cambio de modo que ya estaba pendiente
                 if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
-                    self.sync_games_config.games.insert(name.clone(), pending);
+                    self.sync_games_config.games.insert(name.clone(), pending.clone());
                     self.sync_games_config.save();
                     self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
-                    // Si el modo anterior era CLOUD o SYNC, borrar ZIP del cloud
-                    let should_delete = matches!(previous_mode,
+            
+                    // LOCAL/NONE → CLOUD/SYNC: borrar ZIP local
+                    let should_delete_local = matches!(previous_mode,
+                        ludusavi::sync::sync_config::SaveMode::Local |
+                        ludusavi::sync::sync_config::SaveMode::None
+                    ) && matches!(pending.mode,
                         ludusavi::sync::sync_config::SaveMode::Cloud |
                         ludusavi::sync::sync_config::SaveMode::Sync
                     );
-                    if should_delete {
+            
+                    // CLOUD/SYNC → LOCAL/NONE: borrar ZIP del cloud y entrada de game-list
+                    let should_delete_cloud = matches!(previous_mode,
+                        ludusavi::sync::sync_config::SaveMode::Cloud |
+                        ludusavi::sync::sync_config::SaveMode::Sync
+                    ) && matches!(pending.mode,
+                        ludusavi::sync::sync_config::SaveMode::Local |
+                        ludusavi::sync::sync_config::SaveMode::None
+                    );
+            
+                    if should_delete_local {
+                        let config = self.config.clone();
+                        let game_name = name.clone();
+                        return Task::batch([
+                            self.close_modal(),
+                            Task::perform(
+                                async move {
+                                    let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+                                    if zip_path.is_file() {
+                                        if let Ok(path_buf) = zip_path.as_std_path_buf() {
+                                            let _ = std::fs::remove_file(path_buf);
+                                        }
+                                    }
+                                    Ok::<(), String>(())
+                                },
+                                |result| match result {
+                                    Ok(_) => Message::ShowTimedNotification("✓ Saved. Local backup removed.".to_string()),
+                                    Err(e) => Message::ShowTimedNotification(format!("✓ Saved. Warning: could not remove local backup: {}", e)),
+                                },
+                            ),
+                        ]);
+                    }
+            
+                    if should_delete_cloud {
                         let config = self.config.clone();
                         let game_name = game.clone();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
                                 async move {
-                                    // Borrar ZIP del cloud
                                     let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
-                                    // Eliminar la entrada del juego en game-list.json del cloud
                                     if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
                                         game_list.games.retain(|g| g.id != game_name);
                                         let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
