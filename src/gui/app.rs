@@ -3938,9 +3938,8 @@ impl App {
                             ludusavi::sync::sync_config::SaveMode::Sync => "SYNC",
                         };
 
-                        // Last synced from — solo aplica a CLOUD y SYNC
+                        // Last synced from — solo aplica a SYNC
                         let last_from = match mode {
-                            ludusavi::sync::sync_config::SaveMode::Cloud |
                             ludusavi::sync::sync_config::SaveMode::Sync => {
                                 meta.and_then(|m| m.last_synced_from.as_deref())
                                     .map(|id| game_list.get_device_name(id).to_string())
@@ -3951,7 +3950,6 @@ impl App {
 
                         // Last synced time — solo aplica a CLOUD y SYNC
                         let last_synced = match mode {
-                            ludusavi::sync::sync_config::SaveMode::Cloud |
                             ludusavi::sync::sync_config::SaveMode::Sync => {
                                 meta
                                     .and_then(|m| m.last_sync_time_utc)
