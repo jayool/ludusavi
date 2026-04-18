@@ -4559,7 +4559,7 @@ impl App {
                                     .and_then(|m| m.path_by_device.get(&device_id))
                                     .cloned()
                                     .or_else(|| {
-                                        crate::sync::operations::resolve_game_path_from_manifest(
+                                        ludusavi::sync::operations::resolve_game_path_from_manifest(
                                             &self.config,
                                             &game_name,
                                         )
