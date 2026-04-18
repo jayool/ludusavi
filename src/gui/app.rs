@@ -4554,8 +4554,18 @@ impl App {
                         )
                         .push(crate::gui::widget::text("SAVE LOCATION").size(11).class(style::Text::Muted))
                         .push(
-                            meta.and_then(|m| m.path_by_device.get(&device_id))
-                                .map(|path| {
+                            {
+                                let save_path = meta
+                                    .and_then(|m| m.path_by_device.get(&device_id))
+                                    .cloned()
+                                    .or_else(|| {
+                                        crate::sync::operations::resolve_game_path_from_manifest(
+                                            &self.config,
+                                            &game_name,
+                                        )
+                                    });
+
+                                save_path.map(|path| {
                                     let p = path.clone();
                                     Container::new(
                                         Row::new()
@@ -4582,6 +4592,17 @@ impl App {
                                     .padding([4, 10])
                                     .class(style::Container::GamesTableRow)
                                 })
+                                .unwrap_or_else(|| {
+                                    Container::new(
+                                        crate::gui::widget::text("No save location detected")
+                                            .size(12)
+                                            .class(style::Text::Muted),
+                                    )
+                                    .width(Length::Fill)
+                                    .padding([8, 10])
+                                    .class(style::Container::GamesTableRow)
+                                })
+                            },
                                 .unwrap_or_else(|| {
                                     Container::new(
                                         crate::gui::widget::text("No save location detected")
