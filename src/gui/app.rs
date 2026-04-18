@@ -4603,16 +4603,6 @@ impl App {
                                     .class(style::Container::GamesTableRow)
                                 })
                             },
-                                .unwrap_or_else(|| {
-                                    Container::new(
-                                        crate::gui::widget::text("No save location detected")
-                                            .size(12)
-                                            .class(style::Text::Muted),
-                                    )
-                                    .width(Length::Fill)
-                                    .padding([8, 10])
-                                    .class(style::Container::GamesTableRow)
-                                }),
                         )
                         .push_if(
                             matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local | ludusavi::sync::sync_config::SaveMode::Cloud),
