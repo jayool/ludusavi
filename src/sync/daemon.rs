@@ -347,6 +347,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         let mut any_changes = false;
 
         let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
+        let mut error_games: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     for game_id in &ready_games {
             let mode = sync_config.get_mode(game_id);
@@ -395,9 +396,11 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                     Ok(_) => {
                         log::info!("[sync daemon] Upload complete: {}", game.name);
                         any_changes = true;
+                        error_games.remove(game_id);
                     }
                     Err(e) => {
                         log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
+                        error_games.insert(game_id.clone(), e.to_string());
                     }
                 }
             } else {
@@ -417,6 +420,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 save_last_mod_time(&app_dir, &last_known_mod_time);
             }
         }
+        write_sync_status_with_errors(&app_dir, &game_list, &device.id, &config, &sync_config, &error_games);
     }
 
     log::info!("[sync daemon] Stop flag set, shutting down watcher");
