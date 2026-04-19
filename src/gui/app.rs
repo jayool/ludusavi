@@ -3751,7 +3751,7 @@ impl App {
                     .push(
                         Column::new()
                             .push(crate::gui::widget::text("Ludusavi").size(15))
-                            .push(crate::gui::widget::text("SAVE SYNC").size(10).class(style::Text::Muted)),
+                            .push(crate::gui::widget::text("Sync").size(10).class(style::Text::Muted)),
                     ),
             )
             .width(Length::Fill)
@@ -4489,7 +4489,7 @@ impl App {
                     let (status_text, status_detail) = match saved_mode {
                         ludusavi::sync::sync_config::SaveMode::None => (
                             "— Not managed",
-                            "This game is not managed by Save Sync.".to_string(),
+                            "This game is not managed by Ludusavi Sync.".to_string(),
                         ),
                         ludusavi::sync::sync_config::SaveMode::Local => {
                             match status {
