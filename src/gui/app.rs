@@ -3908,17 +3908,11 @@ impl App {
                         let meta = game_list.get_game(name);
 
                         // Status dot color
-                        let dot_class = match mode {
-                            ludusavi::sync::sync_config::SaveMode::None => style::Container::DaemonDotInactive,
-                            ludusavi::sync::sync_config::SaveMode::Local |
-                            ludusavi::sync::sync_config::SaveMode::Cloud => style::Container::DaemonDotInactive,
-                            ludusavi::sync::sync_config::SaveMode::Sync => {
-                                if status == "synced" {
-                                    style::Container::DaemonDotActive
-                                } else {
-                                    style::Container::DaemonDotPending
-                                }
-                            }
+                        let dot_class = match status {
+                            "synced" => style::Container::DaemonDotActive,
+                            "error" => style::Container::DaemonDotError,
+                            "pending_backup" | "pending_restore" => style::Container::DaemonDotPending,
+                            _ => style::Container::DaemonDotInactive,
                         };
 
                         // Mode badge text
