@@ -2288,7 +2288,6 @@ impl App {
                     self.sync_games_config.save();
                     self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
             
-                    // LOCAL/NONE → CLOUD/SYNC: borrar ZIP local
                     let should_delete_local = matches!(previous_mode,
                         ludusavi::sync::sync_config::SaveMode::Local |
                         ludusavi::sync::sync_config::SaveMode::None
@@ -2297,7 +2296,6 @@ impl App {
                         ludusavi::sync::sync_config::SaveMode::Sync
                     );
             
-                    // CLOUD/SYNC → LOCAL/NONE: borrar ZIP del cloud y entrada de game-list
                     let should_delete_cloud = matches!(previous_mode,
                         ludusavi::sync::sync_config::SaveMode::Cloud |
                         ludusavi::sync::sync_config::SaveMode::Sync
@@ -2307,59 +2305,53 @@ impl App {
                     );
             
                     if should_delete_local {
+                        self.sync_in_progress = Some("⏳ Uploading to cloud...".to_string());
                         let config = self.config.clone();
                         let game_name = name.clone();
                         let app_dir = crate::prelude::app_dir();
-                        self.sync_in_progress = Some("⏳ Uploading to cloud...".to_string());
-                        let config = self.config.clone();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
                                 async move {
-                                    let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
-                                    if zip_path.is_file() {
-                                        // Hay ZIP local — subirlo al cloud antes de borrarlo
-                                        let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
-                                        let mut game_list = ludusavi::sync::operations::read_game_list_from_cloud(&config)
-                                            .unwrap_or_default();
-                    
-                                        // Asegurar que el juego tiene entrada en game-list con la ruta
-                                        let local_path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name);
-                                        match game_list.get_game_mut(&game_name) {
-                                            Some(existing) => {
-                                                if let Some(path) = &local_path {
-                                                    existing.path_by_device.insert(device.id.clone(), path.clone());
+                                    tokio::task::spawn_blocking(move || {
+                                        let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+                                        if zip_path.is_file() {
+                                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                                            let mut game_list = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                                .unwrap_or_default();
+            
+                                            let local_path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name);
+                                            match game_list.get_game_mut(&game_name) {
+                                                Some(existing) => {
+                                                    if let Some(path) = &local_path {
+                                                        existing.path_by_device.insert(device.id.clone(), path.clone());
+                                                    }
+                                                }
+                                                None => {
+                                                    let mut meta = ludusavi::sync::game_list::GameMetaData::new(
+                                                        game_name.clone(), game_name.clone(),
+                                                    );
+                                                    if let Some(path) = &local_path {
+                                                        meta.path_by_device.insert(device.id.clone(), path.clone());
+                                                    }
+                                                    game_list.upsert_game(meta);
                                                 }
                                             }
-                                            None => {
-                                                let mut meta = ludusavi::sync::game_list::GameMetaData::new(
-                                                    game_name.clone(), game_name.clone(),
-                                                );
-                                                if let Some(path) = &local_path {
-                                                    meta.path_by_device.insert(device.id.clone(), path.clone());
-                                                }
-                                                game_list.upsert_game(meta);
+            
+                                            let game = game_list.get_game_mut(&game_name)
+                                                .ok_or_else(|| "Game not found after upsert".to_string())?;
+            
+                                            ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
+                                                .map_err(|e| e.to_string())?;
+                                            ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list)
+                                                .map_err(|e| e.to_string())?;
+            
+                                            if let Ok(path_buf) = zip_path.as_std_path_buf() {
+                                                let _ = std::fs::remove_file(path_buf);
                                             }
                                         }
-                    
-                                        // Subir el ZIP al cloud directamente (ya existe el ZIP local)
-                                        let game = game_list.get_game_mut(&game_name)
-                                            .ok_or_else(|| "Game not found after upsert".to_string())?;
-                    
-                                        ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
-                                            .map_err(|e| e.to_string())?;
-                                        ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list)
-                                            .map_err(|e| e.to_string())?;
-                    
-                                        // Borrar ZIP local
-                                        if let Ok(path_buf) = zip_path.as_std_path_buf() {
-                                            let _ = std::fs::remove_file(path_buf);
-                                        }
                                         Ok::<(), String>(())
-                                    } else {
-                                        // No hay ZIP local, nada que subir
-                                        Ok::<(), String>(())
-                                    }
+                                    }).await.unwrap_or_else(|e| Err(e.to_string()))
                                 },
                                 |result| match result {
                                     Ok(_) => Message::ShowTimedNotification("✓ Saved. Local backup uploaded to cloud.".to_string()),
@@ -2370,55 +2362,50 @@ impl App {
                     }
             
                     if should_delete_cloud {
+                        self.sync_in_progress = Some("⏳ Downloading from cloud...".to_string());
                         let config = self.config.clone();
                         let game_name = game.clone();
                         let app_dir = crate::prelude::app_dir();
-                        self.sync_in_progress = Some("⏳ Downloading from cloud...".to_string());
-                        let config = self.config.clone();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
                                 async move {
-                                    // Descargar ZIP del cloud al backup local antes de borrarlo
-                                    let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
-                                    let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
-                    
-                                    // Leer game-list para obtener la ruta local
-                                    if let Some(game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
-                                        if let Some(game) = game_list.get_game(&game_name) {
-                                            // Descargar ZIP del cloud directamente al backup local
-                                            let rclone_helper_path = format!(
-                                                "{}:{}/{}",
-                                                config.cloud.remote.as_ref().map(|r| r.id().to_string()).unwrap_or_default(),
-                                                config.cloud.path,
-                                                ludusavi::sync::game_list::game_zip_file_name(&game_name)
-                                            );
-                                            let zip_std = zip_path.as_std_path_buf()
-                                                .map_err(|e| e.to_string())?;
-                                            let args = [
-                                                "copyto".to_string(),
-                                                rclone_helper_path,
-                                                zip_std.to_string_lossy().to_string(),
-                                            ];
-                                            crate::prelude::run_command(
-                                                config.apps.rclone.path.raw(),
-                                                &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                                                &[0],
-                                                crate::prelude::Privacy::Public,
-                                            ).map_err(|e| e.command())?;
+                                    tokio::task::spawn_blocking(move || {
+                                        let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+            
+                                        if let Some(game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                            if game_list.get_game(&game_name).is_some() {
+                                                let rclone_helper_path = format!(
+                                                    "{}:{}/{}",
+                                                    config.cloud.remote.as_ref().map(|r| r.id().to_string()).unwrap_or_default(),
+                                                    config.cloud.path,
+                                                    ludusavi::sync::game_list::game_zip_file_name(&game_name)
+                                                );
+                                                let zip_std = zip_path.as_std_path_buf()
+                                                    .map_err(|e| e.to_string())?;
+                                                let args = [
+                                                    "copyto".to_string(),
+                                                    rclone_helper_path,
+                                                    zip_std.to_string_lossy().to_string(),
+                                                ];
+                                                crate::prelude::run_command(
+                                                    config.apps.rclone.path.raw(),
+                                                    &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                                                    &[0],
+                                                    crate::prelude::Privacy::Public,
+                                                ).map_err(|e| e.command())?;
+                                            }
                                         }
-                                    }
-                    
-                                    // Borrar ZIP del cloud
-                                    let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
-                    
-                                    // Eliminar entrada de game-list
-                                    if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
-                                        game_list.games.retain(|g| g.id != game_name);
-                                        let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
-                                    }
-                    
-                                    Ok::<(), String>(())
+            
+                                        let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
+            
+                                        if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                            game_list.games.retain(|g| g.id != game_name);
+                                            let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
+                                        }
+            
+                                        Ok::<(), String>(())
+                                    }).await.unwrap_or_else(|e| Err(e.to_string()))
                                 },
                                 |result| match result {
                                     Ok(_) => Message::ShowTimedNotification("✓ Saved. Cloud backup downloaded locally.".to_string()),
