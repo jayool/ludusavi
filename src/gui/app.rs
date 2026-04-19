@@ -2356,9 +2356,20 @@ impl App {
                                                     }
                                                 }
                                                 None => {
-                                                    log::error!("[to_none] Failed to read cloud game list — cannot remove entry");
-                                                }
-                                            }
+                                                                log::warn!("[to_none] Cloud game list not found, cleaning local copy only");
+                                                                let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                                                                if let Ok(path_buf) = local_path.as_std_path_buf() {
+                                                                    if let Ok(content) = std::fs::read_to_string(&path_buf) {
+                                                                        if let Ok(mut local_gl) = serde_json::from_str::<ludusavi::sync::game_list::GameListFile>(&content) {
+                                                                            local_gl.games.retain(|g| g.id != game_name);
+                                                                            if let Ok(new_content) = serde_json::to_string_pretty(&local_gl) {
+                                                                                let _ = std::fs::write(&path_buf, new_content);
+                                                                                log::info!("[to_none] Cleaned entry from local game list");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
                                         }
 
                                         Ok::<(), String>(())
