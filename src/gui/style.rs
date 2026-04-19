@@ -395,6 +395,7 @@ pub enum Container {
     DaemonDotActive,
     DaemonDotPending,
     DaemonDotInactive,
+    DaemonDotError,
     Divider,
 }
 impl container::Catalog for Theme {
@@ -424,6 +425,7 @@ impl container::Catalog for Theme {
                 Container::DaemonDotActive => self.added.into(),
                 Container::DaemonDotPending => self.yellow.into(),
                 Container::DaemonDotInactive => self.text_muted.into(),
+                Container::DaemonDotError => self.negative.into(),
                 Container::BadgeActivated => self.negative.into(),
                 Container::Divider => self.border.into(),
                 _ => self.background.into(),
@@ -450,7 +452,7 @@ impl container::Catalog for Theme {
                         }
                     }
                     Container::BadgeActivated => self.negative,
-                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => Color::TRANSPARENT,
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive | Container::DaemonDotError => Color::TRANSPARENT,
                     Container::ModalForeground => self.positive,
                     Container::BadgeFaded => self.disabled,
                     _ => self.border,
@@ -462,7 +464,7 @@ impl container::Catalog for Theme {
                     Container::GamesTableRow => 0.0,
                     Container::DaemonStatus => 1.0,
                     Container::Divider => 0.0,
-                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 0.0,
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive | Container::DaemonDotError => 0.0,
                     Container::GameListEntry
                     | Container::ModalForeground
                     | Container::Badge
@@ -480,7 +482,7 @@ impl container::Catalog for Theme {
                     Container::GamesTableRow => 0.0.into(),
                     Container::DaemonStatus => 8.0.into(),
                     Container::Divider => 0.0.into(),
-                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => 50.0.into(),
+                    Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive | Container::DaemonDotError => 50.0.into(),
                     Container::ModalForeground
                     | Container::GameListEntry
                     | Container::Badge
@@ -494,7 +496,7 @@ impl container::Catalog for Theme {
             },
             text_color: match class {
                 Container::Wrapper | Container::GamesTableRow => None,
-                Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive => None,
+                Container::DaemonDotActive | Container::DaemonDotPending | Container::DaemonDotInactive | Container::DaemonDotError => None,
                 Container::DaemonStatus => Some(self.added),
                 Container::DisabledBackup => Some(self.text_inverted),
                 Container::ChangeBadge { change, faded } => {
