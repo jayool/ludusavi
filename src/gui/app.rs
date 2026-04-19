@@ -4453,9 +4453,18 @@ impl App {
                     .map(|g| g.mode.clone())
                     .unwrap_or(ludusavi::sync::sync_config::SaveMode::None);
                 
+                let has_pending_mode_change = self.pending_game_detail_name.as_deref() == Some(&game_name)
+                    && self.pending_game_detail.as_ref().map(|p| {
+                        let original = self.sync_games_config.games
+                            .get(&game_name)
+                            .cloned()
+                            .unwrap_or_default();
+                        p.mode != original.mode
+                    }).unwrap_or(false);
+                
                 let is_cloud_available = self.game_list.games.iter().any(|g| g.id == game_name)
                     && !matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Sync)
-                    && !has_pending;
+                    && !has_pending_mode_change;
                 let status_card = {
                     let last_sync_str = meta
                         .and_then(|m| m.last_sync_time_utc)
