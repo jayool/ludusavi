@@ -2402,6 +2402,13 @@ impl App {
                                         if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
                                             game_list.games.retain(|g| g.id != game_name);
                                             let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
+                                            // Actualizar copia local para que la GUI no muestre el banner
+                                            let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                                            if let Ok(content) = serde_json::to_string_pretty(&game_list) {
+                                                if let Ok(path_buf) = local_path.as_std_path_buf() {
+                                                    let _ = std::fs::write(path_buf, content);
+                                                }
+                                            }
                                         }
             
                                         Ok::<(), String>(())
