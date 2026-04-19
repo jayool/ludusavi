@@ -5100,9 +5100,14 @@ impl App {
             Screen::AllDevices => {
                 let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
 
-                // Recopilar todos los devices del game-list
+                // Recopilar devices solo de juegos que estén en SYNC en este device.
+                // CLOUD/LOCAL/NONE no participan en multi-device sync.
                 let mut device_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
                 for game in &self.game_list.games {
+                    let mode = self.sync_games_config.get_mode(&game.id);
+                    if !matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync) {
+                        continue;
+                    }
                     for dev_id in game.path_by_device.keys() {
                         device_map.entry(dev_id.clone()).or_default().push(game.name.clone());
                     }
