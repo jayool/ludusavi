@@ -4448,8 +4448,14 @@ impl App {
 
                 // Sync status card
                 // Detectar si el juego está disponible en el cloud pero no tiene SYNC local
+                let saved_mode = self.sync_games_config.games
+                    .get(&game_name)
+                    .map(|g| g.mode.clone())
+                    .unwrap_or(ludusavi::sync::sync_config::SaveMode::None);
+                
                 let is_cloud_available = self.game_list.games.iter().any(|g| g.id == game_name)
-                    && !matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync);
+                    && !matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Sync)
+                    && !has_pending;
                 let status_card = {
                     let last_sync_str = meta
                         .and_then(|m| m.last_sync_time_utc)
