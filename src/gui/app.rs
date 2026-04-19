@@ -2310,6 +2310,8 @@ impl App {
                         let config = self.config.clone();
                         let game_name = name.clone();
                         let app_dir = crate::prelude::app_dir();
+                        self.sync_in_progress = Some("⏳ Uploading to cloud...".to_string());
+                        let config = self.config.clone();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
@@ -2371,6 +2373,8 @@ impl App {
                         let config = self.config.clone();
                         let game_name = game.clone();
                         let app_dir = crate::prelude::app_dir();
+                        self.sync_in_progress = Some("⏳ Downloading from cloud...".to_string());
+                        let config = self.config.clone();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
