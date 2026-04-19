@@ -4486,7 +4486,7 @@ impl App {
                         .and_then(|m| m.last_synced_from.as_deref())
                         .map(|id| self.game_list.get_device_name(id).to_string());
 
-                    let (status_text, status_detail) = match mode {
+                    let (status_text, status_detail) = match saved_mode {
                         ludusavi::sync::sync_config::SaveMode::None => (
                             "— Not managed",
                             "This game is not managed by Save Sync.".to_string(),
