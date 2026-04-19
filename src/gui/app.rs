@@ -2371,45 +2371,55 @@ impl App {
                             Task::perform(
                                 async move {
                                     tokio::task::spawn_blocking(move || {
+                                        // Borrar ZIP local si existe
                                         let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
-                                        if zip_path.is_file() {
-                                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
-                                            let mut game_list = ludusavi::sync::operations::read_game_list_from_cloud(&config)
-                                                .unwrap_or_default();
-            
-                                            let local_path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name);
-                                            match game_list.get_game_mut(&game_name) {
-                                                Some(existing) => {
-                                                    if let Some(path) = &local_path {
-                                                        existing.path_by_device.insert(device.id.clone(), path.clone());
+                                        if let Ok(path_buf) = zip_path.as_std_path_buf() {
+                                            match std::fs::remove_file(&path_buf) {
+                                                Ok(_) => log::info!("[to_none] Local ZIP deleted: {:?}", path_buf),
+                                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                                    log::info!("[to_none] No local ZIP to delete");
+                                                }
+                                                Err(e) => log::warn!("[to_none] Failed to delete local ZIP: {}", e),
+                                            }
+                                        }
+                                    
+                                        // Si venía de CLOUD/SYNC: borrar ZIP del cloud y entrada del game-list
+                                        if had_cloud {
+                                            match ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name) {
+                                                Ok(_) => log::info!("[to_none] Cloud ZIP deleted for {}", game_name),
+                                                Err(e) => log::warn!("[to_none] Failed to delete cloud ZIP for {}: {}", game_name, e),
+                                            }
+                                    
+                                            match ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                                Some(mut game_list) => {
+                                                    let before = game_list.games.len();
+                                                    game_list.games.retain(|g| g.id != game_name);
+                                                    let after = game_list.games.len();
+                                                    log::info!("[to_none] Game list entries: {} → {}", before, after);
+                                    
+                                                    match ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list) {
+                                                        Ok(_) => log::info!("[to_none] Updated cloud game list"),
+                                                        Err(e) => log::error!("[to_none] Failed to write cloud game list: {}", e),
+                                                    }
+                                    
+                                                    let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                                                    if let Ok(content) = serde_json::to_string_pretty(&game_list) {
+                                                        if let Ok(path_buf) = local_path.as_std_path_buf() {
+                                                            match std::fs::write(&path_buf, content) {
+                                                                Ok(_) => log::info!("[to_none] Updated local game list"),
+                                                                Err(e) => log::error!("[to_none] Failed to write local game list: {}", e),
+                                                            }
+                                                        }
                                                     }
                                                 }
                                                 None => {
-                                                    let mut meta = ludusavi::sync::game_list::GameMetaData::new(
-                                                        game_name.clone(), game_name.clone(),
-                                                    );
-                                                    if let Some(path) = &local_path {
-                                                        meta.path_by_device.insert(device.id.clone(), path.clone());
-                                                    }
-                                                    game_list.upsert_game(meta);
+                                                    log::error!("[to_none] Failed to read cloud game list — cannot remove entry");
                                                 }
                                             }
-            
-                                            let game = game_list.get_game_mut(&game_name)
-                                                .ok_or_else(|| "Game not found after upsert".to_string())?;
-            
-                                            ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
-                                                .map_err(|e| e.to_string())?;
-                                            ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list)
-                                                .map_err(|e| e.to_string())?;
-            
-                                            if let Ok(path_buf) = zip_path.as_std_path_buf() {
-                                                let _ = std::fs::remove_file(path_buf);
-                                            }
                                         }
+                                    
                                         Ok::<(), String>(())
                                     }).await.unwrap_or_else(|e| Err(e.to_string()))
-                                },
                                 |result| match result {
                                     Ok(_) => Message::ShowTimedNotification("✓ Saved. Local backup uploaded to cloud.".to_string()),
                                     Err(e) => Message::ShowTimedNotification(format!("✓ Saved. Warning: could not upload to cloud: {}", e)),
