@@ -3644,29 +3644,75 @@ impl App {
             let running = system.processes_by_exact_name(daemon_name.as_ref()).next().is_some();
 
             let sync_status = {
-                let path = crate::prelude::app_dir().joined("daemon-status.json");
-                if let Some(content) = path.read() {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                        json.get("games")
-                            .and_then(|g| g.as_object())
-                            .map(|obj| {
-                                obj.iter()
-                                    .map(|(k, v)| {
-                                        let status = v.get("status")
-                                            .and_then(|s| s.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        (k.clone(), status)
-                                    })
-                                    .collect::<std::collections::HashMap<String, String>>()
-                            })
-                            .unwrap_or_default()
+                // Leer daemon-status.json
+                let mut status_map: std::collections::HashMap<String, String> = {
+                    let path = crate::prelude::app_dir().joined("daemon-status.json");
+                    if let Some(content) = path.read() {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            json.get("games")
+                                .and_then(|g| g.as_object())
+                                .map(|obj| {
+                                    obj.iter()
+                                        .map(|(k, v)| {
+                                            let status = v.get("status")
+                                                .and_then(|s| s.as_str())
+                                                .unwrap_or("")
+                                                .to_string();
+                                            (k.clone(), status)
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default()
+                        } else {
+                            std::collections::HashMap::new()
+                        }
                     } else {
                         std::collections::HashMap::new()
                     }
-                } else {
-                    std::collections::HashMap::new()
+                };
+
+                // Para juegos en LOCAL y NONE, calcular el status directamente sin depender del daemon
+                let sync_config = ludusavi::sync::sync_config::SyncGamesConfig::load();
+                let config = crate::resource::config::Config::load().unwrap_or_default();
+
+                for (game_name, game_cfg) in &sync_config.games {
+                    match game_cfg.mode {
+                        ludusavi::sync::sync_config::SaveMode::None => {
+                            status_map.insert(game_name.clone(), "not_managed".to_string());
+                        }
+                        ludusavi::sync::sync_config::SaveMode::Local => {
+                            let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+                            let zip_std = zip_path.as_std_path_buf().ok();
+                            let zip_mtime = zip_std.as_ref()
+                                .and_then(|p| std::fs::metadata(p).ok())
+                                .and_then(|m| m.modified().ok())
+                                .map(|t| -> chrono::DateTime<chrono::Utc> { t.into() });
+
+                            let save_path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, game_name);
+                            let scan = ludusavi::sync::conflict::DirectoryScanResult::scan(save_path.as_deref());
+
+                            let status = match (zip_mtime, scan.latest_write_time_utc) {
+                                (None, _) => "pending_backup",
+                                (Some(_), None) => "pending_restore",
+                                (Some(zip_t), Some(save_t)) => {
+                                    let zip_secs = zip_t.timestamp();
+                                    let save_secs = save_t.timestamp();
+                                    if save_secs > zip_secs {
+                                        "pending_backup"
+                                    } else if zip_secs > save_secs {
+                                        "pending_restore"
+                                    } else {
+                                        "synced"
+                                    }
+                                }
+                            };
+                            status_map.insert(game_name.clone(), status.to_string());
+                        }
+                        _ => {} // CLOUD y SYNC los maneja el daemon
+                    }
                 }
+
+                status_map
             };
 
             let game_list = {
