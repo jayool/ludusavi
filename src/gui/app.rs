@@ -1653,10 +1653,21 @@ impl App {
                         && !matches!(previous_mode, ludusavi::sync::sync_config::SaveMode::None);
                     if cloud_to_local || to_none || local_to_cloud {
                         let warning = if to_none {
-                            format!(
-                                "Set \"{}\" to None?\n\nThe cloud backup and local backup will be deleted. This cannot be undone.",
-                                name
-                            )
+                            let has_cloud = matches!(previous_mode,
+                                ludusavi::sync::sync_config::SaveMode::Cloud |
+                                ludusavi::sync::sync_config::SaveMode::Sync
+                            );
+                            if has_cloud {
+                                format!(
+                                    "Set \"{}\" to None?\n\nThe cloud backup and local backup will be deleted. This cannot be undone.",
+                                    name
+                                )
+                            } else {
+                                format!(
+                                    "Set \"{}\" to None?\n\nThe local backup will be deleted. This cannot be undone.",
+                                    name
+                                )
+                            }
                         } else if cloud_to_local {
                             format!(
                                 "Switch \"{}\" to Local mode?\n\nThe cloud backup will be deleted. This cannot be undone.",
@@ -2287,7 +2298,53 @@ impl App {
                     self.sync_games_config.games.insert(name.clone(), pending.clone());
                     self.sync_games_config.save();
                     self.timed_notification = Some(Notification::new("✓ Saved".to_string()).expires(2));
-            
+
+                    let to_none = matches!(pending.mode, ludusavi::sync::sync_config::SaveMode::None);
+
+                    if to_none {
+                        self.sync_in_progress = Some("⏳ Cleaning up...".to_string());
+                        let config = self.config.clone();
+                        let game_name = name.clone();
+                        let had_cloud = matches!(previous_mode,
+                            ludusavi::sync::sync_config::SaveMode::Cloud |
+                            ludusavi::sync::sync_config::SaveMode::Sync
+                        );
+                        return Task::batch([
+                            self.close_modal(),
+                            Task::perform(
+                                async move {
+                                    tokio::task::spawn_blocking(move || {
+                                        // Borrar ZIP local si existe
+                                        let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
+                                        if let Ok(path_buf) = zip_path.as_std_path_buf() {
+                                            let _ = std::fs::remove_file(path_buf);
+                                        }
+                    
+                                        // Si venía de CLOUD/SYNC: borrar ZIP del cloud y entrada del game-list
+                                        if had_cloud {
+                                            let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
+                                            if let Some(mut game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                                game_list.games.retain(|g| g.id != game_name);
+                                                let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &game_list);
+                                                let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                                                if let Ok(content) = serde_json::to_string_pretty(&game_list) {
+                                                    if let Ok(path_buf) = local_path.as_std_path_buf() {
+                                                        let _ = std::fs::write(path_buf, content);
+                                                    }
+                                                }
+                                            }
+                                        }
+                    
+                                        Ok::<(), String>(())
+                                    }).await.unwrap_or_else(|e| Err(e.to_string()))
+                                },
+                                |result| match result {
+                                    Ok(_) => Message::ShowTimedNotification("✓ Saved. Backups deleted.".to_string()),
+                                    Err(e) => Message::ShowTimedNotification(format!("✓ Saved. Warning: {}", e)),
+                                },
+                            ),
+                        ]);
+                    }
                     let should_delete_local = matches!(previous_mode,
                         ludusavi::sync::sync_config::SaveMode::Local |
                         ludusavi::sync::sync_config::SaveMode::None
