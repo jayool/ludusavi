@@ -343,7 +343,14 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             }
         };
 
-        let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
+        let mut game_list = read_game_list_from_cloud(&config).unwrap_or_else(|| {
+            let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+            if let Some(content) = local_path.read() {
+                serde_json::from_str(&content).unwrap_or_default()
+            } else {
+                crate::sync::game_list::GameListFile::default()
+            }
+        });
         let mut any_changes = false;
 
         let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
