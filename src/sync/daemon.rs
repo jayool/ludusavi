@@ -473,6 +473,17 @@ fn auto_register_paths(
         .map(|(name, _)| name.clone())
         .collect();
 
+    // Asegurar que el nombre de este dispositivo está registrado en device_names,
+    // incluso si no hay juegos nuevos por registrar.
+    if game_list.device_names.get(&device.id) != Some(&device.name) {
+        game_list.device_names.insert(device.id.clone(), device.name.clone());
+        if let Err(e) = write_game_list_to_cloud(config, &game_list) {
+            log::warn!("[sync daemon] Failed to update device_names in game list: {e}");
+        } else {
+            log::info!("[sync daemon] Registered device name in game list: {}", device.name);
+        }
+    }
+
     if unregistered.is_empty() {
         log::debug!("[sync daemon] All SYNC games already have a path for this device");
         return Ok(());
