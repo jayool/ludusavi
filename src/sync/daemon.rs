@@ -645,7 +645,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
 
     // Escribir estado de sync al disco para que la GUI lo pueda leer
     write_game_list_local(app_dir, &game_list);
-    write_sync_status(&app_dir, &game_list, &device.id, &config, &sync_config);
+    write_sync_status_with_errors(&app_dir, &game_list, &device.id, &config, &sync_config, &error_games);
 
     Ok(())
 }
@@ -677,6 +677,7 @@ fn check_downloads_and_rewatch(
 
     let mut any_changes = false;
     let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
+    let mut error_games: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
@@ -713,6 +714,7 @@ fn check_downloads_and_rewatch(
                     }
                     Err(e) => {
                         log::error!("[sync daemon] Download failed for {}: {e}", game.name);
+                        error_games.insert(game.name.clone(), e.to_string());
                     }
                 }
             }
