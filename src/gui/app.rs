@@ -1659,7 +1659,7 @@ impl App {
                             );
                             if has_cloud {
                                 format!(
-                                    "Set \"{}\" to None?\n\nThe cloud backup and local backup will be deleted. This cannot be undone.",
+                                    "Set \"{}\" to None?\n\nThe cloud backup will be deleted. This cannot be undone.",
                                     name
                                 )
                             } else {
