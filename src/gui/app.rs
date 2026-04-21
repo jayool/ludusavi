@@ -4705,8 +4705,9 @@ impl App {
                                     .and_then(|m| m.path_by_device.get(&device_id))
                                     .cloned()
                                     .or_else(|| {
-                                        ludusavi::sync::operations::resolve_game_path_from_manifest(
+                                        ludusavi::sync::operations::resolve_game_path_lite(
                                             &self.config,
+                                            &self.manifest.extended,
                                             &game_name,
                                         )
                                     });
