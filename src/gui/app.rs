@@ -3787,7 +3787,8 @@ impl App {
                                 .and_then(|m| m.modified().ok())
                                 .map(|t| -> chrono::DateTime<chrono::Utc> { t.into() });
 
-                            let save_path = ludusavi::sync::operations::resolve_game_path_from_manifest(&config, game_name);
+                            let save_path = manifest.as_ref()
+                                .and_then(|m| ludusavi::sync::operations::resolve_game_path_lite(&config, m, game_name));
                             let scan = ludusavi::sync::conflict::DirectoryScanResult::scan(save_path.as_deref());
 
                             let status = match (zip_mtime, scan.latest_write_time_utc) {
