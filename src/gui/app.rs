@@ -3770,6 +3770,10 @@ impl App {
                 let sync_config = ludusavi::sync::sync_config::SyncGamesConfig::load();
                 let config = crate::resource::config::Config::load().unwrap_or_default();
 
+                // Cargar el manifiesto UNA vez para evitar releerlo por cada juego LOCAL
+                let manifest = crate::resource::manifest::Manifest::load().ok()
+                    .map(|m| m.with_extensions(&config));
+
                 for (game_name, game_cfg) in &sync_config.games {
                     match game_cfg.mode {
                         ludusavi::sync::sync_config::SaveMode::None => {
