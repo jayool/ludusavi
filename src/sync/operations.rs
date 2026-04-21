@@ -676,3 +676,14 @@ pub fn delete_game_zip_from_cloud(config: &Config, game_name: &str) -> Result<()
     log::info!("[{}] Cloud ZIP deleted", game_name);
     Ok(())
 }
+/// Versión ligera de resolve_game_path_from_manifest.
+/// Solo consulta el manifiesto y resuelve placeholders. No escanea el sistema.
+/// Útil para mostrar la ruta esperada en la UI sin coste alto.
+pub fn resolve_game_path_lite(
+    config: &Config,
+    manifest: &crate::resource::manifest::Manifest,
+    game_name: &str,
+) -> Option<String> {
+    let game_entry = manifest.0.get(game_name)?;
+    resolve_expected_save_path(config, game_entry)
+}
