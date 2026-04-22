@@ -1535,6 +1535,17 @@ impl App {
                     return Task::none();
                 }
 
+                // Validación: no está en el manifiesto de Ludusavi
+                if self.manifest.extended.0.contains_key(&name) {
+                    if let Some(Modal::AddGame { error, .. }) = self.modals.last_mut() {
+                        *error = Some(format!(
+                            "\"{}\" is already in the Ludusavi manifest. Configure it from the game list instead.",
+                            name
+                        ));
+                    }
+                    return Task::none();
+                }
+
                 // Añadir al game-list local
                 let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
                 let mut meta = ludusavi::sync::game_list::GameMetaData::new(name.clone(), name.clone());
