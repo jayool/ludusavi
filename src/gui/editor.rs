@@ -51,6 +51,7 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                                     Message::config(move |v| config::Event::RootStore(i, v)),
                                 )
                                 .text_size(12)
+                                .padding([3, 5])
                                 .class(style::PickList::Primary),
                             )
                             .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
@@ -63,7 +64,7 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                             .push(space::horizontal().width(70))
                             .push(text(TRANSLATOR.field("pga.db")))
                             .push(histories.input_small(UndoSubject::RootLutrisDatabase(i)))
-                            .push(button::choose_file(BrowseFileSubject::RootLutrisDatabase(i), modifiers)),
+                            .push(button::choose_file_small(BrowseFileSubject::RootLutrisDatabase(i), modifiers)),
                     ),
                 _ => parent.push(
                     Row::new()
@@ -82,6 +83,7 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                                 Message::config(move |v| config::Event::RootStore(i, v)),
                             )
                             .text_size(12)
+                            .padding([3, 5])
                             .class(style::PickList::Primary),
                         )
                         .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
@@ -201,7 +203,7 @@ pub fn manifest<'a>(
                     .push(get_updated(config.manifest.secondary[i].url(), cache))
                     .push(match config.manifest.secondary[i].kind() {
                         SecondaryManifestConfigKind::Local => {
-                            Some(button::choose_file(BrowseFileSubject::SecondaryManifest(i), modifiers))
+                            Some(button::choose_file_small(BrowseFileSubject::SecondaryManifest(i), modifiers))
                         }
                         SecondaryManifestConfigKind::Remote => None,
                     })
@@ -209,7 +211,7 @@ pub fn manifest<'a>(
             )
         });
 
-    content = content.push(button::add(Message::config(config::Event::SecondaryManifest)));
+    content = content.push(button::add_small(Message::config(config::Event::SecondaryManifest)));
 
     Container::new(content).class(style::Container::GameListEntry)
 }
