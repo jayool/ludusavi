@@ -311,8 +311,8 @@ impl Default for SecondaryManifestConfig {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum Theme {
-    #[default]
     Light,
+    #[default]
     Dark,
 }
 
