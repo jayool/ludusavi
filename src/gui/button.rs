@@ -639,6 +639,14 @@ pub fn choose_folder_small<'a>(subject: BrowseSubject, modifiers: &keyboard::Mod
         template_small(Icon::FolderOpen.text_small(), Some(Message::BrowseDir(subject)), None)
     }
 }
+
+pub fn choose_file_small<'a>(subject: BrowseFileSubject, modifiers: &keyboard::Modifiers) -> Element<'a> {
+    if modifiers.shift() {
+        template_small(Icon::OpenInNew.text_small(), Some(Message::OpenFileSubject(subject)), None)
+    } else {
+        template_small(Icon::FolderOpen.text_small(), Some(Message::BrowseFile(subject)), None)
+    }
+}
 pub fn add_small<'a>(action: impl Fn(EditAction) -> Message) -> Element<'a> {
     template_small(Icon::AddCircle.text_small(), Some(action(EditAction::Add)), None)
 }
