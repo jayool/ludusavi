@@ -51,7 +51,7 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                                     Message::config(move |v| config::Event::RootStore(i, v)),
                                 )
                                 .text_size(12)
-                                .padding([3, 5])
+                                .padding([5, 5])
                                 .class(style::PickList::Primary),
                             )
                             .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
@@ -83,7 +83,7 @@ pub fn root<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard
                                 Message::config(move |v| config::Event::RootStore(i, v)),
                             )
                             .text_size(12)
-                            .padding([3, 5])
+                            .padding([5, 5])
                             .class(style::PickList::Primary),
                         )
                         .push(button::choose_folder_small(BrowseSubject::Root(i), modifiers))
@@ -195,7 +195,7 @@ pub fn manifest<'a>(
                             Message::config(move |v| config::Event::SecondaryManifestKind(i, v)),
                         )
                         .text_size(12)
-                        .padding([3, 5])
+                        .padding([5, 5])
                         .class(style::PickList::Primary)
                         .width(75),
                     )
