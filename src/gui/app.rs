@@ -1576,6 +1576,56 @@ impl App {
                 self.timed_notification = Some(Notification::new(format!("✓ Added \"{}\"", name)).expires(3));
                 self.close_modal()
             }
+            Message::RemoveCustomGameRequested(game) => {
+                self.show_modal(Modal::ConfirmRemoveCustomGame { game })
+            }
+            Message::RemoveCustomGameConfirm(game) => {
+                // Borrar de sync_games_config
+                self.sync_games_config.games.remove(&game);
+                self.sync_games_config.save();
+
+                // Borrar de game_list local
+                self.game_list.games.retain(|g| g.id != game);
+                let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                if let Ok(content) = serde_json::to_string_pretty(&self.game_list) {
+                    if let Ok(path_buf) = local_path.as_std_path_buf() {
+                        let _ = std::fs::write(&path_buf, content);
+                    }
+                }
+
+                // Borrar ZIP local si existe
+                let zip_path = self.config.backup.path.joined(&format!("{}.zip", game));
+                if let Ok(path_buf) = zip_path.as_std_path_buf() {
+                    let _ = std::fs::remove_file(&path_buf);
+                }
+
+                // Borrar del cloud (ZIP + entrada game-list) en background
+                let config = self.config.clone();
+                let game_name = game.clone();
+                let cleanup_task = Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            // ZIP del cloud
+                            let _ = ludusavi::sync::operations::delete_game_zip_from_cloud(&config, &game_name);
+
+                            // Entrada en game-list cloud
+                            if let Some(mut cloud_gl) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
+                                cloud_gl.games.retain(|g| g.id != game_name);
+                                let _ = ludusavi::sync::operations::write_game_list_to_cloud(&config, &cloud_gl);
+                            }
+                            Ok::<(), String>(())
+                        }).await.unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |_| Message::Ignore,
+                );
+
+                self.timed_notification = Some(Notification::new(format!("✓ Removed \"{}\"", game)).expires(3));
+
+                // Volver a la pantalla de Games
+                self.current_screen = Screen::Games;
+
+                Task::batch([self.close_modal(), cleanup_task])
+            }
             Message::Ignore => Task::none(),
             Message::CloseModal => self.close_modal(),
             Message::Exit { user } => {
