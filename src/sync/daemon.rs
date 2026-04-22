@@ -759,7 +759,39 @@ fn check_downloads_and_rewatch(
 
 fn write_game_list_local(app_dir: &StrictPath, game_list: &crate::sync::game_list::GameListFile) {
     let path = app_dir.joined("ludusavi-game-list.json");
-    if let Ok(content) = serde_json::to_string_pretty(game_list) {
+
+    // Mergear con la copia local existente para no perder juegos custom locales
+    // (juegos añadidos via "Add game" que aún no están en el cloud).
+    let merged = if let Ok(path_buf) = path.as_std_path_buf() {
+        if let Ok(existing_content) = std::fs::read_to_string(&path_buf) {
+            if let Ok(existing) = serde_json::from_str::<crate::sync::game_list::GameListFile>(&existing_content) {
+                let cloud_ids: std::collections::HashSet<String> = game_list.games.iter().map(|g| g.id.clone()).collect();
+
+                // Conservar juegos locales que no están en el cloud
+                let mut merged = game_list.clone();
+                for local_game in &existing.games {
+                    if !cloud_ids.contains(&local_game.id) {
+                        merged.games.push(local_game.clone());
+                    }
+                }
+
+                // Conservar device_names del local que no están en el cloud
+                for (dev_id, dev_name) in &existing.device_names {
+                    merged.device_names.entry(dev_id.clone()).or_insert_with(|| dev_name.clone());
+                }
+
+                merged
+            } else {
+                game_list.clone()
+            }
+        } else {
+            game_list.clone()
+        }
+    } else {
+        game_list.clone()
+    };
+
+    if let Ok(content) = serde_json::to_string_pretty(&merged) {
         if let Ok(path_buf) = path.as_std_path_buf() {
             let _ = std::fs::write(path_buf, content);
         }
