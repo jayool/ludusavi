@@ -4029,32 +4029,7 @@ impl App {
 
         // --- MAIN CONTENT ---
         let main_content = match self.screen {
-            Screen::Backup => self.backup_screen.view(
-                &self.config,
-                &self.manifest.extended,
-                &self.operation,
-                &self.text_histories,
-                &self.modifiers,
-                self.daemon_running,
-                &self.sync_status,
-            ),
-            Screen::Restore => self.restore_screen.view(
-                &self.config,
-                &self.manifest.extended,
-                &self.operation,
-                &self.text_histories,
-                &self.modifiers,
-                &self.sync_status,
-                self.daemon_running,
-            ),
-            Screen::CustomGames => self.custom_games_screen.view(
-                &self.config,
-                &self.manifest.extended,
-                !self.operation.idle(),
-                &self.text_histories,
-                &self.modifiers,
-            ),
-            Screen::Games => {
+            Screen::Backup | Screen::Restore | Screen::CustomGames | Screen::Games => {
                 let entries: Vec<_> = self.backup_screen.log.entries.iter().collect();
                 let game_list = &self.game_list;
                 let sync_status = &self.sync_status;
