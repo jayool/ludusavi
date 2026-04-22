@@ -3947,7 +3947,7 @@ impl App {
                     .push(
                         Column::new()
                             .push(crate::gui::widget::text("Ludusavi").size(15))
-                            .push(crate::gui::widget::text("Sync").size(10).class(style::Text::Muted)),
+                            .push(crate::gui::widget::text("Sync").size(11).class(style::Text::Muted)),
                     ),
             )
             .width(Length::Fill)
