@@ -8,7 +8,7 @@ use self::gui::Flags;
 use ludusavi::{
     cloud,
     lang::{self, TRANSLATOR},
-    metadata, path,
+    path,
     prelude::{self, app_dir, CONFIG_DIR, VERSION},
     report, resource, scan, wrap,
 };
