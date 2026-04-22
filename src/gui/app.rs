@@ -4142,8 +4142,20 @@ impl App {
                             && registered_elsewhere
                     })
                     .collect();
+
+                // Juegos custom locales: están en game_list con path para este device,
+                // pero no están en entries (no están en el manifiesto de Ludusavi).
+                let custom_games: Vec<&ludusavi::sync::game_list::GameMetaData> = self.game_list.games
+                    .iter()
+                    .filter(|g| {
+                        let registered_here = g.path_by_device.contains_key(&current_device_id);
+                        let not_in_manifest = !entries.iter().any(|e| e.scan_info.game_name == g.id);
+                        let not_in_cloud_available = !cloud_available.iter().any(|ca| ca.id == g.id);
+                        registered_here && not_in_manifest && not_in_cloud_available
+                    })
+                    .collect();
                 
-                if entries.is_empty() && cloud_available.is_empty() {
+                if entries.is_empty() && cloud_available.is_empty() && custom_games.is_empty() {
                     rows = rows.push(
                         Container::new(
                             crate::gui::widget::text("No games found. Run a backup scan first.")
@@ -4372,6 +4384,131 @@ impl App {
                             .padding(0)
                             .class(style::Button::SidebarItem);
                 
+                        rows = rows.push(
+                            Container::new(crate::gui::widget::Space::new())
+                                .width(Length::Fill)
+                                .height(1)
+                                .class(style::Container::Divider),
+                        );
+                        rows = rows.push(clickable_row);
+                    }
+                    // Filas de juegos custom locales (añadidos manualmente, no en manifest)
+                    for custom_game in &custom_games {
+                        let name = &custom_game.id;
+                        if !search_lower.is_empty() && !name.to_lowercase().contains(&search_lower) {
+                            continue;
+                        }
+
+                        let mode = sync_config.get_mode(name);
+                        let status = sync_status.get(name).map(|s| s.as_str()).unwrap_or("");
+
+                        let dot_class = match status {
+                            "synced" => style::Container::DaemonDotActive,
+                            "error" => style::Container::DaemonDotError,
+                            "pending_backup" | "pending_restore" => style::Container::DaemonDotPending,
+                            _ => style::Container::DaemonDotInactive,
+                        };
+
+                        let mode_text = match mode {
+                            ludusavi::sync::sync_config::SaveMode::None => "—",
+                            ludusavi::sync::sync_config::SaveMode::Local => "LOCAL",
+                            ludusavi::sync::sync_config::SaveMode::Cloud => "CLOUD",
+                            ludusavi::sync::sync_config::SaveMode::Sync => "SYNC",
+                        };
+
+                        let row = Container::new(
+                            Row::new()
+                                .padding([12, 16])
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(10)
+                                        .height(10)
+                                        .class(dot_class),
+                                )
+                                .push(crate::gui::widget::Space::new().width(16))
+                                .push(
+                                    crate::gui::widget::text(name.clone())
+                                        .size(13)
+                                        .width(Length::Fill),
+                                )
+                                .push(
+                                    crate::gui::widget::text(mode_text)
+                                        .size(11)
+                                        .class(style::Text::Muted)
+                                        .width(80),
+                                )
+                                .push(
+                                    crate::gui::widget::text(
+                                        match mode {
+                                            ludusavi::sync::sync_config::SaveMode::None => "—",
+                                            ludusavi::sync::sync_config::SaveMode::Sync => "On",
+                                            ludusavi::sync::sync_config::SaveMode::Local |
+                                            ludusavi::sync::sync_config::SaveMode::Cloud => {
+                                                if self.sync_games_config.get_auto_sync(name) {
+                                                    "On"
+                                                } else {
+                                                    "Off"
+                                                }
+                                            }
+                                        }
+                                    )
+                                    .size(12)
+                                    .class(style::Text::Muted)
+                                    .width(100),
+                                )
+                                .push(crate::gui::widget::text("—").size(12).class(style::Text::Muted).width(160))
+                                .push(crate::gui::widget::text("—").size(12).class(style::Text::Muted).width(140))
+                                .push({
+                                    let game_for_menu = name.clone();
+                                    let options = match mode {
+                                        ludusavi::sync::sync_config::SaveMode::None => vec![],
+                                        ludusavi::sync::sync_config::SaveMode::Local => {
+                                            if self.sync_games_config.get_auto_sync(name) {
+                                                vec!["Sync now", "Backup", "Restore"]
+                                            } else {
+                                                vec!["Backup", "Restore"]
+                                            }
+                                        }
+                                        ludusavi::sync::sync_config::SaveMode::Cloud => {
+                                            if self.sync_games_config.get_auto_sync(name) {
+                                                vec!["Sync now", "Force upload", "Force download", "Backup", "Restore"]
+                                            } else {
+                                                vec!["Force upload", "Force download", "Backup", "Restore"]
+                                            }
+                                        }
+                                        ludusavi::sync::sync_config::SaveMode::Sync => vec![
+                                            "Sync now", "Force upload", "Force download", "Backup", "Restore",
+                                        ],
+                                    };
+                                    Container::new(
+                                        crate::gui::popup_menu::PopupMenu::new(
+                                            options,
+                                            move |action| match action {
+                                                "Backup" => Message::RequestSyncBackup(game_for_menu.clone()),
+                                                "Restore" => Message::RequestSyncRestore(game_for_menu.clone()),
+                                                "Sync now" => Message::SyncNow(game_for_menu.clone()),
+                                                "Force upload" => Message::RequestForceUpload(game_for_menu.clone()),
+                                                "Force download" => Message::RequestForceDownload(game_for_menu.clone()),
+                                                _ => Message::Ignore,
+                                            },
+                                        )
+                                        .width(50)
+                                        .class(style::PickList::Popup),
+                                    )
+                                    .width(50)
+                                }),
+                        )
+                        .width(Length::Fill)
+                        .class(style::Container::GamesTableRow);
+
+                        let name_for_click = name.clone();
+                        let clickable_row = crate::gui::widget::Button::new(row)
+                            .on_press(Message::SwitchScreen(Screen::GameDetail(name_for_click)))
+                            .width(Length::Fill)
+                            .padding(0)
+                            .class(style::Button::SidebarItem);
+
                         rows = rows.push(
                             Container::new(crate::gui::widget::Space::new())
                                 .width(Length::Fill)
