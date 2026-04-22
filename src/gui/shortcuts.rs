@@ -571,7 +571,7 @@ pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
                 .on_input(event)
                 .class(style::TextInput)
                 .width(Length::Fill)
-                .padding([3, 5])
+                .padding([5, 5])
                 .size(12),
             move |action| Message::UndoRedo(action, subject.clone()),
         )
