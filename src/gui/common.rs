@@ -239,6 +239,8 @@ pub enum Message {
     AddGameNameChanged(String),
     AddGamePathChanged(String),
     AddGameConfirm,
+    RemoveCustomGameRequested(String),
+    RemoveCustomGameConfirm(String),
 }
 
 impl Message {
