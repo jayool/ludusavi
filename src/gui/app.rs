@@ -4127,12 +4127,19 @@ impl App {
                 let mut rows = Column::new().width(Length::Fill);
 
                 // Juegos disponibles en el cloud sin SYNC local
+                let current_device_id = ludusavi::sync::device::DeviceIdentity::load_or_create(
+                    &crate::prelude::app_dir()
+                ).id;
                 let cloud_available: Vec<&ludusavi::sync::game_list::GameMetaData> = self.game_list.games
                     .iter()
                     .filter(|g| {
                         let local_mode = self.sync_games_config.get_mode(&g.id);
+                        // Condición clave: registrado en algún OTRO device
+                        let registered_elsewhere = g.path_by_device.keys()
+                            .any(|dev_id| dev_id != &current_device_id);
                         !matches!(local_mode, ludusavi::sync::sync_config::SaveMode::Sync)
-                        && !entries.iter().any(|e| e.scan_info.game_name == g.id)
+                            && !entries.iter().any(|e| e.scan_info.game_name == g.id)
+                            && registered_elsewhere
                     })
                     .collect();
                 
@@ -4661,7 +4668,10 @@ impl App {
                         p.mode != original.mode
                     }).unwrap_or(false);
                 
-                let is_cloud_available = self.game_list.games.iter().any(|g| g.id == game_name)
+                    let is_cloud_available = self.game_list.games.iter().any(|g| {
+                        g.id == game_name
+                            && g.path_by_device.keys().any(|dev_id| dev_id != &device_id)
+                    })
                     && !matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Sync)
                     && !has_pending_mode_change;
                 let status_card = {
