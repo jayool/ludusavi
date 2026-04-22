@@ -152,7 +152,7 @@ pub fn manifest<'a>(
             Row::new()
                 .spacing(20)
                 .align_y(Alignment::Center)
-                .push(iced::widget::TextInput::new("", config.manifest.url()).width(Length::Fill).padding([3, 5]).size(12))
+                .push(iced::widget::TextInput::new("", config.manifest.url()).width(Length::Fill).padding([5, 5]).size(12))
                 .push(get_checked(Some(config.manifest.url()), cache))
                 .push(get_updated(Some(config.manifest.url()), cache))
                 .push_if(!config.manifest.secondary.is_empty(), || {
