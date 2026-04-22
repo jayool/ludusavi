@@ -29,7 +29,6 @@ fn default_backup_dir() -> StrictPath {
 pub enum Event {
     Theme(Theme),
     Language(Language),
-    CheckRelease(bool),
     BackupTarget(String),
     RestoreSource(String),
     Root(EditAction),
