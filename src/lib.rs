@@ -8,7 +8,6 @@
 pub mod api;
 pub mod cloud;
 pub mod lang;
-pub mod metadata;
 pub mod path;
 pub mod prelude;
 pub mod report;
