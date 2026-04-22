@@ -390,6 +390,7 @@ impl Modal {
             }
             Self::AddGame { .. } => Some(Message::AddGameConfirm),
             Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
+            Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
             Self::Exiting => None,
             Self::ConfirmBackup { games } => Some(Message::Backup(BackupPhase::Start {
                 preview: false,
