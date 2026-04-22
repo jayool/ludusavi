@@ -105,7 +105,6 @@ pub enum Event {
 #[serde(default, rename_all = "camelCase")]
 pub struct Config {
     pub runtime: Runtime,
-    pub release: Release,
     pub manifest: ManifestConfig,
     pub language: Language,
     pub theme: Theme,
