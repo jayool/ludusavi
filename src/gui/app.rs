@@ -3976,18 +3976,6 @@ impl App {
                 .push(nav_item("🎮  Games", Screen::Games))
                 .push(nav_item("🖥  This device", Screen::ThisDevice))
                 .push(nav_item("📡  All devices", Screen::AllDevices))
-                .push(
-                    Container::new(
-                        crate::gui::widget::text("ADVANCED")
-                            .size(10)
-                            .class(style::Text::Muted)
-                            .width(Length::Fill),
-                    )
-                    .padding(iced::padding::top(20).bottom(6).left(10).right(10)),
-                )
-                .push(nav_item("📦  Backup", Screen::Backup))
-                .push(nav_item("↩  Restore", Screen::Restore))
-                .push(nav_item("🎮  Custom games", Screen::CustomGames))
                 .push(nav_item("⚙  Settings", Screen::Other));
 
             // Daemon status pill
