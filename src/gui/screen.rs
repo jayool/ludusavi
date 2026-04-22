@@ -425,7 +425,7 @@ pub fn other<'a>(
                             .push_if(!is_rclone_valid, || {
                                 Icon::Error.text().width(Length::Shrink).class(style::Text::Failure)
                             })
-                            .push(button::choose_file(BrowseFileSubject::RcloneExecutable, modifiers))
+                            .push(button::choose_file_small(BrowseFileSubject::RcloneExecutable, modifiers))
                             .push(histories.input_small(UndoSubject::RcloneArguments)),
                     );
 
@@ -522,7 +522,7 @@ pub fn other<'a>(
                     .align_y(Alignment::Center)
                     .push(text("Backup path").size(12).class(style::Text::Muted).width(140))
                     .push(histories.input_small(UndoSubject::BackupTarget))
-                    .push(button::choose_folder(BrowseSubject::BackupTarget, modifiers)),
+                    .push(button::choose_folder_small(BrowseSubject::BackupTarget, modifiers)),
             )
             .push(text("Local ZIP backups are stored in this directory.").size(11).class(style::Text::Muted)),
     )
