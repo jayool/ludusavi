@@ -278,7 +278,7 @@ impl Modal {
             | Self::ConfirmAddMissingRoots(..)
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
-            | Self::ConfigureWebDavRemote { .. }
+            | Self::ConfigureWebDavRemote { .. } => ModalVariant::Confirm,
             Self::BackupValidation { games } => {
                 if games.is_empty() {
                     ModalVariant::Info
