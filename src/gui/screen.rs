@@ -449,7 +449,7 @@ pub fn other<'a>(
                                             Message::EditedCloudRemote,
                                         )
                                         .text_size(12)
-                                        .padding([3, 5])
+                                        .padding([5, 5])
                                     });
 
                                 if let Some(Remote::Custom { .. }) = &config.cloud.remote {
