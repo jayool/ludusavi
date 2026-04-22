@@ -124,17 +124,17 @@ impl Cache {
     }
 
     pub fn has_root(&self, candidate: &Root) -> bool {
-            self.roots.iter().any(|root| {
-                let primary = root.path().equivalent(candidate.path()) && root.store() == candidate.store();
-                match (root, candidate) {
-                    (Root::Lutris(root), Root::Lutris(candidate)) => {
-                        primary && (root.database.is_some() || candidate.database.is_none())
-                    }
-                    _ => primary,
+        self.roots.iter().any(|root| {
+            let primary = root.path().equivalent(candidate.path()) && root.store() == candidate.store();
+            match (root, candidate) {
+                (Root::Lutris(root), Root::Lutris(candidate)) => {
+                    primary && (root.database.is_some() || candidate.database.is_none())
                 }
-            })
-        }
+                _ => primary,
+            }
+        })
     }
+}
 
     pub fn should_check_app_update(&self) -> bool {
         let now = chrono::offset::Utc::now();
