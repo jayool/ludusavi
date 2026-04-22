@@ -297,8 +297,9 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => ModalVariant::Confirm,
-            | Self::AddGame { .. } => ModalVariant::Confirm,
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => ModalVariant::Confirm,
             Self::ConfirmCloudSync { state, .. } => {
                 if state.done() {
                     ModalVariant::Info
@@ -389,7 +390,6 @@ impl Modal {
                 })
             }
             Self::AddGame { .. } => Some(Message::AddGameConfirm),
-            Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
             Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
             Self::Exiting => None,
             Self::ConfirmBackup { games } => Some(Message::Backup(BackupPhase::Start {
