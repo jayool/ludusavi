@@ -235,12 +235,19 @@ pub enum Message {
     InstallService,
     UninstallService,
     EnableCloudSync(String),
+    AddGameRequested,
+    AddGameNameChanged(String),
+    AddGamePathChanged(String),
+    AddGameConfirm,
 }
 
 impl Message {
     pub fn browsed_dir(subject: BrowseSubject, choice: Option<std::path::PathBuf>) -> Self {
         match choice {
             Some(path) => match subject {
+                BrowseSubject::AddGamePath => {
+                    return Message::AddGamePathChanged(crate::path::render_pathbuf(&path));
+                }
                 BrowseSubject::BackupTarget => config::Event::BackupTarget(crate::path::render_pathbuf(&path)),
                 BrowseSubject::RestoreSource => config::Event::RestoreSource(crate::path::render_pathbuf(&path)),
                 BrowseSubject::Root(i) => config::Event::Root(EditAction::Change(
@@ -713,6 +720,7 @@ pub enum BrowseSubject {
     RedirectTarget(usize),
     CustomGameFile(usize, usize),
     BackupFilterIgnoredPath(usize),
+    AddGamePath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
