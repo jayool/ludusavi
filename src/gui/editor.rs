@@ -120,7 +120,7 @@ pub fn manifest<'a>(
                 .to_string(),
             None => "?".to_string(),
         };
-        Some(Container::new(text(checked)).width(label_width))
+        Some(Container::new(text(checked).size(12).class(style::Text::Muted)).width(label_width))
     };
 
     let get_updated = |url: Option<&str>, cache: &'a Cache| {
@@ -132,7 +132,7 @@ pub fn manifest<'a>(
                 .to_string(),
             None => "?".to_string(),
         };
-        Some(Container::new(text(updated)).width(label_width))
+        Some(Container::new(text(updated).size(12).class(style::Text::Muted)).width(label_width))
     };
 
     let mut content = Column::new()
@@ -143,8 +143,8 @@ pub fn manifest<'a>(
                 .spacing(20)
                 .align_y(Alignment::Center)
                 .push(text("PATH").size(11).class(style::Text::Muted).width(Length::Fill))
-                .push(Container::new(text(TRANSLATOR.checked_label())).width(label_width))
-                .push(Container::new(text(TRANSLATOR.updated_label())).width(label_width))
+                .push(Container::new(text(TRANSLATOR.checked_label()).size(11).class(style::Text::Muted)).width(label_width))
+                .push(Container::new(text(TRANSLATOR.updated_label()).size(11).class(style::Text::Muted)).width(label_width))
                 .push_if(!config.manifest.secondary.is_empty(), || {
                     Space::new().width(right_offset)
                 }),
@@ -195,10 +195,12 @@ pub fn manifest<'a>(
                             Some(config.manifest.secondary[i].kind()),
                             Message::config(move |v| config::Event::SecondaryManifestKind(i, v)),
                         )
+                        .text_size(12)
+                        .padding([3, 5])
                         .class(style::PickList::Primary)
                         .width(75),
                     )
-                    .push(histories.input(UndoSubject::SecondaryManifest(i)))
+                    .push(histories.input_small(UndoSubject::SecondaryManifest(i)))
                     .push(get_checked(config.manifest.secondary[i].url(), cache))
                     .push(get_updated(config.manifest.secondary[i].url(), cache))
                     .push(match config.manifest.secondary[i].kind() {
