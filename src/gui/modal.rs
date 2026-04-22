@@ -126,7 +126,6 @@ pub enum Kind {
     NoMissingRoots,
     ConfirmAddMissingRoots,
     BackupValidation,
-    AppUpdate,
     UpdatingManifest,
     ConfirmCloudSync,
     ConfigureFtpRemote,
@@ -163,9 +162,6 @@ pub enum Modal {
     BackupValidation {
         /// Any games with invalid backups.
         games: BTreeSet<String>,
-    },
-    AppUpdate {
-        release: crate::metadata::Release,
     },
     UpdatingManifest,
     ConfirmCloudSync {
@@ -224,7 +220,6 @@ impl Modal {
             Modal::NoMissingRoots => Kind::NoMissingRoots,
             Modal::ConfirmAddMissingRoots(..) => Kind::ConfirmAddMissingRoots,
             Modal::BackupValidation { .. } => Kind::BackupValidation,
-            Modal::AppUpdate { .. } => Kind::AppUpdate,
             Modal::UpdatingManifest => Kind::UpdatingManifest,
             Modal::ConfirmCloudSync { .. } => Kind::ConfirmCloudSync,
             Modal::ConfigureFtpRemote => Kind::ConfigureFtpRemote,
@@ -253,7 +248,6 @@ impl Modal {
             Modal::NoMissingRoots => false,
             Modal::ConfirmAddMissingRoots(..) => false,
             Modal::BackupValidation { .. } => false,
-            Modal::AppUpdate { .. } => false,
             Modal::UpdatingManifest => false,
             Modal::ConfirmCloudSync { .. } => false,
             Modal::ConfigureFtpRemote => false,
@@ -285,7 +279,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::AppUpdate { .. } => ModalVariant::Confirm,
             Self::BackupValidation { games } => {
                 if games.is_empty() {
                     ModalVariant::Info
@@ -321,7 +314,6 @@ impl Modal {
             Self::ConfirmRestore { .. } => TRANSLATOR.confirm_restore(&config.restore.path, true),
             Self::NoMissingRoots => TRANSLATOR.no_missing_roots(),
             Self::ConfirmAddMissingRoots(missing) => TRANSLATOR.confirm_add_missing_roots(missing),
-            Self::AppUpdate { release } => TRANSLATOR.new_version_available(release.version.to_string().as_str()),
             Self::UpdatingManifest => TRANSLATOR.updating_manifest(),
             Self::BackupValidation { games } => {
                 if games.is_empty() {
@@ -403,7 +395,6 @@ impl Modal {
                 games: games.clone(),
             })),
             Self::ConfirmAddMissingRoots(missing) => Some(Message::ConfirmAddMissingRoots(missing.clone())),
-            Self::AppUpdate { release } => Some(Message::OpenUrlAndCloseModal(release.url.clone())),
             Self::UpdatingManifest => None,
             Self::ConfirmCloudSync { direction, state, .. } => {
                 if state.done() {
@@ -511,7 +502,6 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::UpdatingManifest
-            | Self::AppUpdate { .. }
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
@@ -567,7 +557,6 @@ impl Modal {
             | Self::ConfirmRestore { .. }
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -776,7 +765,6 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -822,7 +810,6 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -852,7 +839,6 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -880,7 +866,6 @@ impl Modal {
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -908,7 +893,6 @@ impl Modal {
             | Self::ConfirmRestore { .. }
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
-            | Self::AppUpdate { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
