@@ -104,11 +104,6 @@ pub mod request {
         pub names: Vec<String>,
     }
 
-    /// Check whether an application update is available.
-    #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-    #[serde(default, rename_all = "camelCase")]
-    pub struct CheckAppUpdate {}
-
     /// Edit a backup's metadata.
     #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
     #[serde(default, rename_all = "camelCase")]
@@ -139,22 +134,6 @@ pub mod response {
     pub struct FindTitle {
         /// Any matching titles found.
         pub titles: Vec<String>,
-    }
-
-    #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-    #[serde(default, rename_all = "camelCase")]
-    pub struct CheckAppUpdate {
-        /// An available update.
-        pub update: Option<AppUpdate>,
-    }
-
-    #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-    #[serde(default, rename_all = "camelCase")]
-    pub struct AppUpdate {
-        /// New version number.
-        pub version: String,
-        /// Release URL to open in browser.
-        pub url: String,
     }
 
     #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -246,21 +225,6 @@ pub fn process(input: Option<String>, config: &Config, manifest: &Manifest) -> R
                     .collect();
 
                 responses.push(Response::FindTitle(response::FindTitle { titles }));
-            }
-            Request::CheckAppUpdate(request::CheckAppUpdate {}) => {
-                match crate::metadata::Release::fetch_sync(config.runtime.network_security) {
-                    Ok(release) => {
-                        let update = release.is_update().then(|| response::AppUpdate {
-                            version: release.version.to_string(),
-                            url: release.url,
-                        });
-
-                        responses.push(Response::CheckAppUpdate(response::CheckAppUpdate { update }));
-                    }
-                    Err(e) => {
-                        responses.push(Response::Error(response::Error { message: e.to_string() }));
-                    }
-                }
             }
             Request::EditBackup(request::EditBackup {
                 game,
