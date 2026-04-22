@@ -371,7 +371,7 @@ pub fn other<'a>(
     let roots_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("ROOTS").size(11).class(style::Text::Muted))
+            .push(text("ROOTS").size(13).class(style::Text::Muted))
             .push(text("Game roots are required to detect save file locations automatically.").size(13).class(style::Text::Muted))
             .push(editor::root(config, histories, modifiers)),
     )
@@ -383,7 +383,7 @@ pub fn other<'a>(
     let manifest_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("MANIFEST").size(11).class(style::Text::Muted))
+            .push(text("MANIFEST").size(13).class(style::Text::Muted))
             .push(text("The manifest contains the list of known games and their save locations.").size(13).class(style::Text::Muted))
             .push(
                 Row::new()
@@ -413,15 +413,14 @@ pub fn other<'a>(
     let cloud_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("CLOUD / RCLONE").size(11).class(style::Text::Muted))
-            .push(text("Configure rclone and your cloud provider for save syncing.").size(13).class(style::Text::Muted))
-            .push(
-                Container::new({
+            .push(text("CLOUD / RCLONE").size(13).class(style::Text::Muted))
+            .push(text("Configure rclone and your cloud provider for save syncing.").size(12).class(style::Text::Muted))
+            .push({
                     let mut column = Column::new().spacing(8).push(
                         Row::new()
                             .spacing(10)
                             .align_y(Alignment::Center)
-                            .push(text("rclone executable").size(13).class(style::Text::Muted).width(140))
+                            .push(text("rclone executable").size(12).class(style::Text::Muted).width(140))
                             .push(histories.input_small(UndoSubject::RcloneExecutable))
                             .push_if(!is_rclone_valid, || {
                                 Icon::Error.text().width(Length::Shrink).class(style::Text::Failure)
@@ -437,7 +436,7 @@ pub fn other<'a>(
                                 let mut row = Row::new()
                                     .spacing(10)
                                     .align_y(Alignment::Center)
-                                    .push(text("Remote").size(13).class(style::Text::Muted).width(140))
+                                    .push(text("Remote").size(12).class(style::Text::Muted).width(140))
                                     .push_if(!operation.idle(), || {
                                         text(choice.to_string())
                                             .height(30)
@@ -469,7 +468,7 @@ pub fn other<'a>(
                                 Row::new()
                                     .spacing(10)
                                     .align_y(Alignment::Center)
-                                    .push(text("Cloud path").size(13).class(style::Text::Muted).width(140))
+                                    .push(text("Cloud path").size(12).class(style::Text::Muted).width(140))
                                     .push(histories.input_small(UndoSubject::CloudPath))
                                     .push_if(!is_cloud_path_valid, || {
                                         Icon::Error.text().width(Length::Shrink).class(style::Text::Failure)
@@ -478,13 +477,13 @@ pub fn other<'a>(
 
                         if !is_cloud_configured {
                             column = column.push(
-                                text(TRANSLATOR.cloud_not_configured()).size(12).class(style::Text::Muted)
+                                text(TRANSLATOR.cloud_not_configured()).size(13).class(style::Text::Muted)
                             );
                         }
                         if !is_cloud_path_valid {
                             column = column.push(
                                 text(TRANSLATOR.prefix_warning(&TRANSLATOR.cloud_path_invalid()))
-                                    .size(12)
+                                    .size(13)
                                     .class(style::Text::Failure)
                             );
                         }
@@ -492,7 +491,7 @@ pub fn other<'a>(
                         column = column
                             .push(
                                 text(TRANSLATOR.prefix_warning(&TRANSLATOR.rclone_unavailable()))
-                                    .size(12)
+                                    .size(13)
                                     .class(style::Text::Failure),
                             )
                             .push(
@@ -504,10 +503,7 @@ pub fn other<'a>(
                     }
 
                     column
-                })
-                .padding(10)
-                .class(style::Container::GamesTableRow),
-            ),
+                }),
     )
     .width(Length::Fill)
     .padding(16)
@@ -517,13 +513,13 @@ pub fn other<'a>(
     let sync_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("LOCAL").size(11).class(style::Text::Muted))
-            .push(text("Local ZIP backups are stored in this directory.").size(13).class(style::Text::Muted))
+            .push(text("LOCAL").size(13).class(style::Text::Muted))
+            .push(text("Local ZIP backups are stored in this directory.").size(12).class(style::Text::Muted))
             .push(
                 Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(text("Backup path").size(13).class(style::Text::Muted).width(140))
+                    .push(text("Backup path").size(12).class(style::Text::Muted).width(140))
                     .push(histories.input_small(UndoSubject::BackupTarget))
                     .push(button::choose_folder_small(BrowseSubject::BackupTarget, modifiers)),
             ),
@@ -546,7 +542,7 @@ pub fn other<'a>(
     let daemon_card = Container::new(
         Column::new()
             .spacing(10)
-            .push(text("DAEMON").size(11).class(style::Text::Muted))
+            .push(text("DAEMON").size(13).class(style::Text::Muted))
             .push(text("Install or uninstall the sync daemon as a system service.").size(13).class(style::Text::Muted))
             .push(
                 Row::new()
