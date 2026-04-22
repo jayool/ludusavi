@@ -562,11 +562,14 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. } => (),
             Self::AddGame { name, path, error } => {
-                col = col.width(500).spacing(12)
+                let mut form = Column::new()
+                    .spacing(12)
+                    .width(500)
                     .push(
                         Row::new()
                             .align_y(Alignment::Center)
-                            .push(text("Name").width(100))
+                            .spacing(12)
+                            .push(text("Name").width(110))
                             .push(
                                 iced::widget::text_input("e.g. Hades", name)
                                     .on_input(Message::AddGameNameChanged)
@@ -578,7 +581,7 @@ impl Modal {
                         Row::new()
                             .align_y(Alignment::Center)
                             .spacing(8)
-                            .push(text("Save location").width(100))
+                            .push(text("Save location").width(110))
                             .push(
                                 iced::widget::text_input("e.g. C:\\Users\\...\\Hades", path)
                                     .on_input(Message::AddGamePathChanged)
@@ -593,8 +596,9 @@ impl Modal {
                             )
                     );
                 if let Some(err) = error {
-                    col = col.push(text(err.clone()).size(12).class(style::Text::Muted));
+                    form = form.push(text(err.clone()).size(12).class(style::Text::Muted));
                 }
+                col = col.push(form);
             }
             Self::BackupValidation { games } => {
                 for game in games.iter().sorted() {
