@@ -136,7 +136,6 @@ pub fn manifest<'a>(
     };
 
     let mut content = Column::new()
-        .padding(5)
         .spacing(5)
         .push(
             Row::new()
@@ -215,7 +214,7 @@ pub fn manifest<'a>(
 
     content = content.push(button::add_small(Message::config(config::Event::SecondaryManifest)));
 
-    Container::new(content).class(style::Container::GameListEntry)
+    Container::new(content)
 }
 
 pub fn redirect<'a>(config: &Config, histories: &TextHistories, modifiers: &keyboard::Modifiers) -> Container<'a> {
