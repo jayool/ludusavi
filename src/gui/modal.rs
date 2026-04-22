@@ -139,6 +139,7 @@ pub enum Kind {
     ConfirmForceUpload,
     ConfirmForceDownload,
     ConfirmSyncModeChange,
+    AddGame,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +202,11 @@ pub enum Modal {
         warning: String,
         previous_mode: ludusavi::sync::sync_config::SaveMode,
     },
+    AddGame {
+        name: String,
+        path: String,
+        error: Option<String>,
+    },
 }
 
 impl Modal {
@@ -227,6 +233,7 @@ impl Modal {
             Modal::ConfirmForceUpload { .. } => Kind::ConfirmForceUpload,
             Modal::ConfirmForceDownload { .. } => Kind::ConfirmForceDownload,
             Modal::ConfirmSyncModeChange { .. } => Kind::ConfirmSyncModeChange,
+            Modal::AddGame { .. } => Kind::AddGame,
         }
     }
 
@@ -254,6 +261,7 @@ impl Modal {
             Modal::ConfirmForceUpload { .. } => false,
             Modal::ConfirmForceDownload { .. } => false,
             Modal::ConfirmSyncModeChange { .. } => false,
+            Modal::AddGame { .. } => false,
         }
     }
 
@@ -284,6 +292,7 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. } => ModalVariant::Confirm,
+            | Self::AddGame { .. } => ModalVariant::Confirm,
             Self::ConfirmCloudSync { state, .. } => {
                 if state.done() {
                     ModalVariant::Info
@@ -348,6 +357,7 @@ impl Modal {
                 format!("Force download saves for \"{}\"?\n\nThis will overwrite your local save files with the cloud backup, regardless of which is newer.", game)
             }
             Self::ConfirmSyncModeChange { warning, .. } => warning.clone(),
+            Self::AddGame { .. } => "Add game".to_string(),
         }
     }
 
@@ -369,6 +379,7 @@ impl Modal {
                     previous_mode: previous_mode.clone(),
                 })
             }
+            Self::AddGame { .. } => Some(Message::AddGameConfirm),
             Self::Exiting => None,
             Self::ConfirmBackup { games } => Some(Message::Backup(BackupPhase::Start {
                 preview: false,
@@ -499,7 +510,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => vec![],
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => vec![],
         }
     }
 
@@ -549,6 +561,41 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. } => (),
+            Self::AddGame { name, path, error } => {
+                col = col.width(500).spacing(12)
+                    .push(
+                        Row::new()
+                            .align_y(Alignment::Center)
+                            .push(text("Name").width(100))
+                            .push(
+                                iced::widget::text_input("e.g. Hades", name)
+                                    .on_input(Message::AddGameNameChanged)
+                                    .padding([6, 10])
+                                    .width(Length::Fill)
+                            )
+                    )
+                    .push(
+                        Row::new()
+                            .align_y(Alignment::Center)
+                            .spacing(8)
+                            .push(text("Save location").width(100))
+                            .push(
+                                iced::widget::text_input("e.g. C:\\Users\\...\\Hades", path)
+                                    .on_input(Message::AddGamePathChanged)
+                                    .padding([6, 10])
+                                    .width(Length::Fill)
+                            )
+                            .push(
+                                crate::gui::widget::Button::new(text("Browse...").size(12))
+                                    .padding([6, 12])
+                                    .class(style::Button::Ghost)
+                                    .on_press(Message::BrowseDir(crate::gui::common::BrowseSubject::AddGamePath))
+                            )
+                    );
+                if let Some(err) = error {
+                    col = col.push(text(err.clone()).size(12).class(style::Text::Muted));
+                }
+            }
             Self::BackupValidation { games } => {
                 for game in games.iter().sorted() {
                     col = col.push(text(game))
@@ -722,7 +769,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => (),
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => (),
         }
     }
 
@@ -766,7 +814,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => (),
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => (),
         }
     }
 
@@ -794,7 +843,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => (),
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => (),
         }
     }
 
@@ -820,7 +870,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => false,
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => false,
         }
     }
 
@@ -846,7 +897,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => 1,
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::AddGame { .. } => 1,
         }
     }
 
@@ -880,6 +932,7 @@ impl Modal {
                                     | Self::ConfirmForceUpload { .. }
                                     | Self::ConfirmForceDownload { .. }
                                     | Self::ConfirmSyncModeChange { .. }
+                                    | Self::AddGame { .. }
                                     | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
