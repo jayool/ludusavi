@@ -1478,6 +1478,93 @@ impl App {
                 self.timed_notification = Some(Notification::new("✓ Sync enabled".to_string()).expires(2));
                 Task::none()
             }
+            Message::AddGameRequested => {
+                self.show_modal(Modal::AddGame {
+                    name: String::new(),
+                    path: String::new(),
+                    error: None,
+                })
+            }
+            Message::AddGameNameChanged(value) => {
+                if let Some(Modal::AddGame { name, error, .. }) = self.modals.last_mut() {
+                    *name = value;
+                    *error = None;
+                }
+                Task::none()
+            }
+            Message::AddGamePathChanged(value) => {
+                if let Some(Modal::AddGame { path, error, .. }) = self.modals.last_mut() {
+                    *path = value;
+                    *error = None;
+                }
+                Task::none()
+            }
+            Message::AddGameConfirm => {
+                // Extraer nombre y path del modal
+                let (name_raw, path_raw) = match self.modals.last() {
+                    Some(Modal::AddGame { name, path, .. }) => (name.clone(), path.clone()),
+                    _ => return Task::none(),
+                };
+
+                let name = name_raw.trim().to_string();
+                let path = path_raw.trim().to_string();
+
+                // Validación: nombre no vacío
+                if name.is_empty() {
+                    if let Some(Modal::AddGame { error, .. }) = self.modals.last_mut() {
+                        *error = Some("Name cannot be empty.".to_string());
+                    }
+                    return Task::none();
+                }
+
+                // Validación: path no vacío
+                if path.is_empty() {
+                    if let Some(Modal::AddGame { error, .. }) = self.modals.last_mut() {
+                        *error = Some("Save location cannot be empty.".to_string());
+                    }
+                    return Task::none();
+                }
+
+                // Validación: no duplicado
+                if self.game_list.games.iter().any(|g| g.id == name)
+                    || self.sync_games_config.games.contains_key(&name)
+                {
+                    if let Some(Modal::AddGame { error, .. }) = self.modals.last_mut() {
+                        *error = Some(format!("A game named \"{}\" already exists.", name));
+                    }
+                    return Task::none();
+                }
+
+                // Añadir al game-list local
+                let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
+                let mut meta = ludusavi::sync::game_list::GameMetaData::new(name.clone(), name.clone());
+                meta.path_by_device.insert(device.id.clone(), path.clone());
+                self.game_list.upsert_game(meta);
+
+                // Asegurar que device_names tiene entrada para este device
+                self.game_list.device_names.insert(device.id.clone(), device.name.clone());
+
+                // Escribir copia local
+                let local_path = crate::prelude::app_dir().joined("ludusavi-game-list.json");
+                if let Ok(content) = serde_json::to_string_pretty(&self.game_list) {
+                    if let Ok(path_buf) = local_path.as_std_path_buf() {
+                        let _ = std::fs::write(&path_buf, content);
+                    }
+                }
+
+                // Añadir a sync-games.json con modo None
+                self.sync_games_config.games.insert(
+                    name.clone(),
+                    ludusavi::sync::sync_config::GameSyncConfig {
+                        mode: ludusavi::sync::sync_config::SaveMode::None,
+                        auto_sync: false,
+                    },
+                );
+                self.sync_games_config.save();
+
+                self.timed_notification = Some(Notification::new(format!("✓ Added \"{}\"", name)).expires(3));
+                self.close_modal()
+            }
             Message::Ignore => Task::none(),
             Message::CloseModal => self.close_modal(),
             Message::Exit { user } => {
@@ -3138,6 +3225,7 @@ impl App {
                         StrictPath::new(self.config.custom_games[i].files[j].clone())
                     }
                     BrowseSubject::BackupFilterIgnoredPath(i) => self.config.backup.filter.ignored_paths[i].clone(),
+                    BrowseSubject::AddGamePath => return Task::none(),
                 };
 
                 match path.parent_if_file() {
@@ -4004,7 +4092,7 @@ impl App {
                         crate::gui::widget::Button::new(crate::gui::widget::text("+ Add game").size(13))
                             .padding([7, 14])
                             .class(style::Button::Primary)
-                            .on_press(Message::SwitchScreen(Screen::Backup)),
+                            .on_press(Message::AddGameRequested),
                     );
                 
                 let search_row = crate::gui::widget::TextInput::new(
