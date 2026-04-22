@@ -1428,14 +1428,6 @@ impl App {
             ));
         }
 
-        if config.release.check && cache.should_check_app_update() {
-            commands.push(Task::future(async move {
-                let result = crate::metadata::Release::fetch(config.runtime.network_security).await;
-
-                Message::AppReleaseChecked(result.map_err(|x| x.to_string()))
-            }))
-        }
-
         (
             Self {
                 backup_screen: screen::Backup::new(&config, &cache),
@@ -1862,9 +1854,6 @@ impl App {
                     config::Event::Language(language) => {
                         TRANSLATOR.set_language(language);
                         self.config.language = language;
-                    }
-                    config::Event::CheckRelease(enabled) => {
-                        self.config.release.check = enabled;
                     }
                     config::Event::BackupTarget(text) => {
                         self.text_histories.backup_target.push(&text);
@@ -2334,42 +2323,6 @@ impl App {
 
                 self.save_config();
                 task.unwrap_or_else(Task::none)
-            }
-            Message::CheckAppRelease => {
-                if !self.cache.should_check_app_update() {
-                    return Task::none();
-                }
-
-                let security = self.config.runtime.network_security;
-
-                Task::future(async move {
-                    let result = crate::metadata::Release::fetch(security).await;
-
-                    Message::AppReleaseChecked(result.map_err(|x| x.to_string()))
-                })
-            }
-            Message::AppReleaseChecked(outcome) => {
-                self.save_cache();
-                self.cache.release.checked = chrono::offset::Utc::now();
-
-                match outcome {
-                    Ok(release) => {
-                        let previous_latest = self.cache.release.latest.clone();
-                        self.cache.release.latest = Some(release.version.clone());
-
-                        if previous_latest.as_ref() != Some(&release.version) {
-                            // The latest available version has changed (or this is our first time checking)
-                            if release.is_update() {
-                                return self.show_modal(Modal::AppUpdate { release });
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("App update check failed: {e:?}");
-                    }
-                }
-
-                Task::none()
             }
             Message::UpdateManifest { force } => {
                 if self.updating_manifest {
@@ -3866,10 +3819,6 @@ impl App {
             subscriptions.push(
                 iced::time::every(Duration::from_secs(60 * 60 * 24)).map(|_| Message::UpdateManifest { force: false }),
             );
-        }
-
-        if self.config.release.check {
-            subscriptions.push(iced::time::every(Duration::from_secs(60 * 60 * 24)).map(|_| Message::CheckAppRelease));
         }
 
         if self.exiting {
