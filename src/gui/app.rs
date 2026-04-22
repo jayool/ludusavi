@@ -1622,9 +1622,7 @@ impl App {
                 self.timed_notification = Some(Notification::new(format!("✓ Removed \"{}\"", game)).expires(3));
 
                 // Volver a la pantalla de Games
-                self.current_screen = Screen::Games;
-
-                Task::batch([self.close_modal(), cleanup_task])
+                Task::batch([self.close_modal(), self.switch_screen(Screen::Games), cleanup_task])
             }
             Message::Ignore => Task::none(),
             Message::CloseModal => self.close_modal(),
@@ -5229,6 +5227,8 @@ impl App {
                     .class(style::Container::GamesTable)
                 };
 
+                let is_custom_game = !self.manifest.extended.0.contains_key(&game_name);
+
                 let content = Column::new()
                     .push(header)
                     .push(
@@ -5263,7 +5263,36 @@ impl App {
                                 .push(settings_card)
                                 .push(devices_card)
                                 .push(save_button)
-                                .push(files_card),
+                                .push(files_card)
+                                .push_if(is_custom_game, || {
+                                    Container::new(
+                                        Row::new()
+                                            .spacing(12)
+                                            .align_y(Alignment::Center)
+                                            .push(
+                                                Column::new()
+                                                    .spacing(4)
+                                                    .width(Length::Fill)
+                                                    .push(crate::gui::widget::text("DANGER ZONE").size(11).class(style::Text::Muted))
+                                                    .push(
+                                                        crate::gui::widget::text("Remove this custom game and all its backups.")
+                                                            .size(12)
+                                                            .class(style::Text::Muted)
+                                                    )
+                                            )
+                                            .push(
+                                                crate::gui::widget::Button::new(
+                                                    crate::gui::widget::text("Remove game").size(13)
+                                                )
+                                                .padding([8, 16])
+                                                .class(style::Button::Negative)
+                                                .on_press(Message::RemoveCustomGameRequested(game_name.clone()))
+                                            )
+                                    )
+                                    .width(Length::Fill)
+                                    .padding(16)
+                                    .class(style::Container::GamesTable)
+                                }),
                         )
                         .width(Length::Fill),
                     );
