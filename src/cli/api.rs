@@ -48,7 +48,6 @@ pub enum Output {
 #[serde(rename_all = "camelCase")]
 pub enum Request {
     FindTitle(request::FindTitle),
-    CheckAppUpdate(request::CheckAppUpdate),
     EditBackup(request::EditBackup),
 }
 
@@ -58,7 +57,6 @@ pub enum Request {
 pub enum Response {
     Error(response::Error),
     FindTitle(response::FindTitle),
-    CheckAppUpdate(response::CheckAppUpdate),
     EditBackup(response::EditBackup),
 }
 
