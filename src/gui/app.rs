@@ -2927,16 +2927,8 @@ impl App {
                     self.pending_game_detail = None;
                     self.pending_game_detail_name = None;
                 }
-                // Lanzar scan automático al entrar a GameDetail
-                if let Screen::GameDetail(ref game_name) = screen {
-                        self.game_detail_files_expanded = false;
-                        let scan_task = self.handle_backup(BackupPhase::Start {
-                        preview: true,
-                        repair: false,
-                        jump: false,
-                        games: Some(GameSelection::single(game_name.clone())),
-                    });
-                    return Task::batch([self.switch_screen(screen), scan_task]);
+                if let Screen::GameDetail(_) = &screen {
+                    self.game_detail_files_expanded = false;
                 }
                 self.switch_screen(screen)
             }
