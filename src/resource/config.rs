@@ -129,20 +129,6 @@ pub struct Runtime {
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(default, rename_all = "camelCase")]
-pub struct Release {
-    /// Whether to check for new releases.
-    /// If enabled, Ludusavi will check at most once every 24 hours.
-    pub check: bool,
-}
-
-impl Default for Release {
-    fn default() -> Self {
-        Self { check: true }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(default, rename_all = "camelCase")]
 pub struct ManifestConfig {
     /// Where to download the primary manifest.
     /// Default: https://raw.githubusercontent.com/mtkennerly/ludusavi-manifest/master/data/manifest.yaml
@@ -2148,8 +2134,6 @@ mod tests {
     fn can_parse_optional_fields_when_present_in_config() {
         let config = Config::load_from_string(
             r#"
-            release:
-              check: true
             manifest:
               url: example.com
               etag: "foo"
@@ -2219,7 +2203,6 @@ mod tests {
         assert_eq!(
             Config {
                 runtime: Default::default(),
-                release: Release { check: true },
                 manifest: ManifestConfig {
                     url: Some(s("example.com")),
                     enable: true,
@@ -2325,8 +2308,6 @@ mod tests {
 runtime:
   threads: ~
   networkSecurity: safe
-release:
-  check: true
 manifest:
   url: example.com
   enable: true
@@ -2440,7 +2421,6 @@ customGames:
             .trim(),
             serde_yaml::to_string(&Config {
                 runtime: Default::default(),
-                release: Default::default(),
                 manifest: ManifestConfig {
                     url: Some(s("example.com")),
                     enable: true,
