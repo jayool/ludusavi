@@ -140,6 +140,7 @@ pub enum Kind {
     ConfirmForceDownload,
     ConfirmSyncModeChange,
     AddGame,
+    ConfirmRemoveCustomGame,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,6 +208,9 @@ pub enum Modal {
         path: String,
         error: Option<String>,
     },
+    ConfirmRemoveCustomGame {
+    game: String,
+    },
 }
 
 impl Modal {
@@ -234,6 +238,7 @@ impl Modal {
             Modal::ConfirmForceDownload { .. } => Kind::ConfirmForceDownload,
             Modal::ConfirmSyncModeChange { .. } => Kind::ConfirmSyncModeChange,
             Modal::AddGame { .. } => Kind::AddGame,
+            Modal::ConfirmRemoveCustomGame { .. } => Kind::ConfirmRemoveCustomGame,
         }
     }
 
@@ -262,6 +267,7 @@ impl Modal {
             Modal::ConfirmForceDownload { .. } => false,
             Modal::ConfirmSyncModeChange { .. } => false,
             Modal::AddGame { .. } => false,
+            Modal::ConfirmRemoveCustomGame { .. } => false,
         }
     }
 
@@ -358,6 +364,9 @@ impl Modal {
             }
             Self::ConfirmSyncModeChange { warning, .. } => warning.clone(),
             Self::AddGame { .. } => "Add game".to_string(),
+            Self::ConfirmRemoveCustomGame { game } => {
+                format!("Remove \"{}\"?\n\nThis will delete the game from the sync system, all backups (local and cloud), and cannot be undone.", game)
+            }
         }
     }
 
@@ -380,6 +389,7 @@ impl Modal {
                 })
             }
             Self::AddGame { .. } => Some(Message::AddGameConfirm),
+            Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
             Self::Exiting => None,
             Self::ConfirmBackup { games } => Some(Message::Backup(BackupPhase::Start {
                 preview: false,
@@ -511,7 +521,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => vec![],
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => vec![],
         }
     }
 
@@ -523,6 +534,7 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
+            | Self::ConfirmRemoveCustomGame { .. }
         );
 
         let mut col = if is_sync_modal {
@@ -560,7 +572,8 @@ impl Modal {
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
-            | Self::ConfirmSyncModeChange { .. } => (),
+            | Self::ConfirmSyncModeChange { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => (),
             Self::AddGame { name, path, error } => {
                 let mut form = Column::new()
                     .spacing(12)
@@ -774,7 +787,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => (),
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => (),
         }
     }
 
@@ -819,7 +833,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => (),
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => (),
         }
     }
 
@@ -848,7 +863,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => (),
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => (),
         }
     }
 
@@ -875,7 +891,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => false,
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => false,
         }
     }
 
@@ -902,7 +919,8 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. } => 1,
+            | Self::AddGame { .. }
+            | Self::ConfirmRemoveCustomGame { .. } => 1,
         }
     }
 
@@ -937,6 +955,7 @@ impl Modal {
                                     | Self::ConfirmForceDownload { .. }
                                     | Self::ConfirmSyncModeChange { .. }
                                     | Self::AddGame { .. }
+                                    | Self::ConfirmRemoveCustomGame { .. }
                                     | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
