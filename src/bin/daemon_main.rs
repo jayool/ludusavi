@@ -23,6 +23,11 @@ fn main() {
                 .suffix("log")
                 .suppress_timestamp(),
         )
+        .rotate(
+            flexi_logger::Criterion::Size(1024 * 1024 * 5),
+            flexi_logger::Naming::Numbers,
+            flexi_logger::Cleanup::KeepLogFiles(3),
+        )
         .duplicate_to_stdout(flexi_logger::Duplicate::All)
         .format(flexi_logger::detailed_format)
         .start()
