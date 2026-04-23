@@ -4857,7 +4857,7 @@ impl App {
                 let settings_card = Container::new(
                     Column::new()
                         .spacing(10)
-                        .push(crate::gui::widget::text("SAVE MODE").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text("SAVE MODE").size(13).class(style::Text::Muted))
                         .push(
                             Row::new()
                                 .spacing(8)
@@ -4914,7 +4914,7 @@ impl App {
                                     .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Sync))
                                 }),
                         )
-                        .push(crate::gui::widget::text("SAVE LOCATION").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text("SAVE LOCATION").size(13).class(style::Text::Muted))
                         .push(
                             {
                                 let save_path = meta
@@ -4936,7 +4936,7 @@ impl App {
                                             .align_y(Alignment::Center)
                                             .push(
                                                 crate::gui::widget::text(p.clone())
-                                                    .size(12)
+                                                    .size(13)
                                                     .class(style::Text::Dim)
                                                     .width(Length::Fill)
                                             )
@@ -4978,7 +4978,7 @@ impl App {
                                 let g = game_name.clone();
                                 Column::new()
                                     .spacing(6)
-                                    .push(crate::gui::widget::text("AUTO SYNC").size(11).class(style::Text::Muted))
+                                    .push(crate::gui::widget::text("AUTO SYNC").size(13).class(style::Text::Muted))
                                     .push(
                                         Row::new()
                                             .spacing(10)
@@ -5038,7 +5038,7 @@ impl App {
                 let devices_card = {
                     let mut devices_col = Column::new()
                         .spacing(6)
-                        .push(crate::gui::widget::text("DEVICES").size(11).class(style::Text::Muted));
+                        .push(crate::gui::widget::text("DEVICES").size(13).class(style::Text::Muted));
 
                     if let Some(meta) = meta {
                         for (dev_id, path) in &meta.path_by_device {
@@ -5056,7 +5056,7 @@ impl App {
                                                         .push(crate::gui::widget::text(dev_id.clone()).size(13))
                                                         .push_if(is_this, || {
                                                             crate::gui::widget::text("THIS DEVICE")
-                                                                .size(10)
+                                                                .size(11)
                                                                 .class(style::Text::Accent)
                                                         }),
                                                 )
@@ -5207,7 +5207,7 @@ impl App {
                                                 Column::new()
                                                     .spacing(4)
                                                     .width(Length::Fill)
-                                                    .push(crate::gui::widget::text("DANGER ZONE").size(11).class(style::Text::Muted))
+                                                    .push(crate::gui::widget::text("DANGER ZONE").size(13).class(style::Text::Muted))
                                                     .push(
                                                         crate::gui::widget::text("Remove this custom game and all its backups.")
                                                             .size(12)
@@ -5299,7 +5299,7 @@ impl App {
                 let device_card = Container::new(
                     Column::new()
                         .spacing(10)
-                        .push(crate::gui::widget::text("DEVICE").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text("DEVICE").size(13).class(style::Text::Muted))
                         .push(
                             Row::new()
                                 .spacing(16)
@@ -5308,7 +5308,7 @@ impl App {
                                     Column::new()
                                         .width(Length::Fill)
                                         .spacing(4)
-                                        .push(crate::gui::widget::text(device.name.clone()).size(14))
+                                        .push(crate::gui::widget::text(device.name.clone()).size(13))
                                         .push(crate::gui::widget::text(device_id_short).size(11).class(style::Text::Muted)),
                                 )
                                 .push(
@@ -5331,7 +5331,7 @@ impl App {
                 let daemon_card = Container::new(
                     Column::new()
                         .spacing(10)
-                        .push(crate::gui::widget::text("SYNC DAEMON").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text("SYNC DAEMON").size(13).class(style::Text::Muted))
                         .push(
                             Row::new()
                                 .spacing(8)
@@ -5389,24 +5389,24 @@ impl App {
                 let cloud_card = Container::new(
                     Column::new()
                         .spacing(10)
-                        .push(crate::gui::widget::text("CLOUD STORAGE").size(11).class(style::Text::Muted))
+                        .push(crate::gui::widget::text("CLOUD STORAGE").size(13).class(style::Text::Muted))
                         .push(
                             Row::new()
                                 .spacing(6)
                                 .push(crate::gui::widget::text("Provider:").size(12).class(style::Text::Muted))
-                                .push(crate::gui::widget::text(provider_name).size(12).class(style::Text::Dim)),
+                                .push(crate::gui::widget::text(provider_name).size(13).class(style::Text::Dim)),
                         )
                         .push(
                             Row::new()
                                 .spacing(6)
                                 .push(crate::gui::widget::text("Remote:").size(12).class(style::Text::Muted))
-                                .push(crate::gui::widget::text(remote_id).size(12).class(style::Text::Dim)),
+                                .push(crate::gui::widget::text(remote_id).size(13).class(style::Text::Dim)),
                         )
                         .push(
                             Row::new()
                                 .spacing(6)
                                 .push(crate::gui::widget::text("Path:").size(12).class(style::Text::Muted))
-                                .push(crate::gui::widget::text(self.config.cloud.path.clone()).size(12).class(style::Text::Dim)),
+                                .push(crate::gui::widget::text(self.config.cloud.path.clone()).size(13).class(style::Text::Dim)),
                         )
                         .push(
                             Row::new()
@@ -5428,7 +5428,7 @@ impl App {
                                     } else {
                                         "rclone not configured"
                                     })
-                                    .size(12)
+                                    .size(13)
                                     .class(if rclone_ok {
                                         style::Text::Green
                                     } else {
@@ -5551,7 +5551,7 @@ impl App {
                                         )
                                         .push_if(is_this, || {
                                             crate::gui::widget::text("THIS DEVICE")
-                                                .size(10)
+                                                .size(11)
                                                 .class(style::Text::Accent)
                                         }),
                                 )
