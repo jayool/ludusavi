@@ -199,6 +199,7 @@ pub fn write_game_list_to_cloud(config: &Config, game_list: &GameListFile) -> Re
     let remote_file = format!("{}/{}", cloud_path, GAME_LIST_FILE_NAME);
     let args = [
         "copyto".to_string(),
+        "--checksum".to_string(),
         temp_path.to_string_lossy().to_string(),
         rclone.path(&remote_file),
     ];
@@ -250,7 +251,12 @@ pub fn upload_game(
         .to_string_lossy()
         .to_string();
 
-    let args = ["copyto".to_string(), zip_path_str, rclone.path(&remote_file)];
+    let args = [
+        "copyto".to_string(),
+        "--checksum".to_string(),
+        zip_path_str,
+        rclone.path(&remote_file),
+    ];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
@@ -304,7 +310,12 @@ pub fn download_game(
 
     log::info!("[{}] Downloading zip from cloud: {}", game.name, remote_file);
 
-    let args = ["copyto".to_string(), rclone.path(&remote_file), zip_path_str];
+    let args = [
+        "copyto".to_string(),
+        "--checksum".to_string(),
+        rclone.path(&remote_file),
+        zip_path_str,
+    ];
 
     crate::prelude::run_command(
         config.apps.rclone.path.raw(),
