@@ -65,7 +65,8 @@ impl ModalField {
 
         Row::new()
             .align_y(Alignment::Center)
-            .push(text(label).width(150))
+            .spacing(12)
+            .push(text(label).size(12).class(style::Text::Muted).width(150))
             .push(histories.input(UndoSubject::ModalField(kind)))
     }
 
@@ -73,12 +74,20 @@ impl ModalField {
     where
         T: Copy + Eq + PartialEq + ToString + 'static,
     {
-        Row::new().align_y(Alignment::Center).push(text(label).width(150)).push(
-            Container::new(pick_list(choices, Some(*value), move |x| {
-                Message::EditedModalField(change(x))
-            }))
-            .width(Length::Fill),
-        )
+        Row::new()
+            .align_y(Alignment::Center)
+            .spacing(12)
+            .push(text(label).size(12).class(style::Text::Muted).width(150))
+            .push(
+                Container::new(
+                    pick_list(choices, Some(*value), move |x| {
+                        Message::EditedModalField(change(x))
+                    })
+                    .text_size(13)
+                    .padding([5, 5]),
+                )
+                .width(Length::Fill),
+            )
     }
 }
 
@@ -572,11 +581,12 @@ impl Modal {
                         Row::new()
                             .align_y(Alignment::Center)
                             .spacing(12)
-                            .push(text("Name").width(110))
+                            .push(text("Name").size(12).class(style::Text::Muted).width(110))
                             .push(
                                 iced::widget::text_input("e.g. Hades", name)
                                     .on_input(Message::AddGameNameChanged)
-                                    .padding([6, 10])
+                                    .padding([5, 5])
+                                    .size(13)
                                     .width(Length::Fill)
                             )
                     )
@@ -584,16 +594,17 @@ impl Modal {
                         Row::new()
                             .align_y(Alignment::Center)
                             .spacing(8)
-                            .push(text("Save location").width(110))
+                            .push(text("Save location").size(12).class(style::Text::Muted).width(110))
                             .push(
                                 iced::widget::text_input("e.g. C:\\Users\\...\\Hades", path)
                                     .on_input(Message::AddGamePathChanged)
-                                    .padding([6, 10])
+                                    .padding([5, 5])
+                                    .size(13)
                                     .width(Length::Fill)
                             )
                             .push(
                                 crate::gui::widget::Button::new(text("Browse...").size(12))
-                                    .padding([6, 12])
+                                    .padding([5, 10])
                                     .class(style::Button::Ghost)
                                     .on_press(Message::BrowseDir(crate::gui::common::BrowseSubject::AddGamePath))
                             )
