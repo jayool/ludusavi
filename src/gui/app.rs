@@ -3505,12 +3505,25 @@ impl App {
                 self.game_detail_files_expanded = !self.game_detail_files_expanded;
                 if self.game_detail_files_expanded {
                     if let Screen::GameDetail(ref game_name) = self.screen.clone() {
+                        let needs_scan = !self.backup_screen.log.entries
+                            .iter()
+                            .any(|e| e.scan_info.game_name == *game_name && e.scanned);
+
                         self.backup_screen.log.expand_game(
                             game_name,
                             &self.backup_screen.duplicate_detector,
                             &self.config,
                             ScanKind::Backup,
                         );
+
+                        if needs_scan {
+                            return self.handle_backup(BackupPhase::Start {
+                                preview: true,
+                                repair: false,
+                                jump: false,
+                                games: Some(GameSelection::single(game_name.clone())),
+                            });
+                        }
                     }
                 }
                 Task::none()
