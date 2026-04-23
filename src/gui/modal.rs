@@ -67,7 +67,7 @@ impl ModalField {
             .align_y(Alignment::Center)
             .spacing(12)
             .push(text(label).size(12).class(style::Text::Muted).width(150))
-            .push(histories.input(UndoSubject::ModalField(kind)))
+            .push(histories.input_small(UndoSubject::ModalField(kind)))
     }
 
     pub fn view_pick_list<'a, T>(label: String, value: &'a T, choices: &'a [T], change: fn(T) -> Self) -> Row<'a>
