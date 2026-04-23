@@ -545,6 +545,13 @@ pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
             UndoSubject::RootPath(i) => self.roots.get(*i).map(|x| x.path.current()).unwrap_or_default(),
             UndoSubject::RootLutrisDatabase(i) => self.roots.get(*i).map(|x| x.lutris_database.current()).unwrap_or_default(),
             UndoSubject::SecondaryManifest(i) => self.secondary_manifests.get(*i).map(|x| x.current()).unwrap_or_default(),
+            UndoSubject::ModalField(field) => match field {
+                ModalInputKind::Url => self.modal.url.current(),
+                ModalInputKind::Host => self.modal.host.current(),
+                ModalInputKind::Port => self.modal.port.current(),
+                ModalInputKind::Username => self.modal.username.current(),
+                ModalInputKind::Password => self.modal.password.current(),
+            },
             _ => return self.input(subject),
         };
 
@@ -563,16 +570,38 @@ pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
             UndoSubject::SecondaryManifest(i) => Box::new(Message::config(move |value| {
                 config::Event::SecondaryManifest(EditAction::Change(i, value))
             })),
+            UndoSubject::ModalField(field) => Box::new(move |value| {
+                Message::EditedModalField(match field {
+                    ModalInputKind::Url => ModalField::Url(value),
+                    ModalInputKind::Host => ModalField::Host(value),
+                    ModalInputKind::Port => ModalField::Port(value),
+                    ModalInputKind::Username => ModalField::Username(value),
+                    ModalInputKind::Password => ModalField::Password(value),
+                })
+            }),
             _ => return self.input(subject),
         };
 
+        let is_password = matches!(
+            subject,
+            UndoSubject::ModalField(ModalInputKind::Password)
+        );
+
         Undoable::new(
-            TextInput::new("", &current)
-                .on_input(event)
-                .class(style::TextInput)
-                .width(Length::Fill)
-                .padding([5, 5])
-                .size(12),
+            {
+                let mut input = TextInput::new("", &current)
+                    .on_input(event)
+                    .class(style::TextInput)
+                    .width(Length::Fill)
+                    .padding([5, 5])
+                    .size(12);
+
+                if is_password {
+                    input = input.secure(true);
+                }
+
+                input
+            },
             move |action| Message::UndoRedo(action, subject.clone()),
         )
         .into()
