@@ -5092,6 +5092,9 @@ impl App {
                 let is_scanning = !self.operation.idle()
                     && self.operation.games().is_some_and(|g| g.contains(&game_name));
 
+                // TODO: FILES section disabled until tree toggles are wired to the daemon backend.
+                // To re-enable: uncomment the files_card block and the .push(files_card) below.
+                #[allow(unused_variables)]
                 let files_card = {
                     let arrow = if self.game_detail_files_expanded {
                         crate::gui::icon::Icon::KeyboardArrowDown
@@ -5194,7 +5197,7 @@ impl App {
                                 .push(settings_card)
                                 .push(devices_card)
                                 .push(save_button)
-                                .push(files_card)
+                                // .push(files_card) // TODO: re-enable when toggles are wired to the daemon
                                 .push_if(is_custom_game, || {
                                     Container::new(
                                         Row::new()
