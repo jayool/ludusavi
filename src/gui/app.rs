@@ -5111,8 +5111,13 @@ impl App {
                                     })
                                 }
                             }
-                            _ => Some(Container::new(
+                            Some(_) if is_scanning => Some(Container::new(
                                 crate::gui::widget::text("Scanning...")
+                                    .size(12)
+                                    .class(style::Text::Muted)
+                            ).padding([8, 0])),
+                            _ => Some(Container::new(
+                                crate::gui::widget::text("Not scanned yet. Run a scan from the Games screen.")
                                     .size(12)
                                     .class(style::Text::Muted)
                             ).padding([8, 0])),
