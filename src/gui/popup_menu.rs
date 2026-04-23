@@ -292,17 +292,19 @@ where
                 None,
                 &self.menu_style,
             )
-            .width(160.0)
-            .padding(self.padding)
+            .width(120.0)
+            .padding(Padding::from([6, 12]))
             .font(self.font.unwrap_or_else(|| renderer.default_font()))
             .text_shaping(text::Shaping::Advanced);
 
             if let Some(text_size) = self.text_size {
                 menu = menu.text_size(text_size);
+            } else {
+                menu = menu.text_size(13.0);
             }
 
             let mut pos = layout.position() + translation;
-            pos.x = pos.x - 160.0 + bounds.width;
+            pos.x = pos.x - 120.0 + bounds.width;
             Some(menu.overlay(
                 pos,
                 *viewport,
