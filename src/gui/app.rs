@@ -5093,17 +5093,26 @@ impl App {
                     && self.operation.games().is_some_and(|g| g.contains(&game_name));
 
                 let files_card = {
+                    let arrow = if self.game_detail_files_expanded {
+                        crate::gui::icon::Icon::KeyboardArrowDown
+                    } else {
+                        crate::gui::icon::Icon::KeyboardArrowRight
+                    };
+
                     let header_button = crate::gui::widget::Button::new(
                         Row::new()
                             .spacing(8)
                             .align_y(Alignment::Center)
-                            .push(crate::gui::widget::text("FILES").size(11).class(style::Text::Muted))
+                            .push(crate::gui::widget::text("FILES").size(13).class(style::Text::Muted))
                             .push_if(is_scanning, || {
-                                crate::gui::widget::text("Scanning...").size(11).class(style::Text::Muted)
+                                crate::gui::widget::text("Scanning...").size(12).class(style::Text::Muted)
                             })
+                            .push(crate::gui::widget::Space::new().width(Length::Fill))
+                            .push(arrow.text_small().class(style::Text::Muted))
                     )
                     .padding([6, 0])
                     .class(style::Button::Bare)
+                    .width(Length::Fill)
                     .on_press(Message::GameDetailFilesToggled);
 
                     let files_content = if self.game_detail_files_expanded {
