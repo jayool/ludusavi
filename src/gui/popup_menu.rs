@@ -292,7 +292,7 @@ where
                 None,
                 &self.menu_style,
             )
-            .width(120.0)
+            .width(100.0)
             .padding(Padding::from([6, 12]))
             .font(self.font.unwrap_or_else(|| renderer.default_font()))
             .text_shaping(text::Shaping::Advanced);
