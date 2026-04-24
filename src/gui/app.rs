@@ -2743,8 +2743,14 @@ impl App {
                                     Some(p) => p.clone(),
                                     None => return Err(format!("No local path for game: {}", game_name)),
                                 };
-                                ludusavi::sync::operations::extract_zip_to_directory(&zip_path, &local_path, None)
-                                    .map_err(|e| e.to_string())
+                                ludusavi::sync::operations::extract_zip_to_directory(
+                                    &zip_path,
+                                    &local_path,
+                                    None,
+                                    Some(&app_dir),
+                                    Some(&game_name),
+                                )
+                                .map_err(|e| e.to_string())
                             }
                             ludusavi::sync::sync_config::SaveMode::Cloud
                             | ludusavi::sync::sync_config::SaveMode::Sync => {
