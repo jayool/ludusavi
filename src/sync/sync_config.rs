@@ -22,9 +22,20 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncGamesConfig {
     pub games: HashMap<String, GameSyncConfig>,
+    #[serde(default = "default_true")]
+    pub safety_backups_enabled: bool,
+}
+
+impl Default for SyncGamesConfig {
+    fn default() -> Self {
+        Self {
+            games: HashMap::new(),
+            safety_backups_enabled: true,
+        }
+    }
 }
 
 impl SyncGamesConfig {
@@ -74,5 +85,8 @@ impl SyncGamesConfig {
 
     pub fn set_auto_sync(&mut self, game: &str, auto_sync: bool) {
         self.games.entry(game.to_string()).or_default().auto_sync = auto_sync;
+    }
+        pub fn safety_backups_enabled(&self) -> bool {
+        self.safety_backups_enabled
     }
 }
