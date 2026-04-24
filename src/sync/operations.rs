@@ -941,6 +941,13 @@ pub fn classify_error(
                 direction,
             );
         }
+        SyncError::NoZipInCloud => {
+            return (
+                ErrorCategory::Missing,
+                "No backup found in the cloud for this game yet.".to_string(),
+                direction,
+            );
+        }
     };
     let lower = raw.to_lowercase();
 
