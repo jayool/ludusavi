@@ -149,6 +149,8 @@ pub enum Kind {
     ConfirmSyncModeChange,
     AddGame,
     ConfirmRemoveCustomGame,
+    ConfirmRestoreSafetyBackup,
+    ConfirmDeleteSafetyBackup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -249,6 +251,8 @@ impl Modal {
             Modal::ConfirmSyncModeChange { .. } => Kind::ConfirmSyncModeChange,
             Modal::AddGame { .. } => Kind::AddGame,
             Modal::ConfirmRemoveCustomGame { .. } => Kind::ConfirmRemoveCustomGame,
+            Modal::ConfirmRestoreSafetyBackup { .. } => Kind::ConfirmRestoreSafetyBackup,
+            Modal::ConfirmDeleteSafetyBackup { .. } => Kind::ConfirmDeleteSafetyBackup,
         }
     }
 
@@ -277,6 +281,8 @@ impl Modal {
             Modal::ConfirmSyncModeChange { .. } => false,
             Modal::AddGame { .. } => false,
             Modal::ConfirmRemoveCustomGame { .. } => false,
+            Modal::ConfirmRestoreSafetyBackup { .. } => false,
+            Modal::ConfirmDeleteSafetyBackup { .. } => false,
         }
     }
 
@@ -307,7 +313,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => ModalVariant::Confirm,
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => ModalVariant::Confirm,
             Self::ConfirmCloudSync { state, .. } => {
                 if state.done() {
                     ModalVariant::Info
@@ -375,6 +383,18 @@ impl Modal {
             Self::ConfirmRemoveCustomGame { game } => {
                 format!("Remove \"{}\"?\n\nThis will delete the game from the sync system, all backups (local and cloud), and cannot be undone.", game)
             }
+            Self::ConfirmRestoreSafetyBackup { game } => {
+                format!(
+                    "Restore safety backup for \"{}\"?\n\nThe current saves will be replaced with the safety backup. A new safety backup will be created with the current saves before the restore, so you can revert again if needed.",
+                    game
+                )
+            }
+            Self::ConfirmDeleteSafetyBackup { game } => {
+                format!(
+                    "Delete safety backup for \"{}\"?\n\nThe safety backup will be permanently deleted. This cannot be undone.",
+                    game
+                )
+            }
         }
     }
 
@@ -387,6 +407,8 @@ impl Modal {
             | Self::GameNotes { .. }
             | Self::ActiveScanGames => Some(Message::CloseModal),
             Self::ConfirmSyncBackup { game } => Some(Message::SyncBackupGame(game.clone())),
+            Self::ConfirmRestoreSafetyBackup { game } => Some(Message::RestoreSafetyBackup(game.clone())),
+            Self::ConfirmDeleteSafetyBackup { game } => Some(Message::DeleteSafetyBackup(game.clone())),
             Self::ConfirmSyncRestore { game } => Some(Message::SyncRestoreGame(game.clone())),
             Self::ConfirmForceUpload { game } => Some(Message::ForceUploadGame(game.clone())),
             Self::ConfirmForceDownload { game } => Some(Message::ForceDownloadGame(game.clone())),
@@ -528,7 +550,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => vec![],
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => vec![],
         }
     }
 
@@ -541,6 +565,8 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. }
         );
 
         let mut col = if is_sync_modal {
@@ -578,7 +604,9 @@ impl Modal {
             | Self::ConfirmForceUpload { .. }
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => (),
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => (),
             Self::AddGame { name, path, error } => {
                 let mut form = Column::new()
                     .spacing(12)
@@ -794,7 +822,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => (),
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => (),
         }
     }
 
@@ -839,7 +869,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => (),
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => (),
         }
     }
 
@@ -868,7 +900,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => (),
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => (),
         }
     }
 
@@ -895,7 +929,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => false,
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => false,
         }
     }
 
@@ -922,7 +958,9 @@ impl Modal {
             | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. } => 1,
+            | Self::ConfirmRemoveCustomGame { .. }
+            | Self::ConfirmRestoreSafetyBackup { .. }
+            | Self::ConfirmDeleteSafetyBackup { .. } => 1,
         }
     }
 
@@ -958,6 +996,8 @@ impl Modal {
                                     | Self::ConfirmSyncModeChange { .. }
                                     | Self::AddGame { .. }
                                     | Self::ConfirmRemoveCustomGame { .. }
+                                    | Self::ConfirmRestoreSafetyBackup { .. }
+                                    | Self::ConfirmDeleteSafetyBackup { .. }
                                     | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
