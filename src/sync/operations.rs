@@ -96,47 +96,114 @@ pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Resul
 }
 
 /// Extrae un zip en `output_directory`, forzando el timestamp dado si se proporciona.
+///
+/// Usa un swap atómico para evitar pérdida de datos si la extracción falla a mitad:
+/// 1. Extrae el contenido a un directorio temporal hermano (<output>.ludusavi-tmp).
+/// 2. Si la extracción se completa, swap atómico: rename <output> → <output>.ludusavi-old,
+///    rename <output>.ludusavi-tmp → <output>, borrar <output>.ludusavi-old.
+/// 3. Si la extracción falla a mitad, borrar el temporal. El directorio original no se toca.
 pub fn extract_zip_to_directory(
     zip_path: &StrictPath,
     output_directory: &str,
     force_last_write_time: Option<DateTime<Utc>>,
 ) -> Result<(), SyncError> {
     let output = std::path::Path::new(output_directory);
+    let tmp = {
+        let mut s = output_directory.to_string();
+        s.push_str(".ludusavi-tmp");
+        std::path::PathBuf::from(s)
+    };
+    let old = {
+        let mut s = output_directory.to_string();
+        s.push_str(".ludusavi-old");
+        std::path::PathBuf::from(s)
+    };
 
-    if output.exists() {
-        std::fs::remove_dir_all(output).map_err(|e| SyncError::IoError(e.to_string()))?;
+    // Limpiar residuos de ejecuciones anteriores fallidas
+    if tmp.exists() {
+        std::fs::remove_dir_all(&tmp).map_err(|e| SyncError::IoError(e.to_string()))?;
     }
-    std::fs::create_dir_all(output).map_err(|e| SyncError::IoError(e.to_string()))?;
+    if old.exists() {
+        log::warn!(
+            "[extract] Leftover .ludusavi-old directory detected, removing: {:?}",
+            old
+        );
+        std::fs::remove_dir_all(&old).map_err(|e| SyncError::IoError(e.to_string()))?;
+    }
 
-    let file = zip_path.open().map_err(|e| SyncError::IoError(e.to_string()))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| SyncError::ZipError(e.to_string()))?;
+    // Crear el directorio temporal donde volcamos el contenido del ZIP
+    std::fs::create_dir_all(&tmp).map_err(|e| SyncError::IoError(e.to_string()))?;
 
+    // Helper: si algo sale mal durante la extracción, limpiar el temporal
+    let cleanup_tmp = |tmp: &std::path::Path| {
+        if tmp.exists() {
+            let _ = std::fs::remove_dir_all(tmp);
+        }
+    };
+
+    let file = match zip_path.open() {
+        Ok(f) => f,
+        Err(e) => {
+            cleanup_tmp(&tmp);
+            return Err(SyncError::IoError(e.to_string()));
+        }
+    };
+
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(e) => {
+            cleanup_tmp(&tmp);
+            return Err(SyncError::ZipError(e.to_string()));
+        }
+    };
+
+    // Extraer al directorio temporal
     for i in 0..archive.len() {
-        let mut zip_file = archive.by_index(i).map_err(|e| SyncError::ZipError(e.to_string()))?;
+        let mut zip_file = match archive.by_index(i) {
+            Ok(zf) => zf,
+            Err(e) => {
+                cleanup_tmp(&tmp);
+                return Err(SyncError::ZipError(e.to_string()));
+            }
+        };
 
         if zip_file.name().ends_with('/') {
             continue;
         }
 
-        let out_path = output.join(zip_file.name().replace('\\', "/"));
+        let out_path = tmp.join(zip_file.name().replace('\\', "/"));
 
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| SyncError::IoError(e.to_string()))?;
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                cleanup_tmp(&tmp);
+                return Err(SyncError::IoError(e.to_string()));
+            }
         }
 
-        let mut out_file = std::fs::File::create(&out_path).map_err(|e| SyncError::IoError(e.to_string()))?;
+        let mut out_file = match std::fs::File::create(&out_path) {
+            Ok(f) => f,
+            Err(e) => {
+                cleanup_tmp(&tmp);
+                return Err(SyncError::IoError(e.to_string()));
+            }
+        };
 
         let mut buffer = [0u8; 65536];
         loop {
-            let n = zip_file
-                .read(&mut buffer)
-                .map_err(|e| SyncError::IoError(e.to_string()))?;
+            let n = match zip_file.read(&mut buffer) {
+                Ok(n) => n,
+                Err(e) => {
+                    cleanup_tmp(&tmp);
+                    return Err(SyncError::IoError(e.to_string()));
+                }
+            };
             if n == 0 {
                 break;
             }
-            out_file
-                .write_all(&buffer[..n])
-                .map_err(|e| SyncError::IoError(e.to_string()))?;
+            if let Err(e) = out_file.write_all(&buffer[..n]) {
+                cleanup_tmp(&tmp);
+                return Err(SyncError::IoError(e.to_string()));
+            }
         }
 
         if let Some(ts) = force_last_write_time {
@@ -147,7 +214,40 @@ pub fn extract_zip_to_directory(
 
     if let Some(ts) = force_last_write_time {
         let system_time: std::time::SystemTime = ts.into();
-        let _ = filetime::set_file_mtime(output, filetime::FileTime::from_system_time(system_time));
+        let _ = filetime::set_file_mtime(&tmp, filetime::FileTime::from_system_time(system_time));
+    }
+
+    // Swap atómico: el directorio original (si existe) se mueve a .ludusavi-old,
+    // luego el .ludusavi-tmp se mueve al destino, finalmente se borra .ludusavi-old.
+    if output.exists() {
+        if let Err(e) = std::fs::rename(output, &old) {
+            cleanup_tmp(&tmp);
+            return Err(SyncError::IoError(format!(
+                "Failed to move original directory aside: {e}"
+            )));
+        }
+    }
+
+    if let Err(e) = std::fs::rename(&tmp, output) {
+        // Intentar restaurar el directorio original si lo habíamos movido
+        if old.exists() {
+            let _ = std::fs::rename(&old, output);
+        }
+        cleanup_tmp(&tmp);
+        return Err(SyncError::IoError(format!(
+            "Failed to swap extracted directory into place: {e}"
+        )));
+    }
+
+    // Éxito: borrar el directorio viejo. No fallamos si esto da error,
+    // solo lo loggeamos — el save nuevo ya está en su sitio.
+    if old.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&old) {
+            log::warn!(
+                "[extract] Extraction succeeded but could not clean up old directory {:?}: {e}",
+                old
+            );
+        }
     }
 
     Ok(())
