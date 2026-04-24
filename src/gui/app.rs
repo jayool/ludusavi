@@ -128,6 +128,7 @@ pub struct App {
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
     sync_status: std::collections::HashMap<String, GameStatusInfo>,
+    rclone_missing: bool,
     games_search: String,
     pending_game_detail: Option<ludusavi::sync::sync_config::GameSyncConfig>,
     pending_game_detail_name: Option<String>,
@@ -1751,10 +1752,11 @@ impl App {
                 }
                 Task::none()
             }
-            Message::DaemonStatusChecked(running, sync_status, game_list) => {
+            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing) => {
                 self.daemon_running = running;
                 self.sync_status = sync_status;
                 self.game_list = game_list;
+                self.rclone_missing = rclone_missing;
                 Task::none()
             }
             Message::SetGameSaveMode(game, mode) => {
@@ -1780,6 +1782,19 @@ impl App {
                         .unwrap_or(ludusavi::sync::sync_config::SaveMode::None);
 
                     let new_mode = pending.mode.clone();
+
+                    // Bloquear cambio a CLOUD/SYNC si rclone no está disponible
+                    let switching_to_cloud = matches!(
+                        new_mode,
+                        ludusavi::sync::sync_config::SaveMode::Cloud
+                        | ludusavi::sync::sync_config::SaveMode::Sync
+                    );
+                    if switching_to_cloud && self.rclone_missing {
+                        self.timed_notification = Some(Notification::new(
+                            "✗ Rclone not available. Check Settings.".to_string()
+                        ).expires(4));
+                        return Task::none();
+                    }
 
                     // Cambio destructivo: CLOUD/SYNC → LOCAL/NONE borra el ZIP del cloud
                     let cloud_to_local = matches!(previous_mode,
@@ -3963,7 +3978,18 @@ impl App {
                     ludusavi::sync::game_list::GameListFile::default()
                 }
             };
-            Message::DaemonStatusChecked(running, sync_status, game_list)
+            let rclone_missing = {
+                let path = crate::prelude::app_dir().joined("daemon-status.json");
+                if let Some(content) = path.read() {
+                    serde_json::from_str::<serde_json::Value>(&content)
+                        .ok()
+                        .and_then(|v| v.get("rclone_missing").and_then(|b| b.as_bool()))
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            };
+            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing)
         }));
 
         iced::Subscription::batch(subscriptions)
@@ -5533,31 +5559,45 @@ impl App {
                                     Container::new(crate::gui::widget::Space::new())
                                         .width(8)
                                         .height(8)
-                                        .class(if rclone_ok {
+                                        .class(if self.rclone_missing {
+                                            style::Container::DaemonDotError
+                                        } else if rclone_ok {
                                             style::Container::DaemonDotActive
                                         } else {
                                             style::Container::DaemonDotInactive
                                         }),
                                 )
                                 .push(
-                                    crate::gui::widget::text(if rclone_ok {
+                                    crate::gui::widget::text(if self.rclone_missing {
+                                        "rclone not found"
+                                    } else if rclone_ok {
                                         "rclone configured"
                                     } else {
                                         "rclone not configured"
                                     })
                                     .size(13)
-                                    .class(if rclone_ok {
+                                    .class(if self.rclone_missing {
+                                        style::Text::Muted
+                                    } else if rclone_ok {
                                         style::Text::Green
                                     } else {
                                         style::Text::Muted
                                     }),
-                                ),
+                                )
+                                .push_if(self.rclone_missing, || {
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("Install instructions").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(style::Button::Primary)
+                                    .on_press(Message::OpenUrl("https://rclone.org/downloads/".to_string()))
+                                }),
                         ),
                 )
                 .width(Length::Fill)
                 .padding(16)
                 .class(style::Container::GamesTable);
-
+                
                 let content = Column::new()
                     .push(header)
                     .push(
