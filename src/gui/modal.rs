@@ -197,6 +197,12 @@ pub enum Modal {
     ConfirmSyncRestore {
         game: String,
     },
+    ConfirmRestoreSafetyBackup { 
+        game: String 
+    },
+    ConfirmDeleteSafetyBackup {
+        game: String 
+    },
     ConfirmForceUpload {
         game: String,
     },
