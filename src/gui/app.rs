@@ -1552,7 +1552,7 @@ impl App {
                 // Añadir al game-list local
                 let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir());
                 let mut meta = ludusavi::sync::game_list::GameMetaData::new(name.clone(), name.clone());
-                meta.path_by_device.insert(device.id.clone(), path.clone());
+                meta.set_path(device.id.clone(), path.clone());
                 self.game_list.upsert_game(meta);
 
                 // Asegurar que device_names tiene entrada para este device
@@ -2543,7 +2543,7 @@ impl App {
                                             match game_list.get_game_mut(&game_name) {
                                                 Some(existing) => {
                                                     if let Some(path) = &local_path {
-                                                        existing.path_by_device.insert(device.id.clone(), path.clone());
+                                                        existing.set_path(device.id.clone(), path.clone());
                                                     }
                                                 }
                                                 None => {
@@ -2551,7 +2551,7 @@ impl App {
                                                         game_name.clone(), game_name.clone(),
                                                     );
                                                     if let Some(path) = &local_path {
-                                                        meta.path_by_device.insert(device.id.clone(), path.clone());
+                                                        meta.set_path(device.id.clone(), path.clone());
                                                     }
                                                     game_list.upsert_game(meta);
                                                 }
@@ -2658,8 +2658,8 @@ impl App {
 
                         // Obtener o resolver la ruta local
                         let local_path = if let Some(game) = game_list.games.iter().find(|g| g.id == game_name) {
-                            if let Some(path) = game.path_by_device.get(&device.id) {
-                                path.clone()
+                            if let Some(entry) = game.path_by_device.get(&device.id) {
+                                entry.path.clone()
                             } else {
                                 // Ruta no registrada para este device, intentar resolverla
                                 ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
@@ -2748,8 +2748,8 @@ impl App {
 
                             // Resolver path local (mismo patrón que SyncRestoreGame)
                             let local_path = if let Some(g) = game_list.games.iter().find(|g| g.id == game_name) {
-                                if let Some(p) = g.path_by_device.get(&device.id) {
-                                    p.clone()
+                                if let Some(entry) = g.path_by_device.get(&device.id) {
+                                    entry.path.clone()
                                 } else {
                                     ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
                                         .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
@@ -2871,8 +2871,8 @@ impl App {
                             .unwrap_or_default();
 
                         let local_path = if let Some(game) = game_list.games.iter().find(|g| g.id == game_name) {
-                            if let Some(path) = game.path_by_device.get(&device.id) {
-                                path.clone()
+                            if let Some(entry) = game.path_by_device.get(&device.id) {
+                                entry.path.clone()
                             } else {
                                 ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
                                     .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
@@ -2967,7 +2967,7 @@ impl App {
                                 let mut meta = ludusavi::sync::game_list::GameMetaData::new(
                                     game_name.clone(), game_name.clone(),
                                 );
-                                meta.path_by_device.insert(device.id.clone(), path);
+                                meta.set_path(device.id.clone(), path);
                                 gl.upsert_game(meta);
                                 gl.get_game_mut(&game_name).unwrap()
                             }
@@ -5168,7 +5168,7 @@ impl App {
                                             .spacing(8)
                                             .align_y(Alignment::Center)
                                             .push(
-                                                crate::gui::widget::text(p.clone())
+                                                crate::gui::widget::text(p.path.clone())
                                                     .size(13)
                                                     .class(style::Text::Dim)
                                                     .width(Length::Fill)
@@ -5180,7 +5180,7 @@ impl App {
                                                 .padding([4, 10])
                                                 .class(style::Button::Ghost)
                                                 .on_press(Message::OpenDir {
-                                                    path: crate::prelude::StrictPath::new(p),
+                                                    path: crate::prelude::StrictPath::new(p.path.clone()),
                                                 })
                                             )
                                     )
@@ -5294,7 +5294,7 @@ impl App {
                                                         }),
                                                 )
                                                 .push(
-                                                    crate::gui::widget::text(path.clone())
+                                                    crate::gui::widget::text(path.path.clone())
                                                         .size(11)
                                                         .class(style::Text::Muted),
                                                 ),
