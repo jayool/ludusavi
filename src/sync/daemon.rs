@@ -405,7 +405,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                     continue;
                 }
                 let local_path = game_list.get_game(game_id)
-                    .and_then(|g| g.path_by_device.get(&device.id).cloned())
+                    .and_then(|g| g.path_by_device.get(&device.id).map(|e| e.path.clone()))
                     .or_else(|| crate::sync::operations::resolve_game_path_from_manifest(&config, game_id));
                 if let Some(path) = local_path {
                     let zip_path = config.backup.path.joined(&format!("{}.zip", game_id));
@@ -437,7 +437,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
             // CLOUD y SYNC — requieren game_list
             if let Some(game) = game_list.get_game_mut(game_id) {
-                let local_path = game.path_by_device.get(&device.id).cloned();
+                let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
                 let status = determine_sync_type(game, &scan);
                 if status != SyncStatus::RequiresUpload {
@@ -685,7 +685,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                 log::debug!("[sync daemon] Skipping startup sync for {} — CLOUD auto sync off", game.name);
                 continue;
             }
-            let local_path = game.path_by_device.get(&device.id).cloned();
+            let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
             let scan = DirectoryScanResult::scan(local_path.as_deref());
             log::info!(
                 "[sync daemon] [{}] scan_latest={:?} game_latest={:?} directory_exists={}",
@@ -788,7 +788,7 @@ let mut any_changes = false;
                 log::debug!("[sync daemon] Skipping startup sync for {} — CLOUD auto sync off", game.name);
                 continue;
             }
-            let local_path = game.path_by_device.get(&device.id).cloned();
+            let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
             let scan = DirectoryScanResult::scan(local_path.as_deref());
             let status = determine_sync_type(game, &scan);
 
@@ -899,11 +899,11 @@ fn calculate_game_status(
                 .and_then(|m| m.modified().ok())
                 .map(|t| -> chrono::DateTime<chrono::Utc> { t.into() });
 
-            let Some(path) = local_path else {
+            let Some(path_entry) = local_path else {
                 return "pending_backup".to_string();
             };
 
-            let scan = crate::sync::conflict::DirectoryScanResult::scan(Some(path));
+            let scan = crate::sync::conflict::DirectoryScanResult::scan(Some(&path_entry.path));
 
             match (zip_mtime, scan.latest_write_time_utc) {
                 (None, _) => "pending_backup".to_string(),
@@ -924,7 +924,7 @@ fn calculate_game_status(
         _ => {
             // CLOUD y SYNC: usar determine_sync_type
             let scan = crate::sync::conflict::DirectoryScanResult::scan(
-                local_path.map(|s| s.as_str())
+                local_path.map(|e| e.path.as_str())
             );
             let status = crate::sync::conflict::determine_sync_type(game, &scan);
             match status {
