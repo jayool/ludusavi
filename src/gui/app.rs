@@ -2719,6 +2719,90 @@ impl App {
                     },
                 )
             }
+            Message::ToggleSafetyBackupsEnabled(enabled) => {
+                self.sync_games_config.safety_backups_enabled = enabled;
+                self.sync_games_config.save();
+                self.timed_notification = Some(Notification::new(
+                    if enabled {
+                        "✓ Safety backups enabled".to_string()
+                    } else {
+                        "✓ Safety backups disabled".to_string()
+                    }
+                ).expires(2));
+                Task::none()
+            }
+            Message::RequestRestoreSafetyBackup(game) => {
+                self.show_modal(Modal::ConfirmRestoreSafetyBackup { game })
+            }
+            Message::RestoreSafetyBackup(game_name) => {
+                self.sync_in_progress = Some("⏳ Restoring safety backup...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmRestoreSafetyBackup);
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+
+                            // Resolver path local (mismo patrón que SyncRestoreGame)
+                            let local_path = if let Some(g) = game_list.games.iter().find(|g| g.id == game_name) {
+                                if let Some(p) = g.path_by_device.get(&device.id) {
+                                    p.clone()
+                                } else {
+                                    ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                        .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
+                                }
+                            } else {
+                                ludusavi::sync::operations::resolve_game_path_from_manifest(&config, &game_name)
+                                    .ok_or_else(|| format!("Cannot resolve save path for: {}", game_name))?
+                            };
+
+                            // Crear un NUEVO safety backup con los saves actuales antes de restaurar el anterior.
+                            // Así el usuario nunca pierde lo que había si se arrepiente del restore.
+                            let _ = ludusavi::sync::operations::create_safety_backup(
+                                &app_dir,
+                                &game_name,
+                                &local_path,
+                            );
+
+                            ludusavi::sync::operations::restore_safety_backup(
+                                &app_dir,
+                                &game_name,
+                                &local_path,
+                            )
+                            .map_err(|e| e.to_string())
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Safety backup restored".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
+            Message::RequestDeleteSafetyBackup(game) => {
+                self.show_modal(Modal::ConfirmDeleteSafetyBackup { game })
+            }
+            Message::DeleteSafetyBackup(game_name) => {
+                self.close_specific_modal_alt(modal::Kind::ConfirmDeleteSafetyBackup);
+                let app_dir = crate::prelude::app_dir();
+                match ludusavi::sync::operations::delete_safety_backup(&app_dir, &game_name) {
+                    Ok(_) => {
+                        self.timed_notification = Some(Notification::new(
+                            "✓ Safety backup deleted".to_string()
+                        ).expires(2));
+                    }
+                    Err(e) => {
+                        self.timed_notification = Some(Notification::new(
+                            format!("✗ Error: {}", e)
+                        ).expires(4));
+                    }
+                }
+                Task::none()
+            }
             Message::SyncRestoreGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Restoring...".to_string());
                 self.close_specific_modal_alt(modal::Kind::ConfirmSyncRestore);
