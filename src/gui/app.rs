@@ -2680,14 +2680,14 @@ impl App {
                         // Asegurar que el juego está registrado con la ruta correcta
                         match gl.get_game_mut(&game_name) {
                             Some(existing) => {
-                                existing.path_by_device.insert(device.id.clone(), local_path.clone());
+                                existing.set_path(device.id.clone(), local_path.clone());
                             }
                             None => {
                                 let mut meta = ludusavi::sync::game_list::GameMetaData::new(
                                     game_name.clone(),
                                     game_name.clone(),
                                 );
-                                meta.path_by_device.insert(device.id.clone(), local_path.clone());
+                                meta.set_path(device.id.clone(), local_path.clone());
                                 gl.upsert_game(meta);
                             }
                         }
@@ -2824,7 +2824,7 @@ impl App {
                             ludusavi::sync::sync_config::SaveMode::Local => {
                                 let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
                                 let local_path = match game.path_by_device.get(&device.id) {
-                                    Some(p) => p.clone(),
+                                    Some(p) => p.path.clone(),
                                     None => return Err(format!("No local path for game: {}", game_name)),
                                 };
                                 ludusavi::sync::operations::extract_zip_to_directory(
@@ -2884,13 +2884,13 @@ impl App {
 
                         match gl.get_game_mut(&game_name) {
                             Some(existing) => {
-                                existing.path_by_device.insert(device.id.clone(), local_path.clone());
+                                existing.set_path(device.id.clone(), local_path.clone());
                             }
                             None => {
                                 let mut meta = ludusavi::sync::game_list::GameMetaData::new(
                                     game_name.clone(), game_name.clone(),
                                 );
-                                meta.path_by_device.insert(device.id.clone(), local_path.clone());
+                                meta.set_path(device.id.clone(), local_path.clone());
                                 gl.upsert_game(meta);
                             }
                         }
@@ -5150,7 +5150,7 @@ impl App {
                         .push(crate::gui::widget::text("SAVE LOCATION").size(13).class(style::Text::Muted))
                         .push(
                             {
-                                let save_path = meta
+                                let save_path: Option<ludusavi::sync::game_list::DevicePathEntry> = meta
                                     .and_then(|m| m.path_by_device.get(&device_id))
                                     .cloned()
                                     .or_else(|| {
@@ -5159,6 +5159,7 @@ impl App {
                                             &self.manifest.extended,
                                             &game_name,
                                         )
+                                        .map(ludusavi::sync::game_list::DevicePathEntry::new)
                                     });
 
                                 save_path.map(|path| {
