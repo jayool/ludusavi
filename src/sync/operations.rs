@@ -356,8 +356,8 @@ pub fn upload_game(
         .path_by_device
         .get(&device.id)
         .ok_or(SyncError::NoLocalPath)?
+        .path
         .clone();
-
     let rclone = make_rclone(config).ok_or(SyncError::NoRcloneConfig)?;
 
     let scan = DirectoryScanResult::scan(Some(&local_path));
@@ -417,6 +417,7 @@ pub fn download_game(
         .path_by_device
         .get(&device.id)
         .ok_or(SyncError::NoLocalPath)?
+        .path
         .clone();
 
     let rclone = make_rclone(config).ok_or(SyncError::NoRcloneConfig)?;
