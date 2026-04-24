@@ -1,6 +1,6 @@
 use crate::resource::manifest::Game;
 use crate::{
-    prelude::StrictPath,
+    prelude::{CommandError, StrictPath},
     resource::config::Config,
     sync::{
         conflict::DirectoryScanResult,
@@ -31,6 +31,21 @@ impl std::fmt::Display for SyncError {
             Self::IoError(e) => write!(f, "IO error: {e}"),
             Self::NoZipInCloud => write!(f, "No zip found in cloud for this game"),
         }
+    }
+}
+
+/// Extrae un mensaje útil de un CommandError. Preferimos el stderr (contiene el error real
+/// de rclone con patrones como "no such host", "invalid_grant", etc.) sobre el comando ejecutado
+/// (que puede confundir al clasificador porque contiene flags como `--checksum`).
+fn command_error_message(e: &CommandError) -> String {
+    match e {
+        CommandError::Exited {
+            stderr: Some(s), ..
+        } if !s.trim().is_empty() => s.clone(),
+        CommandError::Exited {
+            stdout: Some(s), ..
+        } if !s.trim().is_empty() => s.clone(),
+        _ => e.command(),
     }
 }
 
@@ -310,7 +325,7 @@ pub fn write_game_list_to_cloud(config: &Config, game_list: &GameListFile) -> Re
         &[0],
         crate::prelude::Privacy::Public,
     )
-    .map_err(|e| SyncError::RcloneError(e.command()))?;
+    .map_err(|e| SyncError::RcloneError(command_error_message(&e)))?;
 
     let _ = std::fs::remove_file(&temp_path);
     Ok(())
@@ -364,7 +379,7 @@ pub fn upload_game(
         &[0],
         crate::prelude::Privacy::Public,
     )
-    .map_err(|e| SyncError::RcloneError(e.command()))?;
+    .map_err(|e| SyncError::RcloneError(command_error_message(&e)))?;
 
     game.last_synced_from = Some(device.id.clone());
     game.last_sync_time_utc = Some(Utc::now());
@@ -423,7 +438,7 @@ pub fn download_game(
         &[0],
         crate::prelude::Privacy::Public,
     )
-    .map_err(|e| SyncError::RcloneError(e.command()))?;
+    .map_err(|e| SyncError::RcloneError(command_error_message(&e)))?;
 
     if !zip_path.is_file() {
         return Err(SyncError::NoZipInCloud);
@@ -782,7 +797,7 @@ pub fn delete_game_zip_from_cloud(config: &Config, game_name: &str) -> Result<()
         &[0],
         crate::prelude::Privacy::Public,
     )
-    .map_err(|e| SyncError::RcloneError(e.command()))?;
+    .map_err(|e| SyncError::RcloneError(command_error_message(&e)))?;
 
     log::info!("[{}] Cloud ZIP deleted", game_name);
     Ok(())
