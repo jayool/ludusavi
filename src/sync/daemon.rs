@@ -82,18 +82,34 @@ pub fn start_daemon(stop_flag: Arc<AtomicBool>, _daemon_config: DaemonConfig) ->
 
 fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     let config = Config::load().map_err(|e| format!("Failed to load config: {e:?}"))?;
+    let app_dir = app_dir();
 
-    if !config.apps.rclone.is_valid() {
-        log::warn!("[sync daemon] Rclone is not configured, cannot start");
+    // Check profundo de rclone: ¿existe y funciona?
+    if !crate::sync::operations::rclone_available_deep(&config) {
+        log::warn!("[sync daemon] Rclone is not available (not installed or not working)");
+        write_rclone_missing_flag(&app_dir, true);
+        // Esperar en loop a que se arregle. Si el usuario instala rclone y
+        // reinicia el daemon (o cambia sync-games.json), se retomará.
+        let mut wait = 0u64;
+        while !stop_flag.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(1));
+            wait += 1;
+            if wait >= 60 {
+                log::info!("[sync daemon] Retrying rclone check...");
+                return run_daemon(stop_flag);
+            }
+        }
         return Ok(());
     }
+
+    // Rclone disponible — limpiar el flag por si estaba activo de una ejecución anterior
+    write_rclone_missing_flag(&app_dir, false);
 
     if config.cloud.remote.is_none() {
         log::warn!("[sync daemon] No cloud remote configured, cannot start");
         return Ok(());
     }
 
-    let app_dir = app_dir();
     let device = DeviceIdentity::load_or_create(&app_dir);
 
     log::info!("[sync daemon] Running as device: {} ({})", device.name, device.id);
@@ -471,6 +487,35 @@ fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
     let json = serde_json::json!({ "last_known_mod_time": mod_time });
     if let Ok(content) = serde_json::to_string(&json) {
         let _ = std::fs::write(path.as_std_path_buf().unwrap(), content);
+    }
+}
+
+/// Escribe el flag `rclone_missing` en daemon-status.json sin tocar el resto del fichero.
+/// La GUI lee este flag para mostrar un warning en ThisDevice y bloquear cambios a CLOUD/SYNC.
+fn write_rclone_missing_flag(app_dir: &StrictPath, missing: bool) {
+    let path = app_dir.joined("daemon-status.json");
+
+    // Leer contenido actual (si existe) para no perder los juegos ya escritos
+    let mut json = if let Some(content) = path.read() {
+        serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Asegurar que es un objeto
+    if !json.is_object() {
+        json = serde_json::json!({});
+    }
+
+    json.as_object_mut().unwrap().insert(
+        "rclone_missing".to_string(),
+        serde_json::Value::Bool(missing),
+    );
+
+    if let Ok(content) = serde_json::to_string(&json) {
+        if let Ok(path_buf) = path.as_std_path_buf() {
+            let _ = std::fs::write(path_buf, content);
+        }
     }
 }
 
