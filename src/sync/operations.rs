@@ -121,8 +121,22 @@ pub fn extract_zip_to_directory(
     zip_path: &StrictPath,
     output_directory: &str,
     force_last_write_time: Option<DateTime<Utc>>,
+    // Estos dos son opcionales para no romper llamadores que no necesitan safety backup:
+    app_dir: Option<&StrictPath>,
+    game_id: Option<&str>,
 ) -> Result<(), SyncError> {
     let output = std::path::Path::new(output_directory);
+    // Safety backup: crea un snapshot de los saves actuales antes de destruirlos.
+    // Silencioso ante errores — no debe bloquear la operación principal.
+    if let (Some(app_dir), Some(game_id)) = (app_dir, game_id) {
+        if let Err(e) = create_safety_backup(app_dir, game_id, output_directory) {
+            log::warn!(
+                "[safety-backup] Failed to create for {}: {} — continuing with operation",
+                game_id,
+                e
+            );
+        }
+    }
     let tmp = {
         let mut s = output_directory.to_string();
         s.push_str(".ludusavi-tmp");
@@ -445,7 +459,13 @@ pub fn download_game(
     }
 
     log::info!("[{}] Extracting zip to {}", game.name, local_path);
-    extract_zip_to_directory(&zip_path, &local_path, game.latest_write_time_utc)?;
+    extract_zip_to_directory(
+        &zip_path,
+        &local_path,
+        game.latest_write_time_utc,
+        Some(app_dir),
+        Some(&game.id),
+    )?;
 
     let _ = zip_path.remove();
 
@@ -1066,4 +1086,294 @@ pub fn classify_error(
             direction,
         )
     }
+}
+
+// ============================================================================
+// Safety backups — protegen contra pérdida de saves en operaciones destructivas
+// ============================================================================
+
+/// Tamaño máximo (bytes) a partir del cual saltamos el safety backup.
+/// 500 MB. Evita problemas con emuladores que manejan GBs de estado.
+const SAFETY_BACKUP_MAX_BYTES: u64 = 500 * 1024 * 1024;
+
+/// Sanitiza un game_id para que sea un nombre de directorio válido en Windows y Linux.
+/// Reemplaza caracteres problemáticos por guion bajo.
+fn sanitize_game_id_for_fs(game_id: &str) -> String {
+    game_id
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect()
+}
+
+/// Directorio raíz de safety backups dentro de app_dir.
+pub fn safety_backup_dir(app_dir: &StrictPath) -> StrictPath {
+    app_dir.joined("safety-backups")
+}
+
+/// Path del snapshot de un juego concreto.
+pub fn safety_backup_path_for_game(app_dir: &StrictPath, game_id: &str) -> StrictPath {
+    safety_backup_dir(app_dir)
+        .joined(&sanitize_game_id_for_fs(game_id))
+        .joined("snapshot")
+}
+
+/// Metadata de un safety backup existente.
+#[derive(Debug, Clone)]
+pub struct SafetyBackupInfo {
+    pub created_at: DateTime<Utc>,
+    pub size_bytes: u64,
+}
+
+/// Devuelve info del safety backup de un juego, si existe.
+pub fn get_safety_backup_info(app_dir: &StrictPath, game_id: &str) -> Option<SafetyBackupInfo> {
+    let snapshot = safety_backup_path_for_game(app_dir, game_id);
+    let snapshot_path = snapshot.as_std_path_buf().ok()?;
+
+    if !snapshot_path.is_dir() {
+        return None;
+    }
+
+    // created_at: mtime del propio directorio snapshot
+    let meta = std::fs::metadata(&snapshot_path).ok()?;
+    let created_at: DateTime<Utc> = meta.modified().ok()?.into();
+
+    // size_bytes: suma de todos los ficheros del snapshot
+    let size_bytes = walkdir::WalkDir::new(&snapshot_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum();
+
+    Some(SafetyBackupInfo { created_at, size_bytes })
+}
+
+/// Calcula el tamaño total (bytes) de un directorio. Cero si no existe.
+fn directory_size_bytes(path: &std::path::Path) -> u64 {
+    if !path.is_dir() {
+        return 0;
+    }
+    walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// Comprueba si un directorio está vacío (o no existe).
+fn directory_is_empty_or_missing(path: &std::path::Path) -> bool {
+    if !path.is_dir() {
+        return true;
+    }
+    match std::fs::read_dir(path) {
+        Ok(mut iter) => iter.next().is_none(),
+        Err(_) => true,
+    }
+}
+
+/// Copia recursiva de un directorio a otro. Sobrescribe si el destino existe.
+/// Implementación simple para evitar dependencia adicional.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+
+    for entry in walkdir::WalkDir::new(src).follow_links(false) {
+        let entry = entry.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let rel = entry.path().strip_prefix(src).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+        })?;
+
+        let target = dst.join(rel);
+
+        if entry.file_type().is_dir() {
+            std::fs::create_dir_all(&target)?;
+        } else if entry.file_type().is_file() {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(entry.path(), &target)?;
+        }
+        // Symlinks y otros tipos: los ignoramos. Los saves no suelen tenerlos.
+    }
+
+    Ok(())
+}
+
+/// Crea un safety backup del directorio de saves local antes de una operación destructiva.
+///
+/// Condiciones de skip (devuelven Ok(()) sin error):
+/// - Flag `safety_backups_enabled` desactivado en sync-games.json.
+/// - El directorio de saves no existe o está vacío (nada que proteger).
+/// - El directorio pesa más de SAFETY_BACKUP_MAX_BYTES (500 MB).
+///
+/// Si un snapshot anterior existe, se sobrescribe (mantenemos solo 1).
+pub fn create_safety_backup(
+    app_dir: &StrictPath,
+    game_id: &str,
+    save_path: &str,
+) -> Result<(), SyncError> {
+    // Cargar sync-games.json para ver si el flag está activo.
+    // Nota: usamos SyncGamesConfig::load() porque es el único sitio donde vive el flag global.
+    let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
+    if !sync_config.safety_backups_enabled() {
+        log::debug!("[safety-backup] Disabled by config, skipping for {}", game_id);
+        return Ok(());
+    }
+
+    let src = std::path::Path::new(save_path);
+
+    // Directorio vacío o inexistente: nada que proteger
+    if directory_is_empty_or_missing(src) {
+        log::debug!(
+            "[safety-backup] Source empty/missing, skipping for {}: {}",
+            game_id,
+            save_path
+        );
+        return Ok(());
+    }
+
+    // Tamaño excesivo: saltar con warning
+    let size = directory_size_bytes(src);
+    if size > SAFETY_BACKUP_MAX_BYTES {
+        log::warn!(
+            "[safety-backup] Skipping {} ({}MB > {}MB limit)",
+            game_id,
+            size / (1024 * 1024),
+            SAFETY_BACKUP_MAX_BYTES / (1024 * 1024)
+        );
+        return Ok(());
+    }
+
+    let snapshot = safety_backup_path_for_game(app_dir, game_id);
+    let snapshot_path = snapshot
+        .as_std_path_buf()
+        .map_err(|e| SyncError::IoError(e.to_string()))?;
+
+    // Borrar snapshot anterior si existe (mantenemos solo 1)
+    if snapshot_path.exists() {
+        std::fs::remove_dir_all(&snapshot_path)
+            .map_err(|e| SyncError::IoError(format!("Failed to clean previous safety backup: {e}")))?;
+    }
+
+    let started = std::time::Instant::now();
+    copy_dir_recursive(src, &snapshot_path)
+        .map_err(|e| SyncError::IoError(format!("Failed to create safety backup: {e}")))?;
+
+    log::info!(
+        "[safety-backup] Created for {} ({}KB in {}ms)",
+        game_id,
+        size / 1024,
+        started.elapsed().as_millis()
+    );
+
+    Ok(())
+}
+
+/// Restaura un safety backup al directorio de saves original.
+/// Usa el mismo swap atómico que extract_zip_to_directory para evitar estados inconsistentes.
+pub fn restore_safety_backup(
+    app_dir: &StrictPath,
+    game_id: &str,
+    save_path: &str,
+) -> Result<(), SyncError> {
+    let snapshot = safety_backup_path_for_game(app_dir, game_id);
+    let snapshot_path = snapshot
+        .as_std_path_buf()
+        .map_err(|e| SyncError::IoError(e.to_string()))?;
+
+    if !snapshot_path.is_dir() {
+        return Err(SyncError::IoError(format!(
+            "No safety backup found for {}",
+            game_id
+        )));
+    }
+
+    let output = std::path::Path::new(save_path);
+    let tmp = {
+        let mut s = save_path.to_string();
+        s.push_str(".ludusavi-tmp");
+        std::path::PathBuf::from(s)
+    };
+    let old = {
+        let mut s = save_path.to_string();
+        s.push_str(".ludusavi-old");
+        std::path::PathBuf::from(s)
+    };
+
+    // Limpiar residuos
+    if tmp.exists() {
+        std::fs::remove_dir_all(&tmp).map_err(|e| SyncError::IoError(e.to_string()))?;
+    }
+    if old.exists() {
+        log::warn!(
+            "[safety-backup] Leftover .ludusavi-old detected during restore, removing: {:?}",
+            old
+        );
+        std::fs::remove_dir_all(&old).map_err(|e| SyncError::IoError(e.to_string()))?;
+    }
+
+    // Copiar snapshot a tmp
+    copy_dir_recursive(&snapshot_path, &tmp)
+        .map_err(|e| SyncError::IoError(format!("Failed to stage safety backup: {e}")))?;
+
+    // Swap atómico
+    if output.exists() {
+        if let Err(e) = std::fs::rename(output, &old) {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(SyncError::IoError(format!(
+                "Failed to move current saves aside: {e}"
+            )));
+        }
+    }
+
+    if let Err(e) = std::fs::rename(&tmp, output) {
+        // Intentar restaurar
+        if old.exists() {
+            let _ = std::fs::rename(&old, output);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(SyncError::IoError(format!(
+            "Failed to swap safety backup into place: {e}"
+        )));
+    }
+
+    if old.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&old) {
+            log::warn!(
+                "[safety-backup] Restore succeeded but could not clean up old directory: {e}"
+            );
+        }
+    }
+
+    log::info!("[safety-backup] Restored for {}", game_id);
+    Ok(())
+}
+
+/// Borra el safety backup de un juego (y su directorio padre si queda vacío).
+pub fn delete_safety_backup(app_dir: &StrictPath, game_id: &str) -> Result<(), SyncError> {
+    let snapshot = safety_backup_path_for_game(app_dir, game_id);
+    let snapshot_path = snapshot
+        .as_std_path_buf()
+        .map_err(|e| SyncError::IoError(e.to_string()))?;
+
+    if snapshot_path.is_dir() {
+        std::fs::remove_dir_all(&snapshot_path)
+            .map_err(|e| SyncError::IoError(format!("Failed to delete safety backup: {e}")))?;
+    }
+
+    // Intentar borrar el directorio del juego si queda vacío
+    if let Some(game_dir) = snapshot_path.parent() {
+        if game_dir.is_dir() {
+            let _ = std::fs::remove_dir(game_dir); // silencioso: si no está vacío, no pasa nada
+        }
+    }
+
+    log::info!("[safety-backup] Deleted for {}", game_id);
+    Ok(())
 }
