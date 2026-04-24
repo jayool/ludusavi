@@ -356,6 +356,8 @@ pub fn other<'a>(
     let is_rclone_valid = config.apps.rclone.is_valid();
     let is_cloud_configured = config.cloud.remote.is_some();
     let is_cloud_path_valid = crate::cloud::validate_cloud_path(&config.cloud.path).is_ok();
+    let sync_games_config = ludusavi::sync::sync_config::SyncGamesConfig::load();
+    let safety_backups_enabled = sync_games_config.safety_backups_enabled();
 
     let header = Container::new(
         Row::new()
@@ -509,6 +511,41 @@ pub fn other<'a>(
     .padding(16)
     .class(style::Container::GamesTable);
 
+    // --- SECCIÓN SAFETY ---
+    let safety_card = Container::new(
+        Column::new()
+            .spacing(10)
+            .push(text("SAFETY").size(13).class(style::Text::Muted))
+            .push(
+                text("Before overwriting your saves on download or restore, keep a local copy you can revert to. Applies to games under 500 MB.")
+                    .size(12)
+                    .class(style::Text::Muted),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Button::new(text(if safety_backups_enabled { "ON" } else { "OFF" }).size(12))
+                            .padding([6, 14])
+                            .class(if safety_backups_enabled {
+                                style::Button::Primary
+                            } else {
+                                style::Button::Ghost
+                            })
+                            .on_press(Message::ToggleSafetyBackupsEnabled(!safety_backups_enabled)),
+                    )
+                    .push(
+                        text("Safety backups before destructive operations")
+                            .size(12)
+                            .class(style::Text::Muted),
+                    ),
+            ),
+    )
+    .width(Length::Fill)
+    .padding(16)
+    .class(style::Container::GamesTable);
+    
     // --- SECCIÓN SYNC ---
     let sync_card = Container::new(
         Column::new()
@@ -576,6 +613,7 @@ pub fn other<'a>(
                         .push(sync_card)
                         .push(cloud_card)
                         .push(daemon_card)
+                        .push(safety_card)
                         .push(roots_card)
                         .push(manifest_card),
                 )
