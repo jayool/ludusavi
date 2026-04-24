@@ -4763,79 +4763,210 @@ impl App {
                     && !matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Sync)
                     && !has_pending_mode_change;
                 let status_card = {
-                    let last_sync_str = meta
-                        .and_then(|m| m.last_sync_time_utc)
-                        .map(|t| {
-                            let now = chrono::Utc::now();
-                            let diff = now.signed_duration_since(t);
-                            if diff.num_minutes() < 1 {
-                                "just now".to_string()
-                            } else if diff.num_hours() < 1 {
-                                format!("{} min ago", diff.num_minutes())
-                            } else if diff.num_hours() < 24 {
-                                format!("{} hours ago", diff.num_hours())
-                            } else {
-                                format!("{} days ago", diff.num_days())
-                            }
-                        });
+                    // Si hay un error persistido, construir card de error en lugar de status normal
+                    let error_info = self.sync_status.get(&game_name)
+                        .filter(|i| i.status == "error" && i.error_category.is_some());
 
-                    let last_sync_from = meta
-                        .and_then(|m| m.last_synced_from.as_deref())
-                        .map(|id| self.game_list.get_device_name(id).to_string());
+                    if let Some(info) = error_info {
+                        use ludusavi::sync::operations::{ErrorCategory, OperationDirection};
 
-                    let (status_text, status_detail) = match saved_mode {
-                        ludusavi::sync::sync_config::SaveMode::None => (
-                            "— Not managed",
-                            "This game is not managed by Ludusavi Sync.".to_string(),
-                        ),
-                        ludusavi::sync::sync_config::SaveMode::Local => {
-                            match status {
-                                "synced" => ("💾 Backed up", "Save files are backed up locally.".to_string()),
-                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
-                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists. Restore to get the latest saves.".to_string()),
-                                _ => ("💾 Local", "Local backup mode.".to_string()),
-                            }
-                        }
-                        ludusavi::sync::sync_config::SaveMode::Cloud => {
-                            match status {
-                                "synced" => ("☁ Backed up", format!("Last backed up{}{}.",
-                                    last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
-                                    last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
-                                )),
-                                "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
-                                "pending_restore" => ("⚠ Pending restore", "A newer backup exists in the cloud. Restore to get the latest saves.".to_string()),
-                                _ => ("☁ Cloud", "Never backed up.".to_string()),
-                            }
-                        }
-                        ludusavi::sync::sync_config::SaveMode::Sync => {
-                            match status {
-                                "synced" => ("✓ Up to date", format!("Last synced{}{}.",
-                                    last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
-                                    last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
-                                )),
-                                "pending_backup" => ("⏳ Pending upload", "Local saves are newer than the cloud. Syncing soon.".to_string()),
-                                "pending_restore" => ("⬇ Pending download", "Cloud saves are newer than local. Syncing soon.".to_string()),
-                                _ => ("⚠ Never synced", "This game has not been synced yet. Run a sync to get started.".to_string()),
-                            }
-                        }
-                    };
+                        let category = info.error_category.clone().unwrap_or(ErrorCategory::Unknown);
+                        let direction = info.error_direction.clone().unwrap_or(OperationDirection::Upload);
+                        let message = info.error_message.clone().unwrap_or_default();
 
-                    Container::new(
-                        Column::new()
-                            .spacing(6)
-                            .push(crate::gui::widget::text(status_text).size(13))
-                            .push(crate::gui::widget::text(status_detail).size(12).class(style::Text::Muted))
-                            .push_if(meta.map(|m| m.storage_bytes > 0).unwrap_or(false), || {
-                                crate::gui::widget::text(
-                                    TRANSLATOR.adjusted_size(meta.unwrap().storage_bytes)
+                        // Título según dirección
+                        let title = match direction {
+                            OperationDirection::Upload => "⚠ Upload failed",
+                            OperationDirection::Download => "⚠ Download failed",
+                            OperationDirection::Backup => "⚠ Backup failed",
+                            OperationDirection::Restore => "⚠ Restore failed",
+                        };
+
+                        // Determinar qué botones mostrar según categoría.
+                        // Retry solo se muestra si el modo actual soporta SyncNow
+                        // (SYNC siempre, LOCAL+auto_on, CLOUD+auto_on).
+                        let mode_supports_sync_now = matches!(
+                            saved_mode,
+                            ludusavi::sync::sync_config::SaveMode::Sync
+                        ) || (
+                            matches!(
+                                saved_mode,
+                                ludusavi::sync::sync_config::SaveMode::Local
+                                | ludusavi::sync::sync_config::SaveMode::Cloud
+                            ) && self.sync_games_config.get_auto_sync(&game_name)
+                        );
+
+                        // Tipo de botón primario/secundario según categoría.
+                        // None significa "no mostrar botón de acción principal".
+                        #[derive(PartialEq, Eq)]
+                        enum ActionButton {
+                            Retry,
+                            ReconfigureCloud,
+                            OpenSettings,
+                            OpenLogs,
+                            None,
+                        }
+
+                        let primary_action = match category {
+                            ErrorCategory::Authentication => ActionButton::ReconfigureCloud,
+                            ErrorCategory::Config => ActionButton::OpenSettings,
+                            ErrorCategory::RateLimit => ActionButton::None,
+                            ErrorCategory::Unknown => {
+                                if mode_supports_sync_now {
+                                    ActionButton::Retry
+                                } else {
+                                    ActionButton::OpenLogs
+                                }
+                            }
+                            // Network, StorageFull, Corruption, Missing, Permission
+                            _ => {
+                                if mode_supports_sync_now {
+                                    ActionButton::Retry
+                                } else {
+                                    ActionButton::OpenLogs
+                                }
+                            }
+                        };
+
+                        // Botón secundario (solo para Unknown, para poder ver logs si Retry no ayuda)
+                        let show_secondary_logs = category == ErrorCategory::Unknown
+                            && primary_action == ActionButton::Retry;
+
+                        let g = game_name.clone();
+                        let g2 = game_name.clone();
+
+                        let buttons_row = Row::new()
+                            .spacing(8)
+                            .push_if(primary_action == ActionButton::Retry, || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Retry").size(12)
                                 )
-                                .size(11)
-                                .class(style::Text::Muted)
-                            }),
-                    )
-                    .width(Length::Fill)
-                    .padding(14)
-                    .class(style::Container::GameListEntry)
+                                .padding([6, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::SyncNow(g.clone()))
+                            })
+                            .push_if(primary_action == ActionButton::ReconfigureCloud, || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Reconfigure cloud").size(12)
+                                )
+                                .padding([6, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::SwitchScreen(Screen::Other))
+                            })
+                            .push_if(primary_action == ActionButton::OpenSettings, || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Open Settings").size(12)
+                                )
+                                .padding([6, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::SwitchScreen(Screen::Other))
+                            })
+                            .push_if(primary_action == ActionButton::OpenLogs, || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Open logs").size(12)
+                                )
+                                .padding([6, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::OpenDir { path: crate::prelude::app_dir() })
+                            })
+                            .push_if(show_secondary_logs, || {
+                                crate::gui::widget::Button::new(
+                                    crate::gui::widget::text("Open logs").size(12)
+                                )
+                                .padding([6, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::OpenDir { path: crate::prelude::app_dir() })
+                            });
+
+                        Container::new(
+                            Column::new()
+                                .spacing(8)
+                                .push(crate::gui::widget::text(title).size(13))
+                                .push(
+                                    crate::gui::widget::text(message.clone())
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                )
+                                .push_if(primary_action != ActionButton::None, || buttons_row)
+                        )
+                        .width(Length::Fill)
+                        .padding(14)
+                        .class(style::Container::GameListEntry)
+                    } else {
+                        let last_sync_str = meta
+                            .and_then(|m| m.last_sync_time_utc)
+                            .map(|t| {
+                                let now = chrono::Utc::now();
+                                let diff = now.signed_duration_since(t);
+                                if diff.num_minutes() < 1 {
+                                    "just now".to_string()
+                                } else if diff.num_hours() < 1 {
+                                    format!("{} min ago", diff.num_minutes())
+                                } else if diff.num_hours() < 24 {
+                                    format!("{} hours ago", diff.num_hours())
+                                } else {
+                                    format!("{} days ago", diff.num_days())
+                                }
+                            });
+
+                        let last_sync_from = meta
+                            .and_then(|m| m.last_synced_from.as_deref())
+                            .map(|id| self.game_list.get_device_name(id).to_string());
+
+                        let (status_text, status_detail) = match saved_mode {
+                            ludusavi::sync::sync_config::SaveMode::None => (
+                                "— Not managed",
+                                "This game is not managed by Ludusavi Sync.".to_string(),
+                            ),
+                            ludusavi::sync::sync_config::SaveMode::Local => {
+                                match status {
+                                    "synced" => ("💾 Backed up", "Save files are backed up locally.".to_string()),
+                                    "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
+                                    "pending_restore" => ("⚠ Pending restore", "A newer backup exists. Restore to get the latest saves.".to_string()),
+                                    _ => ("💾 Local", "Local backup mode.".to_string()),
+                                }
+                            }
+                            ludusavi::sync::sync_config::SaveMode::Cloud => {
+                                match status {
+                                    "synced" => ("☁ Backed up", format!("Last backed up{}{}.",
+                                        last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
+                                        last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
+                                    )),
+                                    "pending_backup" => ("⏳ Pending backup", "Save files have changed since the last backup.".to_string()),
+                                    "pending_restore" => ("⚠ Pending restore", "A newer backup exists in the cloud. Restore to get the latest saves.".to_string()),
+                                    _ => ("☁ Cloud", "Never backed up.".to_string()),
+                                }
+                            }
+                            ludusavi::sync::sync_config::SaveMode::Sync => {
+                                match status {
+                                    "synced" => ("✓ Up to date", format!("Last synced{}{}.",
+                                        last_sync_str.as_deref().map(|w| format!(" {}", w)).unwrap_or_default(),
+                                        last_sync_from.as_deref().map(|f| format!(" from {}", f)).unwrap_or_default(),
+                                    )),
+                                    "pending_backup" => ("⏳ Pending upload", "Local saves are newer than the cloud. Syncing soon.".to_string()),
+                                    "pending_restore" => ("⬇ Pending download", "Cloud saves are newer than local. Syncing soon.".to_string()),
+                                    _ => ("⚠ Never synced", "This game has not been synced yet. Run a sync to get started.".to_string()),
+                                }
+                            }
+                        };
+
+                        Container::new(
+                            Column::new()
+                                .spacing(6)
+                                .push(crate::gui::widget::text(status_text).size(13))
+                                .push(crate::gui::widget::text(status_detail).size(12).class(style::Text::Muted))
+                                .push_if(meta.map(|m| m.storage_bytes > 0).unwrap_or(false), || {
+                                    crate::gui::widget::text(
+                                        TRANSLATOR.adjusted_size(meta.unwrap().storage_bytes)
+                                    )
+                                    .size(11)
+                                    .class(style::Text::Muted)
+                                }),
+                        )
+                        .width(Length::Fill)
+                        .padding(14)
+                        .class(style::Container::GameListEntry)
+                    }
                 };
 
                 let game_for_mode = game_name.clone();
