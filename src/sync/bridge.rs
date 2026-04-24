@@ -58,7 +58,7 @@ pub fn register_game_after_backup(config: &Config, scan_info: &ScanInfo) {
     match game_list.get_game_mut(&game_id) {
         Some(existing) => {
             // Siempre actualizamos la ruta y los metadatos en cada backup
-            existing.path_by_device.insert(device.id.clone(), root_path);
+            existing.set_path(device.id.clone(), root_path);
             existing.latest_write_time_utc = scan_result.latest_write_time_utc;
             existing.storage_bytes = scan_result.storage_bytes;
 
@@ -76,7 +76,7 @@ pub fn register_game_after_backup(config: &Config, scan_info: &ScanInfo) {
             );
 
             let mut game = GameMetaData::new(game_id.clone(), scan_info.game_name.clone());
-            game.path_by_device.insert(device.id.clone(), root_path);
+            game.set_path(device.id.clone(), root_path);
             game.latest_write_time_utc = scan_result.latest_write_time_utc;
             game.storage_bytes = scan_result.storage_bytes;
             game_list.upsert_game(game);
