@@ -449,35 +449,6 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             debounce_state.lock().unwrap().remove(game_id);
         }
 
-            // CLOUD y SYNC — requieren game_list
-            if let Some(game) = game_list.get_game_mut(game_id) {
-                let local_path = game.path_by_device.get(&device.id).cloned();
-                let scan = DirectoryScanResult::scan(local_path.as_deref());
-                let status = determine_sync_type(game, &scan);
-                if status != SyncStatus::RequiresUpload {
-                    log::info!("[sync daemon] Skipping upload for {} — already in sync", game.name);
-                    debounce_state.lock().unwrap().remove(game_id);
-                    continue;
-                }
-                log::info!("[sync daemon] Uploading: {}", game.name);
-                match upload_game(&config, &app_dir, &device, game) {
-                    Ok(_) => {
-                        log::info!("[sync daemon] Upload complete: {}", game.name);
-                        any_changes = true;
-                        error_games.remove(game_id);
-                    }
-                    Err(e) => {
-                        log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
-                        error_games.insert(game_id.clone(), e.to_string());
-                    }
-                }
-            } else {
-                log::warn!("[sync daemon] Game not found in cloud list: {}", game_id);
-            }
-
-            debounce_state.lock().unwrap().remove(game_id);
-        }
-
         if any_changes {
             if let Err(e) = write_game_list_to_cloud(&config, &game_list) {
                 log::error!("[sync daemon] Failed to write game list: {e}");
