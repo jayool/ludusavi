@@ -88,6 +88,16 @@ pub struct OperationStep {
     task: Task<Message>,
 }
 
+/// Estado de sync de un juego, leído de daemon-status.json.
+/// Incluye campos opcionales de error clasificado cuando status == "error".
+#[derive(Clone, Debug, Default)]
+pub struct GameStatusInfo {
+    pub status: String,
+    pub error_category: Option<ludusavi::sync::operations::ErrorCategory>,
+    pub error_direction: Option<ludusavi::sync::operations::OperationDirection>,
+    pub error_message: Option<String>,
+}
+
 #[derive(Default)]
 pub struct App {
     flags: Flags,
@@ -117,7 +127,7 @@ pub struct App {
     modifiers: keyboard::Modifiers,
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
-    sync_status: std::collections::HashMap<String, String>,
+    sync_status: std::collections::HashMap<String, GameStatusInfo>,
     games_search: String,
     pending_game_detail: Option<ludusavi::sync::sync_config::GameSyncConfig>,
     pending_game_detail_name: Option<String>,
@@ -3840,8 +3850,8 @@ impl App {
             let running = system.processes_by_exact_name(daemon_name.as_ref()).next().is_some();
 
             let sync_status = {
-                // Leer daemon-status.json
-                let mut status_map: std::collections::HashMap<String, String> = {
+                // Leer daemon-status.json con los campos de error opcionales
+                let mut status_map: std::collections::HashMap<String, GameStatusInfo> = {
                     let path = crate::prelude::app_dir().joined("daemon-status.json");
                     if let Some(content) = path.read() {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -3854,7 +3864,24 @@ impl App {
                                                 .and_then(|s| s.as_str())
                                                 .unwrap_or("")
                                                 .to_string();
-                                            (k.clone(), status)
+                                            let error_category = v.get("error_category")
+                                                .and_then(|s| s.as_str())
+                                                .map(ludusavi::sync::operations::ErrorCategory::from_str);
+                                            let error_direction = v.get("error_direction")
+                                                .and_then(|s| s.as_str())
+                                                .map(ludusavi::sync::operations::OperationDirection::from_str);
+                                            let error_message = v.get("error_message")
+                                                .and_then(|s| s.as_str())
+                                                .map(|s| s.to_string());
+                                            (
+                                                k.clone(),
+                                                GameStatusInfo {
+                                                    status,
+                                                    error_category,
+                                                    error_direction,
+                                                    error_message,
+                                                },
+                                            )
                                         })
                                         .collect()
                                 })
@@ -3867,7 +3894,8 @@ impl App {
                     }
                 };
 
-                // Para juegos en LOCAL y NONE, calcular el status directamente sin depender del daemon
+                // Para juegos en LOCAL y NONE, calcular el status directamente sin depender del daemon.
+                // Sólo pisamos el status si no hay error registrado — un error del daemon tiene prioridad.
                 let sync_config = ludusavi::sync::sync_config::SyncGamesConfig::load();
                 let config = crate::resource::config::Config::load().unwrap_or_default();
 
@@ -3876,9 +3904,16 @@ impl App {
                     .map(|m| m.with_extensions(&config));
 
                 for (game_name, game_cfg) in &sync_config.games {
+                    // Si ya hay un error registrado, no sobrescribir
+                    if status_map.get(game_name).map(|i| i.status == "error").unwrap_or(false) {
+                        continue;
+                    }
                     match game_cfg.mode {
                         ludusavi::sync::sync_config::SaveMode::None => {
-                            status_map.insert(game_name.clone(), "not_managed".to_string());
+                            status_map.insert(game_name.clone(), GameStatusInfo {
+                                status: "not_managed".to_string(),
+                                ..Default::default()
+                            });
                         }
                         ludusavi::sync::sync_config::SaveMode::Local => {
                             let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
@@ -3907,7 +3942,10 @@ impl App {
                                     }
                                 }
                             };
-                            status_map.insert(game_name.clone(), status.to_string());
+                            status_map.insert(game_name.clone(), GameStatusInfo {
+                                status: status.to_string(),
+                                ..Default::default()
+                            });
                         }
                         _ => {} // CLOUD y SYNC los maneja el daemon
                     }
@@ -4140,7 +4178,7 @@ impl App {
                             continue;
                         }
                         let mode = sync_config.get_mode(name);
-                        let status = sync_status.get(name).map(|s| s.as_str()).unwrap_or("");
+                        let status = sync_status.get(name).map(|i| i.status.as_str()).unwrap_or("");
                         let meta = game_list.get_game(name);
 
                         // Status dot color
@@ -4363,7 +4401,7 @@ impl App {
                         }
 
                         let mode = sync_config.get_mode(name);
-                        let status = sync_status.get(name).map(|s| s.as_str()).unwrap_or("");
+                        let status = sync_status.get(name).map(|i| i.status.as_str()).unwrap_or("");
 
                         let dot_class = match status {
                             "synced" => style::Container::DaemonDotActive,
@@ -4525,7 +4563,7 @@ impl App {
                     .filter(|_| self.pending_game_detail_name.as_deref() == Some(&game_name))
                     .map(|p| &p.mode)
                     .unwrap_or_else(|| self.sync_games_config.get_mode(&game_name));
-                let status = self.sync_status.get(&game_name).map(|s| s.as_str()).unwrap_or("");
+                let status = self.sync_status.get(&game_name).map(|i| i.status.as_str()).unwrap_or("");
                 let device_id = ludusavi::sync::device::DeviceIdentity::load_or_create(&crate::prelude::app_dir()).id;
 
                 let auto_sync_current = self.pending_game_detail
