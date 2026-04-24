@@ -925,152 +925,138 @@ impl OperationDirection {
 /// Para `RcloneError` intenta extraer patrones del comando/stderr.
 /// Actualmente `RcloneError` solo contiene el comando ejecutado (no el stderr limpio),
 /// así que los patrones se aplican sobre esa string.
-pub fn classify_error(error: &SyncError, direction: OperationDirection) -> (ErrorCategory, String, OperationDirection) {
-    match error {
-        SyncError::NoLocalPath => (
-            ErrorCategory::Config,
-            "No local save path registered for this device.".to_string(),
+pub fn classify_error(
+    error: &SyncError,
+    direction: OperationDirection,
+) -> (ErrorCategory, String, OperationDirection) {
+    let raw = match error {
+        SyncError::RcloneError(s) => s.clone(),
+        SyncError::IoError(s) => s.clone(),
+        SyncError::ZipError(s) => s.clone(),
+        SyncError::NoLocalPath => "No local path configured for this game on this device.".to_string(),
+        SyncError::NoRcloneConfig => {
+            return (
+                ErrorCategory::Config,
+                "Rclone is not configured.".to_string(),
+                direction,
+            );
+        }
+    };
+    let lower = raw.to_lowercase();
+
+    // Authentication: problemas de credenciales OAuth.
+    // invalid_grant = token refresh fallido; invalid_client = client ID mal;
+    // redirect_uri_mismatch = configuración de OAuth mal en el proveedor.
+    if lower.contains("invalid_grant")
+        || lower.contains("invalid_client")
+        || lower.contains("unauthorized")
+        || lower.contains("token expired")
+        || lower.contains("oauth2")
+        || lower.contains("access_denied")
+        || lower.contains("authentication")
+        || lower.contains("redirect_uri_mismatch")
+        || lower.contains("401")
+    {
+        (
+            ErrorCategory::Authentication,
+            "Cloud credentials expired or invalid. Please re-authorize rclone.".to_string(),
             direction,
-        ),
-        SyncError::NoRcloneConfig => (
-            ErrorCategory::Config,
-            "Rclone is not configured. Open Settings to configure cloud storage.".to_string(),
+        )
+    }
+    // StorageFull: espacio agotado, tanto en cloud como en disco local.
+    else if lower.contains("storagequotaexceeded")
+        || lower.contains("quota exceeded")
+        || lower.contains("insufficient storage")
+        || lower.contains("no space left")
+        || lower.contains("not enough space on the disk")
+        || lower.contains("disk full")
+    {
+        (
+            ErrorCategory::StorageFull,
+            "Storage is full. Free up space or upgrade your plan.".to_string(),
             direction,
-        ),
-        SyncError::NoZipInCloud => (
+        )
+    }
+    // RateLimit: límites de API (Google Drive tiene varios, nombramos los comunes).
+    else if lower.contains("ratelimitexceeded")
+        || lower.contains("rate limit")
+        || lower.contains("too many requests")
+        || lower.contains("dailylimitexceeded")
+        || lower.contains("sharingratelimit")
+        || lower.contains("429")
+    {
+        (
+            ErrorCategory::RateLimit,
+            "Too many requests to the cloud. Will retry automatically later.".to_string(),
+            direction,
+        )
+    }
+    // Network: problemas de conectividad. Se evalúa ANTES que Missing y Permission
+    // porque `404` y `403` aparecen a veces en errores de resolución DNS/TLS.
+    else if lower.contains("no such host")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("network is unreachable")
+        || lower.contains("timed out")
+        || lower.contains("i/o timeout")
+        || lower.contains("tls handshake")
+        || lower.contains("temporary failure in name resolution")
+        || lower.contains("dial tcp")
+        || lower.contains("broken pipe")
+    {
+        (
+            ErrorCategory::Network,
+            "Cannot reach the cloud. Check your internet connection.".to_string(),
+            direction,
+        )
+    }
+    // Permission: acceso denegado (local o cloud). Google Drive devuelve
+    // `appNotAuthorizedToFile` y `cannotDownloadAbusiveFile`.
+    else if lower.contains("permission denied")
+        || lower.contains("access is denied")
+        || lower.contains("access denied")
+        || lower.contains("forbidden")
+        || lower.contains("appnotauthorized")
+        || lower.contains("cannot access the file")
+        || lower.contains("403")
+    {
+        (
+            ErrorCategory::Permission,
+            "Access denied. Check file/folder permissions.".to_string(),
+            direction,
+        )
+    }
+    // Missing: fichero o path no existe.
+    else if lower.contains("object not found")
+        || lower.contains("file not found")
+        || lower.contains("no such file")
+        || lower.contains("404")
+    {
+        (
             ErrorCategory::Missing,
-            "No backup found in the cloud for this game.".to_string(),
+            "Expected file was not found in the cloud.".to_string(),
             direction,
-        ),
-        SyncError::ZipError(msg) => (
+        )
+    }
+    // Corruption: datos corruptos reales (hash real no coincide, fichero dañado).
+    // Nota: no matcheamos "checksum" a secas — es demasiado ambiguo, aparece en
+    // flags legítimos de rclone y en mensajes informativos.
+    else if lower.contains("hash differ")
+        || lower.contains("corrupt")
+        || lower.contains("integrity")
+    {
+        (
             ErrorCategory::Corruption,
-            format!("Archive error: {msg}"),
+            "Data integrity check failed. The file may have been corrupted during transfer.".to_string(),
             direction,
-        ),
-        SyncError::IoError(msg) => {
-            let lower = msg.to_lowercase();
-            let category = if lower.contains("no space") || lower.contains("disk full") {
-                ErrorCategory::StorageFull
-            } else if lower.contains("permission denied") || lower.contains("access is denied") || lower.contains("access denied") {
-                ErrorCategory::Permission
-            } else if lower.contains("not found") || lower.contains("no such file") || lower.contains("does not exist") {
-                ErrorCategory::Missing
-            } else {
-                ErrorCategory::Unknown
-            };
-            (category, msg.clone(), direction)
-        }
-        SyncError::RcloneError(cmd) => {
-            let lower = cmd.to_lowercase();
-
-            // Patrones de autenticación
-            if lower.contains("invalid_grant")
-                || lower.contains("unauthorized")
-                || lower.contains("401")
-                || lower.contains("token expired")
-                || lower.contains("invalid credentials")
-            {
-                return (
-                    ErrorCategory::Authentication,
-                    "Cloud authentication expired. Reconfigure the cloud remote in Settings.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de cuota llena
-            if lower.contains("quota")
-                || lower.contains("insufficient storage")
-                || lower.contains("storagequotaexceeded")
-                || lower.contains("no space left")
-            {
-                return (
-                    ErrorCategory::StorageFull,
-                    "Cloud storage quota exceeded. Free up space or upgrade your plan.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de rate limit
-            if lower.contains("rate limit")
-                || lower.contains("429")
-                || lower.contains("too many requests")
-                || lower.contains("user rate limit exceeded")
-            {
-                return (
-                    ErrorCategory::RateLimit,
-                    "Cloud provider is rate-limiting requests. Will retry automatically.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de red
-            if lower.contains("no such host")
-                || lower.contains("network unreachable")
-                || lower.contains("connection refused")
-                || lower.contains("dial tcp")
-                || lower.contains("timeout")
-                || lower.contains("i/o timeout")
-            {
-                return (
-                    ErrorCategory::Network,
-                    "Cannot reach the cloud. Check your internet connection.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de corrupción / hash mismatch
-            if lower.contains("hash differ")
-                || lower.contains("checksum")
-                || lower.contains("corrupt")
-                || lower.contains("integrity")
-            {
-                return (
-                    ErrorCategory::Corruption,
-                    "Data integrity check failed. The file may have been corrupted during transfer.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de fichero no encontrado
-            if lower.contains("object not found")
-                || lower.contains("file not found")
-                || lower.contains("404")
-                || lower.contains("directory not found")
-            {
-                return (
-                    ErrorCategory::Missing,
-                    "File not found in the cloud.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de permisos
-            if lower.contains("permission denied")
-                || lower.contains("access denied")
-                || lower.contains("403")
-                || lower.contains("forbidden")
-            {
-                return (
-                    ErrorCategory::Permission,
-                    "Access denied by the cloud provider.".to_string(),
-                    direction,
-                );
-            }
-
-            // Patrones de rclone no encontrado
-            if lower.contains("program not found")
-                || lower.contains("no such file or directory")
-                || lower.contains("executable not found")
-            {
-                return (
-                    ErrorCategory::Config,
-                    "Rclone is not installed or not found at the configured path.".to_string(),
-                    direction,
-                );
-            }
-
-            // Fallback: mensaje raw
-            (ErrorCategory::Unknown, cmd.clone(), direction)
-        }
+        )
+    }
+    // Unknown: fallback. Muestra la primera línea del error real.
+    else {
+        (
+            ErrorCategory::Unknown,
+            format!("Unexpected error: {}", raw.lines().next().unwrap_or(&raw)),
+            direction,
+        )
     }
 }
