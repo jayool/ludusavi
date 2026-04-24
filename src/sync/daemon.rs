@@ -19,10 +19,19 @@ use crate::{
         conflict::{determine_sync_type, DirectoryScanResult, SyncStatus},
         device::DeviceIdentity,
         operations::{
-            download_game, extract_root_from_scan, read_game_list_from_cloud, upload_game, write_game_list_to_cloud,
+            classify_error, download_game, extract_root_from_scan, read_game_list_from_cloud, upload_game,
+            write_game_list_to_cloud, ErrorCategory, OperationDirection,
         },
     },
 };
+
+/// Información de un error persistida en daemon-status.json para que la GUI la lea.
+#[derive(Clone, Debug)]
+struct ErrorInfo {
+    category: ErrorCategory,
+    direction: OperationDirection,
+    message: String,
+}
 
 const NOTIFY_DELAY: Duration = Duration::from_secs(10);
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(60);
@@ -361,7 +370,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         let mut any_changes = false;
 
         let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
-        let mut error_games: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut error_games: std::collections::HashMap<String, ErrorInfo> = std::collections::HashMap::new();
 
     for game_id in &ready_games {
             let mode = sync_config.get_mode(game_id);
@@ -385,15 +394,60 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 if let Some(path) = local_path {
                     let zip_path = config.backup.path.joined(&format!("{}.zip", game_id));
                     match crate::sync::operations::create_zip_from_folder(&path, &zip_path) {
-                        Ok(_) => log::info!("[sync daemon] Local backup complete: {}", game_id),
-                        Err(e) => log::error!("[sync daemon] Local backup failed for {}: {e}", game_id),
+                        Ok(_) => {
+                            log::info!("[sync daemon] Local backup complete: {}", game_id);
+                            error_games.remove(game_id);
+                        }
+                        Err(e) => {
+                            log::error!("[sync daemon] Local backup failed for {}: {e}", game_id);
+                            let (category, message, direction) = classify_error(&e, OperationDirection::Backup);
+                            error_games.insert(game_id.clone(), ErrorInfo { category, direction, message });
+                        }
                     }
                 } else {
                     log::warn!("[sync daemon] Cannot resolve local path for: {}", game_id);
+                    error_games.insert(
+                        game_id.clone(),
+                        ErrorInfo {
+                            category: ErrorCategory::Config,
+                            direction: OperationDirection::Backup,
+                            message: "Cannot resolve save path. Check manifest or add path manually.".to_string(),
+                        },
+                    );
                 }
                 debounce_state.lock().unwrap().remove(game_id);
                 continue;
             }
+
+            // CLOUD y SYNC — requieren game_list
+            if let Some(game) = game_list.get_game_mut(game_id) {
+                let local_path = game.path_by_device.get(&device.id).cloned();
+                let scan = DirectoryScanResult::scan(local_path.as_deref());
+                let status = determine_sync_type(game, &scan);
+                if status != SyncStatus::RequiresUpload {
+                    log::info!("[sync daemon] Skipping upload for {} — already in sync", game.name);
+                    debounce_state.lock().unwrap().remove(game_id);
+                    continue;
+                }
+                log::info!("[sync daemon] Uploading: {}", game.name);
+                match upload_game(&config, &app_dir, &device, game) {
+                    Ok(_) => {
+                        log::info!("[sync daemon] Upload complete: {}", game.name);
+                        any_changes = true;
+                        error_games.remove(game_id);
+                    }
+                    Err(e) => {
+                        log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
+                        let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
+                        error_games.insert(game_id.clone(), ErrorInfo { category, direction, message });
+                    }
+                }
+            } else {
+                log::warn!("[sync daemon] Game not found in cloud list: {}", game_id);
+            }
+
+            debounce_state.lock().unwrap().remove(game_id);
+        }
 
             // CLOUD y SYNC — requieren game_list
             if let Some(game) = game_list.get_game_mut(game_id) {
@@ -601,7 +655,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
 
     let mut any_changes = false;
     let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
-    let mut error_games: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut error_games: std::collections::HashMap<String, ErrorInfo> = std::collections::HashMap::new();
 
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
@@ -637,7 +691,8 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Download failed for {}: {e}", game.name);
-                            error_games.insert(game.name.clone(), e.to_string());
+                            let (category, message, direction) = classify_error(&e, OperationDirection::Download);
+                            error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                         }
                     }
                 }
@@ -650,7 +705,8 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
-                            error_games.insert(game.name.clone(), e.to_string());
+                            let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
+                            error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                         }
                     }
                 }
@@ -700,9 +756,9 @@ fn check_downloads_and_rewatch(
         .map(|g| g.id.clone())
         .collect();
 
-    let mut any_changes = false;
+let mut any_changes = false;
     let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
-    let mut error_games: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut error_games: std::collections::HashMap<String, ErrorInfo> = std::collections::HashMap::new();
 
     for game_id in game_ids {
         if let Some(game) = game_list.get_game_mut(&game_id) {
@@ -739,7 +795,8 @@ fn check_downloads_and_rewatch(
                     }
                     Err(e) => {
                         log::error!("[sync daemon] Download failed for {}: {e}", game.name);
-                        error_games.insert(game.name.clone(), e.to_string());
+                        let (category, message, direction) = classify_error(&e, OperationDirection::Download);
+                        error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                     }
                 }
             }
@@ -871,19 +928,25 @@ fn write_sync_status_with_errors(
     device_id: &str,
     config: &Config,
     sync_config: &crate::sync::sync_config::SyncGamesConfig,
-    error_games: &std::collections::HashMap<String, String>,
+    error_games: &std::collections::HashMap<String, ErrorInfo>,
 ) {
     let path = app_dir.joined("daemon-status.json");
     let mut map = serde_json::Map::new();
 
+    // Incluir todos los juegos del game-list con path en este device
     for game in &game_list.games {
         if !game.path_by_device.contains_key(device_id) {
             continue;
         }
-        let status = if error_games.contains_key(&game.id) {
-            "error".to_string()
+        let (status, error_category, error_direction, error_message) = if let Some(info) = error_games.get(&game.id) {
+            (
+                "error".to_string(),
+                Some(info.category.as_str().to_string()),
+                Some(info.direction.as_str().to_string()),
+                Some(info.message.clone()),
+            )
         } else {
-            calculate_game_status(game, device_id, config, sync_config)
+            (calculate_game_status(game, device_id, config, sync_config), None, None, None)
         };
         let last_sync = game.last_sync_time_utc
             .map(|t| t.to_rfc3339())
@@ -896,6 +959,24 @@ fn write_sync_status_with_errors(
             "status": status,
             "last_sync_time": last_sync,
             "last_local_write": last_local,
+            "error_category": error_category,
+            "error_direction": error_direction,
+            "error_message": error_message,
+        }));
+    }
+
+    // Añadir juegos en error_games que no están en game_list (p.ej. LOCAL sin entrada en cloud)
+    for (game_id, info) in error_games {
+        if map.contains_key(game_id) {
+            continue;
+        }
+        map.insert(game_id.clone(), serde_json::json!({
+            "status": "error",
+            "last_sync_time": "",
+            "last_local_write": "",
+            "error_category": info.category.as_str(),
+            "error_direction": info.direction.as_str(),
+            "error_message": info.message.clone(),
         }));
     }
 
