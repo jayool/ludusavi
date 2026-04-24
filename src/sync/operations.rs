@@ -799,6 +799,25 @@ pub fn resolve_game_path_lite(
     resolve_expected_save_path(config, game_entry)
 }
 
+/// Comprueba si rclone está disponible ejecutando `rclone --version`.
+/// Check profundo: detecta que el binario existe, es ejecutable y funciona.
+/// Usado por el daemon al arrancar. Tarda ~100ms así que no usarlo en caliente.
+pub fn rclone_available_deep(config: &Config) -> bool {
+    if !config.apps.rclone.is_valid() {
+        return false;
+    }
+    let args = ["--version"];
+    matches!(
+        crate::prelude::run_command(
+            config.apps.rclone.path.raw(),
+            &args,
+            &[0],
+            crate::prelude::Privacy::Public,
+        ),
+        Ok(_)
+    )
+}
+
 /// Categoría de un error de sync. Usada para mostrar mensajes accionables al usuario.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorCategory {
