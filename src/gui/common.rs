@@ -226,6 +226,16 @@ pub enum Message {
     },
     SyncRestoreGame(String),
     SyncNow(String),
+    /// Toggle del flag global "safety backups enabled" en sync-games.json.
+    ToggleSafetyBackupsEnabled(bool),
+    /// Pide confirmación antes de restaurar un safety backup.
+    RequestRestoreSafetyBackup(String),
+    /// Ejecuta el restore del safety backup del juego indicado.
+    RestoreSafetyBackup(String),
+    /// Pide confirmación antes de borrar un safety backup.
+    RequestDeleteSafetyBackup(String),
+    /// Borra el safety backup del juego indicado.
+    DeleteSafetyBackup(String),
     ForceUploadGame(String),
     ForceDownloadGame(String),
     ShowTimedNotification(String),
