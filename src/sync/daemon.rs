@@ -168,7 +168,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         .filter_map(|g| {
             g.path_by_device
                 .get(&device.id)
-                .map(|path| (g.id.clone(), path.clone()))
+                .map(|entry| (g.id.clone(), entry.path.clone()))
         })
         .collect();
     
@@ -343,7 +343,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 let new_paths: Vec<String> = new_game_list
                     .games
                     .iter()
-                    .filter_map(|g| g.path_by_device.get(&device.id).cloned())
+                    .filter_map(|g| g.path_by_device.get(&device.id).map(|e| e.path.clone()))
                     .collect();
                 let has_new_games = new_paths.iter().any(|p| {
                     let norm = normalize_path(p);
@@ -620,7 +620,7 @@ fn auto_register_paths(
             Some(root_path) => {
                 log::info!("[sync daemon] Auto-registered path for {}: {}", game_id, root_path);
                 if let Some(game) = game_list.get_game_mut(game_id) {
-                    game.path_by_device.insert(device.id.clone(), root_path);
+                    game.set_path(device.id.clone(), root_path);
                     _any_changes = true;
                 }
             }
@@ -633,7 +633,7 @@ fn auto_register_paths(
                             expected_path
                         );
                         if let Some(game) = game_list.get_game_mut(game_id) {
-                            game.path_by_device.insert(device.id.clone(), expected_path);
+                            game.set_path(device.id.clone(), expected_path);
                             _any_changes = true;
                         }
                     }
