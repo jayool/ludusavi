@@ -698,3 +698,245 @@ pub fn resolve_game_path_lite(
     let game_entry = manifest.0.get(game_name)?;
     resolve_expected_save_path(config, game_entry)
 }
+
+/// Categoría de un error de sync. Usada para mostrar mensajes accionables al usuario.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ErrorCategory {
+    /// No se puede contactar con el cloud (DNS, timeout, red caída).
+    Network,
+    /// Token OAuth expirado o revocado. Requiere reconfigurar el remote.
+    Authentication,
+    /// Cuota del cloud llena o disco local lleno.
+    StorageFull,
+    /// Rate limit del proveedor del cloud. El daemon reintentará.
+    RateLimit,
+    /// Corrupción detectada (hash mismatch, ZIP inválido, JSON corrupto).
+    Corruption,
+    /// Fichero o carpeta de saves no encontrados.
+    Missing,
+    /// Problema de configuración (rclone ausente, remote no definido, etc.).
+    Config,
+    /// Acceso denegado a ficheros (lockeados por otro proceso, permisos).
+    Permission,
+    /// Error no clasificado. El mensaje raw se muestra al usuario.
+    Unknown,
+}
+
+impl ErrorCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::Authentication => "authentication",
+            Self::StorageFull => "storage_full",
+            Self::RateLimit => "rate_limit",
+            Self::Corruption => "corruption",
+            Self::Missing => "missing",
+            Self::Config => "config",
+            Self::Permission => "permission",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "network" => Self::Network,
+            "authentication" => Self::Authentication,
+            "storage_full" => Self::StorageFull,
+            "rate_limit" => Self::RateLimit,
+            "corruption" => Self::Corruption,
+            "missing" => Self::Missing,
+            "config" => Self::Config,
+            "permission" => Self::Permission,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Dirección de la operación que falló. Acompaña a la categoría para dar contexto.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OperationDirection {
+    /// Subida al cloud.
+    Upload,
+    /// Descarga del cloud.
+    Download,
+    /// Backup local (modo LOCAL).
+    Backup,
+    /// Restore local (modo LOCAL).
+    Restore,
+}
+
+impl OperationDirection {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Upload => "upload",
+            Self::Download => "download",
+            Self::Backup => "backup",
+            Self::Restore => "restore",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "upload" => Self::Upload,
+            "download" => Self::Download,
+            "backup" => Self::Backup,
+            "restore" => Self::Restore,
+            _ => Self::Upload,
+        }
+    }
+}
+
+/// Clasifica un SyncError en categoría + mensaje limpio para el usuario.
+///
+/// Para `RcloneError` intenta extraer patrones del comando/stderr.
+/// Actualmente `RcloneError` solo contiene el comando ejecutado (no el stderr limpio),
+/// así que los patrones se aplican sobre esa string.
+pub fn classify_error(error: &SyncError, direction: OperationDirection) -> (ErrorCategory, String, OperationDirection) {
+    match error {
+        SyncError::NoLocalPath => (
+            ErrorCategory::Config,
+            "No local save path registered for this device.".to_string(),
+            direction,
+        ),
+        SyncError::NoRcloneConfig => (
+            ErrorCategory::Config,
+            "Rclone is not configured. Open Settings to configure cloud storage.".to_string(),
+            direction,
+        ),
+        SyncError::NoZipInCloud => (
+            ErrorCategory::Missing,
+            "No backup found in the cloud for this game.".to_string(),
+            direction,
+        ),
+        SyncError::ZipError(msg) => (
+            ErrorCategory::Corruption,
+            format!("Archive error: {msg}"),
+            direction,
+        ),
+        SyncError::IoError(msg) => {
+            let lower = msg.to_lowercase();
+            let category = if lower.contains("no space") || lower.contains("disk full") {
+                ErrorCategory::StorageFull
+            } else if lower.contains("permission denied") || lower.contains("access is denied") || lower.contains("access denied") {
+                ErrorCategory::Permission
+            } else if lower.contains("not found") || lower.contains("no such file") || lower.contains("does not exist") {
+                ErrorCategory::Missing
+            } else {
+                ErrorCategory::Unknown
+            };
+            (category, msg.clone(), direction)
+        }
+        SyncError::RcloneError(cmd) => {
+            let lower = cmd.to_lowercase();
+
+            // Patrones de autenticación
+            if lower.contains("invalid_grant")
+                || lower.contains("unauthorized")
+                || lower.contains("401")
+                || lower.contains("token expired")
+                || lower.contains("invalid credentials")
+            {
+                return (
+                    ErrorCategory::Authentication,
+                    "Cloud authentication expired. Reconfigure the cloud remote in Settings.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de cuota llena
+            if lower.contains("quota")
+                || lower.contains("insufficient storage")
+                || lower.contains("storagequotaexceeded")
+                || lower.contains("no space left")
+            {
+                return (
+                    ErrorCategory::StorageFull,
+                    "Cloud storage quota exceeded. Free up space or upgrade your plan.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de rate limit
+            if lower.contains("rate limit")
+                || lower.contains("429")
+                || lower.contains("too many requests")
+                || lower.contains("user rate limit exceeded")
+            {
+                return (
+                    ErrorCategory::RateLimit,
+                    "Cloud provider is rate-limiting requests. Will retry automatically.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de red
+            if lower.contains("no such host")
+                || lower.contains("network unreachable")
+                || lower.contains("connection refused")
+                || lower.contains("dial tcp")
+                || lower.contains("timeout")
+                || lower.contains("i/o timeout")
+            {
+                return (
+                    ErrorCategory::Network,
+                    "Cannot reach the cloud. Check your internet connection.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de corrupción / hash mismatch
+            if lower.contains("hash differ")
+                || lower.contains("checksum")
+                || lower.contains("corrupt")
+                || lower.contains("integrity")
+            {
+                return (
+                    ErrorCategory::Corruption,
+                    "Data integrity check failed. The file may have been corrupted during transfer.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de fichero no encontrado
+            if lower.contains("object not found")
+                || lower.contains("file not found")
+                || lower.contains("404")
+                || lower.contains("directory not found")
+            {
+                return (
+                    ErrorCategory::Missing,
+                    "File not found in the cloud.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de permisos
+            if lower.contains("permission denied")
+                || lower.contains("access denied")
+                || lower.contains("403")
+                || lower.contains("forbidden")
+            {
+                return (
+                    ErrorCategory::Permission,
+                    "Access denied by the cloud provider.".to_string(),
+                    direction,
+                );
+            }
+
+            // Patrones de rclone no encontrado
+            if lower.contains("program not found")
+                || lower.contains("no such file or directory")
+                || lower.contains("executable not found")
+            {
+                return (
+                    ErrorCategory::Config,
+                    "Rclone is not installed or not found at the configured path.".to_string(),
+                    direction,
+                );
+            }
+
+            // Fallback: mensaje raw
+            (ErrorCategory::Unknown, cmd.clone(), direction)
+        }
+    }
+}
