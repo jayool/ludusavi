@@ -114,7 +114,7 @@ pub enum Message {
     CloseModal,
     UpdateTime,
     PruneNotifications,
-    DaemonStatusChecked(bool, std::collections::HashMap<String, String>, ludusavi::sync::game_list::GameListFile),
+    DaemonStatusChecked(bool, std::collections::HashMap<String, crate::gui::app::GameStatusInfo>, ludusavi::sync::game_list::GameListFile),
     SetGameSaveMode(String, ludusavi::sync::sync_config::SaveMode),
     SetGameAutoSync(String, bool),
     GamesSearchChanged(String),
