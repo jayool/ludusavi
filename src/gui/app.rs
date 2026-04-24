@@ -5429,6 +5429,95 @@ impl App {
                                 .push(status_card)
                                 .push(settings_card)
                                 .push(devices_card)
+                                .push_if(
+                                    ludusavi::sync::operations::get_safety_backup_info(
+                                        &crate::prelude::app_dir(),
+                                        &game_name,
+                                    ).is_some(),
+                                    || {
+                                        let info = ludusavi::sync::operations::get_safety_backup_info(
+                                            &crate::prelude::app_dir(),
+                                            &game_name,
+                                        ).unwrap();
+
+                                        let age = {
+                                            let now = chrono::Utc::now();
+                                            let diff = now.signed_duration_since(info.created_at);
+                                            if diff.num_minutes() < 1 {
+                                                "just now".to_string()
+                                            } else if diff.num_hours() < 1 {
+                                                format!("{} min ago", diff.num_minutes())
+                                            } else if diff.num_hours() < 24 {
+                                                format!("{} hours ago", diff.num_hours())
+                                            } else {
+                                                format!("{} days ago", diff.num_days())
+                                            }
+                                        };
+
+                                        let size_str = TRANSLATOR.adjusted_size(info.size_bytes);
+
+                                        let g_restore = game_name.clone();
+                                        let g_delete = game_name.clone();
+
+                                        Container::new(
+                                            Column::new()
+                                                .spacing(10)
+                                                .push(
+                                                    crate::gui::widget::text("SAFETY BACKUP")
+                                                        .size(13)
+                                                        .class(style::Text::Muted),
+                                                )
+                                                .push(
+                                                    Row::new()
+                                                        .spacing(12)
+                                                        .align_y(Alignment::Center)
+                                                        .push(
+                                                            Column::new()
+                                                                .spacing(4)
+                                                                .width(Length::Fill)
+                                                                .push(
+                                                                    crate::gui::widget::text(format!(
+                                                                        "Created {}",
+                                                                        age
+                                                                    ))
+                                                                    .size(13),
+                                                                )
+                                                                .push(
+                                                                    crate::gui::widget::text(size_str)
+                                                                        .size(11)
+                                                                        .class(style::Text::Muted),
+                                                                )
+                                                                .push(
+                                                                    crate::gui::widget::text(
+                                                                        "Captured automatically before the last download or restore."
+                                                                    )
+                                                                    .size(11)
+                                                                    .class(style::Text::Muted),
+                                                                ),
+                                                        )
+                                                        .push(
+                                                            crate::gui::widget::Button::new(
+                                                                crate::gui::widget::text("Restore").size(12)
+                                                            )
+                                                            .padding([6, 14])
+                                                            .class(style::Button::Primary)
+                                                            .on_press(Message::RequestRestoreSafetyBackup(g_restore))
+                                                        )
+                                                        .push(
+                                                            crate::gui::widget::Button::new(
+                                                                crate::gui::widget::text("Delete").size(12)
+                                                            )
+                                                            .padding([6, 14])
+                                                            .class(style::Button::Negative)
+                                                            .on_press(Message::RequestDeleteSafetyBackup(g_delete))
+                                                        ),
+                                                ),
+                                        )
+                                        .width(Length::Fill)
+                                        .padding(16)
+                                        .class(style::Container::GamesTable)
+                                    },
+                                )
                                 .push(save_button)
                                 // .push(files_card) // TODO: re-enable when toggles are wired to the daemon
                                 .push_if(is_custom_game, || {
