@@ -1096,42 +1096,8 @@ fn write_sync_status_with_errors(
     }
 }
 
-fn write_sync_status(
-    app_dir: &StrictPath,
-    game_list: &crate::sync::game_list::GameListFile,
-    device_id: &str,
-    config: &Config,
-    sync_config: &crate::sync::sync_config::SyncGamesConfig,
-) {
-    let path = app_dir.joined("daemon-status.json");
-    let mut map = serde_json::Map::new();
-
-    for game in &game_list.games {
-        if !game.path_by_device.contains_key(device_id) {
-            continue;
-        }
-        let status = calculate_game_status(game, device_id, config, sync_config);
-        let last_sync = game.last_sync_time_utc
-            .map(|t| t.to_rfc3339())
-            .unwrap_or_default();
-        let last_local = game.latest_write_time_utc
-            .map(|t| t.to_rfc3339())
-            .unwrap_or_default();
-
-        map.insert(game.id.clone(), serde_json::json!({
-            "status": status,
-            "last_sync_time": last_sync,
-            "last_local_write": last_local,
-        }));
-    }
-
-    let json = serde_json::json!({ "games": map });
-    if let Ok(content) = serde_json::to_string(&json) {
-        if let Ok(path_buf) = path.as_std_path_buf() {
-            let _ = std::fs::write(path_buf, content);
-        }
-    }
-}
+// `write_sync_status` (versión sin errores) eliminada — todo va por
+// `write_sync_status_with_errors`, que también soporta el caso vacío.
 
 fn normalize_path(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
