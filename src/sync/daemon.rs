@@ -697,7 +697,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
             let status = determine_sync_type(game, &scan, &device.id);
             log::info!("[sync daemon] [{}] status={:?}", game.name, status);
 
-            match status {
+            match &status {
                 SyncStatus::RequiresDownload => {
                     log::info!("[sync daemon] Downloading on startup: {}", game.name);
                     match download_game(config, app_dir, device, game) {
@@ -728,6 +728,17 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                 }
                 SyncStatus::InSync => {
                     log::debug!("[sync daemon] {} is in sync", game.name);
+                }
+                SyncStatus::Conflict { local_time, cloud_time, cloud_from } => {
+                    log::warn!(
+                        "[sync daemon] CONFLICT for {} - local={} cloud={} from={:?} - skipping, user must resolve",
+                        game.name,
+                        local_time,
+                        cloud_time,
+                        cloud_from
+                    );
+                    // No hacemos nada automático. La GUI verá status=conflict
+                    // en daemon-status.json y mostrará el banner de resolución.
                 }
                 SyncStatus::Unknown | SyncStatus::UnsetDirectory => {
                     log::debug!("[sync daemon] {} has no actionable status: {:?}", game.name, status);
