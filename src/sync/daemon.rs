@@ -440,22 +440,41 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
                 let status = determine_sync_type(game, &scan, &device.id);
-                if status != SyncStatus::RequiresUpload {
-                    log::info!("[sync daemon] Skipping upload for {} — already in sync", game.name);
-                    debounce_state.lock().unwrap().remove(game_id);
-                    continue;
-                }
-                log::info!("[sync daemon] Uploading: {}", game.name);
-                match upload_game(&config, &app_dir, &device, game) {
-                    Ok(_) => {
-                        log::info!("[sync daemon] Upload complete: {}", game.name);
-                        any_changes = true;
+
+                match &status {
+                    SyncStatus::Conflict { local_time, cloud_time, cloud_from } => {
+                        log::warn!(
+                            "[sync daemon] CONFLICT for {} - local={} cloud={} from={:?} - skipping, user must resolve",
+                            game.name,
+                            local_time,
+                            cloud_time,
+                            cloud_from
+                        );
+                        // Limpiamos el debounce — no insistimos hasta que el usuario decida.
+                        debounce_state.lock().unwrap().remove(game_id);
+                        // Limpiamos cualquier error previo para que la GUI muestre solo el banner de conflict.
                         error_games.remove(game_id);
+                        // No tocamos game_list ni any_changes — el conflict se persiste vía
+                        // calculate_game_status que detecta el estado y escribe "conflict" en daemon-status.json.
+                        continue;
                     }
-                    Err(e) => {
-                        log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
-                        let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
-                        error_games.insert(game_id.clone(), ErrorInfo { category, direction, message });
+                    SyncStatus::RequiresUpload => {
+                        log::info!("[sync daemon] Uploading: {}", game.name);
+                        match upload_game(&config, &app_dir, &device, game) {
+                            Ok(_) => {
+                                log::info!("[sync daemon] Upload complete: {}", game.name);
+                                any_changes = true;
+                                error_games.remove(game_id);
+                            }
+                            Err(e) => {
+                                log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
+                                let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
+                                error_games.insert(game_id.clone(), ErrorInfo { category, direction, message });
+                            }
+                        }
+                    }
+                    _ => {
+                        log::info!("[sync daemon] Skipping upload for {} — status is {:?}", game.name, status);
                     }
                 }
             } else {
@@ -802,6 +821,18 @@ let mut any_changes = false;
             let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
             let scan = DirectoryScanResult::scan(local_path.as_deref());
             let status = determine_sync_type(game, &scan, &device.id);
+
+            // Si hay conflict, log warning y skip (no operar).
+            if let SyncStatus::Conflict { local_time, cloud_time, cloud_from } = &status {
+                log::warn!(
+                    "[sync daemon] CONFLICT for {} (poll) - local={} cloud={} from={:?} - skipping",
+                    game.name,
+                    local_time,
+                    cloud_time,
+                    cloud_from
+                );
+                continue;
+            }
 
             if status == SyncStatus::RequiresDownload {
                 log::info!("[sync daemon] Downloading (poll): {}", game.name);
