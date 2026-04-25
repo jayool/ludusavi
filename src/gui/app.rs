@@ -3024,7 +3024,7 @@ impl App {
                         if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
                             log::warn!("[ForceDownloadGame] Failed to persist last_sync_mtime: {}", e);
                         }
-                        Ok(())
+                        Ok::<(), String>(())
                     },
                     |result| match result {
                         Ok(_) => Message::ShowTimedNotification("✓ Download completed".to_string()),
