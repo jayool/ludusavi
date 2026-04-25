@@ -223,6 +223,20 @@ impl App {
         });
     }
 
+    /// Toca el mtime de sync-games.json para forzar al daemon a reiniciarse.
+    /// Necesario tras operaciones que usan atomic swap (extract_zip_to_directory,
+    /// restore_safety_backup), porque el swap invalida los handles del file watcher
+    /// del daemon en Windows.
+    fn force_daemon_restart() {
+        let sync_games_path = crate::prelude::app_dir().joined("sync-games.json");
+        if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+            let _ = filetime::set_file_mtime(
+                &path_buf,
+                filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+            );
+        }
+    }
+    
     fn save_config(&mut self) {
         self.pending_save.insert(SaveKind::Config, Instant::now());
     }
@@ -2775,7 +2789,18 @@ impl App {
                                 &game_name,
                                 &local_path,
                             )
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string())?;
+
+                            // Forzar restart del daemon: el atomic swap del restore
+                            // invalida el handle del file watcher.
+                            let sync_games_path = app_dir.joined("sync-games.json");
+                            if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                                let _ = filetime::set_file_mtime(
+                                    &path_buf,
+                                    filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                                );
+                            }
+                            Ok(())
                         })
                         .await
                         .unwrap_or_else(|e| Err(e.to_string()))
@@ -2861,6 +2886,15 @@ impl App {
                             if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
                                 log::warn!("[KeepCloud] Failed to persist last_sync_mtime: {}", e);
                             }
+
+                            // Forzar restart del daemon: el atomic swap invalida el watcher.
+                            let sync_games_path = app_dir.joined("sync-games.json");
+                            if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                                let _ = filetime::set_file_mtime(
+                                    &path_buf,
+                                    filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                                );
+                            }
                             Ok(())
                         })
                         .await
@@ -2918,6 +2952,15 @@ impl App {
                             if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
                                 log::warn!("[KeepBoth] Failed to persist last_sync_mtime: {}", e);
                             }
+
+                            // Forzar restart del daemon: el atomic swap invalida el watcher.
+                            let sync_games_path = app_dir.joined("sync-games.json");
+                            if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                                let _ = filetime::set_file_mtime(
+                                    &path_buf,
+                                    filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                                );
+                            }
                             Ok(())
                         })
                         .await
@@ -2960,7 +3003,18 @@ impl App {
                                     Some(&app_dir),
                                     Some(&game_name),
                                 )
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| e.to_string())?;
+
+                                // Forzar restart del daemon (aunque LOCAL no se sincroniza,
+                                // por consistencia y por si está en auto-sync con file watcher activo).
+                                let sync_games_path = app_dir.joined("sync-games.json");
+                                if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                                    let _ = filetime::set_file_mtime(
+                                        &path_buf,
+                                        filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                                    );
+                                }
+                                Ok(())
                             }
                             ludusavi::sync::sync_config::SaveMode::Cloud
                             | ludusavi::sync::sync_config::SaveMode::Sync => {
@@ -2978,6 +3032,16 @@ impl App {
                                 }
                                 if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
                                     log::warn!("[SyncRestoreGame] Failed to persist last_sync_mtime: {}", e);
+                                }
+
+                                // Forzar restart del daemon: el atomic swap del download
+                                // invalida el handle del file watcher.
+                                let sync_games_path = app_dir.joined("sync-games.json");
+                                if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                                    let _ = filetime::set_file_mtime(
+                                        &path_buf,
+                                        filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                                    );
                                 }
                                 Ok(())
                             }
@@ -3149,6 +3213,15 @@ impl App {
                         }
                         if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
                             log::warn!("[ForceDownloadGame] Failed to persist last_sync_mtime: {}", e);
+                        }
+
+                        // Forzar restart del daemon: el atomic swap invalida el watcher.
+                        let sync_games_path = app_dir.joined("sync-games.json");
+                        if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
+                            let _ = filetime::set_file_mtime(
+                                &path_buf,
+                                filetime::FileTime::from_system_time(std::time::SystemTime::now()),
+                            );
                         }
                         Ok::<(), String>(())
                     },
