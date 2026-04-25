@@ -622,7 +622,7 @@ impl Modal {
             | Self::ConfirmSyncModeChange { .. }
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
-            | Self::ConfirmDeleteSafetyBackup { .. } =>
+            | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. } => (),
             Self::AddGame { name, path, error } => {
                 let mut form = Column::new()
