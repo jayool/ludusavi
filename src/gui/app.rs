@@ -2815,7 +2815,7 @@ impl App {
                     async move {
                         let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
                         let mode = sync_config.get_mode(&game_name);
-                        let game = match game_list.games.iter().find(|g| g.id == game_name) {
+                        let mut game = match game_list.games.iter().find(|g| g.id == game_name) {
                             Some(g) => g.clone(),
                             None => return Err(format!("Game not found in game list: {}", game_name)),
                         };
@@ -2838,7 +2838,7 @@ impl App {
                             }
                             ludusavi::sync::sync_config::SaveMode::Cloud
                             | ludusavi::sync::sync_config::SaveMode::Sync => {
-                                ludusavi::sync::operations::download_game(&config, &app_dir, &device, &game)
+                                ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
                                     .map_err(|e| e.to_string())
                             }
                             _ => Err(format!("SyncRestoreGame called for unsupported mode: {:?}", mode)),
@@ -2993,10 +2993,10 @@ impl App {
                 Task::perform(
                     async move {
                         let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
-                        let game = game_list.games.iter().find(|g| g.id == game_name)
+                        let mut game = game_list.games.iter().find(|g| g.id == game_name)
                             .ok_or_else(|| format!("Game not found in game list: {}", game_name))?
                             .clone();
-                        ludusavi::sync::operations::download_game(&config, &app_dir, &device, &game)
+                        ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
                             .map_err(|e| e.to_string())
                     },
                     |result| match result {
