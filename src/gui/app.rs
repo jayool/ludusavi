@@ -96,6 +96,9 @@ pub struct GameStatusInfo {
     pub error_category: Option<ludusavi::sync::operations::ErrorCategory>,
     pub error_direction: Option<ludusavi::sync::operations::OperationDirection>,
     pub error_message: Option<String>,
+    pub conflict_local_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub conflict_cloud_time: Option<chrono::DateTime<chrono::Utc>>,
+    pub conflict_cloud_from: Option<String>,
 }
 
 #[derive(Default)]
@@ -4005,6 +4008,17 @@ impl App {
                                             let error_message = v.get("error_message")
                                                 .and_then(|s| s.as_str())
                                                 .map(|s| s.to_string());
+                                            let parse_dt = |key: &str| -> Option<chrono::DateTime<chrono::Utc>> {
+                                                v.get(key)
+                                                    .and_then(|s| s.as_str())
+                                                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                                    .map(|t| t.with_timezone(&chrono::Utc))
+                                            };
+                                            let conflict_local_time = parse_dt("conflict_local_time");
+                                            let conflict_cloud_time = parse_dt("conflict_cloud_time");
+                                            let conflict_cloud_from = v.get("conflict_cloud_from")
+                                                .and_then(|s| s.as_str())
+                                                .map(|s| s.to_string());
                                             (
                                                 k.clone(),
                                                 GameStatusInfo {
@@ -4012,6 +4026,9 @@ impl App {
                                                     error_category,
                                                     error_direction,
                                                     error_message,
+                                                    conflict_local_time,
+                                                    conflict_cloud_time,
+                                                    conflict_cloud_from,
                                                 },
                                             )
                                         })
