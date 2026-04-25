@@ -2899,7 +2899,7 @@ impl App {
                             .ok_or_else(|| "Game not found after upsert".to_string())?;
 
                         let scan = ludusavi::sync::conflict::DirectoryScanResult::scan(Some(&local_path));
-                        let sync_type = ludusavi::sync::conflict::determine_sync_type(game, &scan);
+                        let sync_type = ludusavi::sync::conflict::determine_sync_type(game, &scan, &device.id);
 
                         match mode {
                             ludusavi::sync::sync_config::SaveMode::Local => {
