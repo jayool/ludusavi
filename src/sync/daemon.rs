@@ -913,16 +913,39 @@ fn write_game_list_local(app_dir: &StrictPath, game_list: &crate::sync::game_lis
     }
 }
 
+/// Estado calculado de un juego, listo para serializar en daemon-status.json.
+/// El daemon lo construye combinando el modo (LOCAL/CLOUD/SYNC) con el resultado
+/// de determine_sync_type.
+#[derive(Debug, Clone)]
+struct GameStatusComputed {
+    status: String,
+    /// Metadata extra que solo aplica cuando status == "conflict".
+    conflict_local_time: Option<chrono::DateTime<chrono::Utc>>,
+    conflict_cloud_time: Option<chrono::DateTime<chrono::Utc>>,
+    conflict_cloud_from: Option<String>,
+}
+
+impl GameStatusComputed {
+    fn simple(s: &str) -> Self {
+        Self {
+            status: s.to_string(),
+            conflict_local_time: None,
+            conflict_cloud_time: None,
+            conflict_cloud_from: None,
+        }
+    }
+}
+
 fn calculate_game_status(
     game: &crate::sync::game_list::GameMetaData,
     device_id: &str,
     config: &Config,
     sync_config: &crate::sync::sync_config::SyncGamesConfig,
-) -> String {
+) -> GameStatusComputed {
     let mode = sync_config.get_mode(&game.name);
 
     if matches!(mode, crate::sync::sync_config::SaveMode::None) {
-        return "not_managed".to_string();
+        return GameStatusComputed::simple("not_managed");
     }
 
     let local_path = game.path_by_device.get(device_id);
@@ -933,7 +956,7 @@ fn calculate_game_status(
             let zip_path = config.backup.path.joined(&format!("{}.zip", game.id));
             let zip_std = match zip_path.as_std_path_buf() {
                 Ok(p) => p,
-                Err(_) => return "pending_backup".to_string(),
+                Err(_) => return GameStatusComputed::simple("pending_backup"),
             };
 
             let zip_mtime = std::fs::metadata(&zip_std)
@@ -942,26 +965,27 @@ fn calculate_game_status(
                 .map(|t| -> chrono::DateTime<chrono::Utc> { t.into() });
 
             let Some(path_entry) = local_path else {
-                return "pending_backup".to_string();
+                return GameStatusComputed::simple("pending_backup");
             };
 
             let scan = crate::sync::conflict::DirectoryScanResult::scan(Some(&path_entry.path));
 
-            match (zip_mtime, scan.latest_write_time_utc) {
-                (None, _) => "pending_backup".to_string(),
-                (Some(_), None) => "pending_restore".to_string(),
+            let s = match (zip_mtime, scan.latest_write_time_utc) {
+                (None, _) => "pending_backup",
+                (Some(_), None) => "pending_restore",
                 (Some(zip_t), Some(save_t)) => {
                     let zip_secs = zip_t.timestamp();
                     let save_secs = save_t.timestamp();
                     if save_secs > zip_secs {
-                        "pending_backup".to_string()
+                        "pending_backup"
                     } else if zip_secs > save_secs {
-                        "pending_restore".to_string()
+                        "pending_restore"
                     } else {
-                        "synced".to_string()
+                        "synced"
                     }
                 }
-            }
+            };
+            GameStatusComputed::simple(s)
         }
         _ => {
             // CLOUD y SYNC: usar determine_sync_type
@@ -970,12 +994,19 @@ fn calculate_game_status(
             );
             let status = crate::sync::conflict::determine_sync_type(game, &scan, device_id);
             match status {
-                crate::sync::conflict::SyncStatus::InSync => "synced".to_string(),
-                crate::sync::conflict::SyncStatus::RequiresUpload => "pending_backup".to_string(),
-                crate::sync::conflict::SyncStatus::RequiresDownload => "pending_restore".to_string(),
-                crate::sync::conflict::SyncStatus::Unknown => "pending_backup".to_string(),
-                crate::sync::conflict::SyncStatus::UnsetDirectory => "pending_backup".to_string(),
-                crate::sync::conflict::SyncStatus::Conflict { .. } => "conflict".to_string(),
+                crate::sync::conflict::SyncStatus::InSync => GameStatusComputed::simple("synced"),
+                crate::sync::conflict::SyncStatus::RequiresUpload => GameStatusComputed::simple("pending_backup"),
+                crate::sync::conflict::SyncStatus::RequiresDownload => GameStatusComputed::simple("pending_restore"),
+                crate::sync::conflict::SyncStatus::Unknown => GameStatusComputed::simple("pending_backup"),
+                crate::sync::conflict::SyncStatus::UnsetDirectory => GameStatusComputed::simple("pending_backup"),
+                crate::sync::conflict::SyncStatus::Conflict { local_time, cloud_time, cloud_from } => {
+                    GameStatusComputed {
+                        status: "conflict".to_string(),
+                        conflict_local_time: Some(local_time),
+                        conflict_cloud_time: Some(cloud_time),
+                        conflict_cloud_from: cloud_from,
+                    }
+                }
             }
         }
     }
@@ -997,16 +1028,28 @@ fn write_sync_status_with_errors(
         if !game.path_by_device.contains_key(device_id) {
             continue;
         }
-        let (status, error_category, error_direction, error_message) = if let Some(info) = error_games.get(&game.id) {
-            (
-                "error".to_string(),
-                Some(info.category.as_str().to_string()),
-                Some(info.direction.as_str().to_string()),
-                Some(info.message.clone()),
-            )
-        } else {
-            (calculate_game_status(game, device_id, config, sync_config), None, None, None)
-        };
+        // Si hay error_games del daemon, ese tiene prioridad sobre cualquier status calculado.
+        let (status, error_category, error_direction, error_message,
+             conflict_local_time, conflict_cloud_time, conflict_cloud_from) =
+            if let Some(info) = error_games.get(&game.id) {
+                (
+                    "error".to_string(),
+                    Some(info.category.as_str().to_string()),
+                    Some(info.direction.as_str().to_string()),
+                    Some(info.message.clone()),
+                    None, None, None,
+                )
+            } else {
+                let computed = calculate_game_status(game, device_id, config, sync_config);
+                (
+                    computed.status,
+                    None, None, None,
+                    computed.conflict_local_time,
+                    computed.conflict_cloud_time,
+                    computed.conflict_cloud_from,
+                )
+            };
+
         let last_sync = game.last_sync_time_utc
             .map(|t| t.to_rfc3339())
             .unwrap_or_default();
@@ -1021,6 +1064,9 @@ fn write_sync_status_with_errors(
             "error_category": error_category,
             "error_direction": error_direction,
             "error_message": error_message,
+            "conflict_local_time": conflict_local_time.map(|t| t.to_rfc3339()),
+            "conflict_cloud_time": conflict_cloud_time.map(|t| t.to_rfc3339()),
+            "conflict_cloud_from": conflict_cloud_from,
         }));
     }
 
@@ -1036,6 +1082,9 @@ fn write_sync_status_with_errors(
             "error_category": info.category.as_str(),
             "error_direction": info.direction.as_str(),
             "error_message": info.message.clone(),
+            "conflict_local_time": serde_json::Value::Null,
+            "conflict_cloud_time": serde_json::Value::Null,
+            "conflict_cloud_from": serde_json::Value::Null,
         }));
     }
 
