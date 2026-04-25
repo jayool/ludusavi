@@ -2806,6 +2806,129 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ResolveConflictKeepLocal(game_name) => {
+                self.sync_in_progress = Some("⏳ Uploading local saves...".to_string());
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || -> Result<(), String> {
+                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                            let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                .unwrap_or_default();
+                            let game = gl.get_game_mut(&game_name)
+                                .ok_or_else(|| format!("Game not found in cloud list: {}", game_name))?;
+                            ludusavi::sync::operations::upload_game(&config, &app_dir, &device, game)
+                                .map_err(|e| e.to_string())?;
+                            ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl)
+                                .map_err(|e| e.to_string())?;
+                            Ok(())
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Local version uploaded".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
+            Message::ResolveConflictKeepCloud(game_name) => {
+                self.sync_in_progress = Some("⏳ Downloading cloud saves...".to_string());
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || -> Result<(), String> {
+                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                            let mut game = game_list.games.iter().find(|g| g.id == game_name)
+                                .ok_or_else(|| format!("Game not found in game list: {}", game_name))?
+                                .clone();
+                            ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
+                                .map_err(|e| e.to_string())?;
+
+                            // Persistir last_sync_mtime al cloud.
+                            let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                .unwrap_or_default();
+                            if let Some(existing) = gl.get_game_mut(&game_name) {
+                                if let Some(mtime) = game.get_last_sync_mtime(&device.id) {
+                                    existing.set_last_sync_mtime(&device.id, mtime);
+                                }
+                            }
+                            if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
+                                log::warn!("[KeepCloud] Failed to persist last_sync_mtime: {}", e);
+                            }
+                            Ok(())
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Cloud version downloaded".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
+            Message::RequestResolveConflictKeepBoth(game) => {
+                self.show_modal(Modal::ConfirmResolveConflictKeepBoth { game })
+            }
+            Message::ResolveConflictKeepBoth(game_name) => {
+                self.sync_in_progress = Some("⏳ Archiving local + downloading cloud...".to_string());
+                self.close_specific_modal_alt(modal::Kind::ConfirmResolveConflictKeepBoth);
+                let config = self.config.clone();
+                let app_dir = crate::prelude::app_dir();
+                let game_list = self.game_list.clone();
+
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || -> Result<(), String> {
+                            let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
+                            let mut game = game_list.games.iter().find(|g| g.id == game_name)
+                                .ok_or_else(|| format!("Game not found in game list: {}", game_name))?
+                                .clone();
+
+                            // Resolver path local
+                            let local_path = match game.path_by_device.get(&device.id) {
+                                Some(entry) => entry.path.clone(),
+                                None => return Err(format!("No local path for game: {}", game_name)),
+                            };
+
+                            // 1. Snapshot permanente del local
+                            ludusavi::sync::operations::create_keep_both_snapshot(
+                                &app_dir,
+                                &game_name,
+                                &local_path,
+                            ).map_err(|e| e.to_string())?;
+
+                            // 2. Download del cloud (sobrescribe local)
+                            ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
+                                .map_err(|e| e.to_string())?;
+
+                            // 3. Persistir last_sync_mtime al cloud
+                            let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                .unwrap_or_default();
+                            if let Some(existing) = gl.get_game_mut(&game_name) {
+                                if let Some(mtime) = game.get_last_sync_mtime(&device.id) {
+                                    existing.set_last_sync_mtime(&device.id, mtime);
+                                }
+                            }
+                            if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
+                                log::warn!("[KeepBoth] Failed to persist last_sync_mtime: {}", e);
+                            }
+                            Ok(())
+                        })
+                        .await
+                        .unwrap_or_else(|e| Err(e.to_string()))
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Local archived + cloud downloaded".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
             Message::SyncRestoreGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Restoring...".to_string());
                 self.close_specific_modal_alt(modal::Kind::ConfirmSyncRestore);
@@ -4923,11 +5046,112 @@ impl App {
                     && !matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Sync)
                     && !has_pending_mode_change;
                 let status_card = {
-                    // Si hay un error persistido, construir card de error en lugar de status normal
+                    // Si hay un error persistido, construir card de error
                     let error_info = self.sync_status.get(&game_name)
                         .filter(|i| i.status == "error" && i.error_category.is_some());
 
-                    if let Some(info) = error_info {
+                    // Si hay un conflict persistido, construir banner de conflict
+                    let conflict_info = self.sync_status.get(&game_name)
+                        .filter(|i| i.status == "conflict");
+
+                    if let Some(info) = conflict_info {
+                        let local_str = info.conflict_local_time
+                            .map(|t| {
+                                let now = chrono::Utc::now();
+                                let diff = now.signed_duration_since(t);
+                                if diff.num_minutes() < 1 {
+                                    "just now".to_string()
+                                } else if diff.num_hours() < 1 {
+                                    format!("{} min ago", diff.num_minutes())
+                                } else if diff.num_hours() < 24 {
+                                    format!("{} hours ago", diff.num_hours())
+                                } else {
+                                    format!("{} days ago", diff.num_days())
+                                }
+                            })
+                            .unwrap_or_else(|| "unknown".to_string());
+
+                        let cloud_str = info.conflict_cloud_time
+                            .map(|t| {
+                                let now = chrono::Utc::now();
+                                let diff = now.signed_duration_since(t);
+                                if diff.num_minutes() < 1 {
+                                    "just now".to_string()
+                                } else if diff.num_hours() < 1 {
+                                    format!("{} min ago", diff.num_minutes())
+                                } else if diff.num_hours() < 24 {
+                                    format!("{} hours ago", diff.num_hours())
+                                } else {
+                                    format!("{} days ago", diff.num_days())
+                                }
+                            })
+                            .unwrap_or_else(|| "unknown".to_string());
+
+                        let cloud_from_str = info.conflict_cloud_from
+                            .as_ref()
+                            .map(|id| self.game_list.get_device_name(id).to_string())
+                            .unwrap_or_else(|| "unknown device".to_string());
+
+                        let g_local = game_name.clone();
+                        let g_cloud = game_name.clone();
+                        let g_both = game_name.clone();
+
+                        Container::new(
+                            Column::new()
+                                .spacing(10)
+                                .push(crate::gui::widget::text("⚠ Sync conflict detected").size(13))
+                                .push(
+                                    crate::gui::widget::text(
+                                        "Both this device and the cloud have changes since the last sync. Choose which version to keep."
+                                    )
+                                    .size(12)
+                                    .class(style::Text::Muted),
+                                )
+                                .push(
+                                    Row::new()
+                                        .spacing(8)
+                                        .push(crate::gui::widget::text("Local saves:").size(12).class(style::Text::Muted).width(120))
+                                        .push(crate::gui::widget::text(local_str).size(12)),
+                                )
+                                .push(
+                                    Row::new()
+                                        .spacing(8)
+                                        .push(crate::gui::widget::text("Cloud saves:").size(12).class(style::Text::Muted).width(120))
+                                        .push(crate::gui::widget::text(format!("{}, from {}", cloud_str, cloud_from_str)).size(12)),
+                                )
+                                .push(
+                                    Row::new()
+                                        .spacing(8)
+                                        .push(
+                                            crate::gui::widget::Button::new(
+                                                crate::gui::widget::text("Keep local").size(12)
+                                            )
+                                            .padding([6, 14])
+                                            .class(style::Button::Primary)
+                                            .on_press(Message::ResolveConflictKeepLocal(g_local))
+                                        )
+                                        .push(
+                                            crate::gui::widget::Button::new(
+                                                crate::gui::widget::text("Keep cloud").size(12)
+                                            )
+                                            .padding([6, 14])
+                                            .class(style::Button::Primary)
+                                            .on_press(Message::ResolveConflictKeepCloud(g_cloud))
+                                        )
+                                        .push(
+                                            crate::gui::widget::Button::new(
+                                                crate::gui::widget::text("Keep both").size(12)
+                                            )
+                                            .padding([6, 14])
+                                            .class(style::Button::Ghost)
+                                            .on_press(Message::RequestResolveConflictKeepBoth(g_both))
+                                        ),
+                                )
+                        )
+                        .width(Length::Fill)
+                        .padding(14)
+                        .class(style::Container::GameListEntry)
+                    } else if let Some(info) = error_info {
                         use ludusavi::sync::operations::{ErrorCategory, OperationDirection};
 
                         let category = info.error_category.clone().unwrap_or(ErrorCategory::Unknown);
