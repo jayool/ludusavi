@@ -2839,7 +2839,21 @@ impl App {
                             ludusavi::sync::sync_config::SaveMode::Cloud
                             | ludusavi::sync::sync_config::SaveMode::Sync => {
                                 ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
-                                    .map_err(|e| e.to_string())
+                                    .map_err(|e| e.to_string())?;
+
+                                // Tras un download exitoso, persistir el last_sync_mtime actualizado al cloud.
+                                // Si no, el daemon perderá la referencia al sincronizar en el siguiente ciclo.
+                                let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                                    .unwrap_or_default();
+                                if let Some(existing) = gl.get_game_mut(&game_name) {
+                                    if let Some(mtime) = game.get_last_sync_mtime(&device.id) {
+                                        existing.set_last_sync_mtime(&device.id, mtime);
+                                    }
+                                }
+                                if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
+                                    log::warn!("[SyncRestoreGame] Failed to persist last_sync_mtime: {}", e);
+                                }
+                                Ok(())
                             }
                             _ => Err(format!("SyncRestoreGame called for unsupported mode: {:?}", mode)),
                         }
@@ -2997,7 +3011,20 @@ impl App {
                             .ok_or_else(|| format!("Game not found in game list: {}", game_name))?
                             .clone();
                         ludusavi::sync::operations::download_game(&config, &app_dir, &device, &mut game)
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string())?;
+
+                        // Persistir last_sync_mtime al cloud tras download forzado.
+                        let mut gl = ludusavi::sync::operations::read_game_list_from_cloud(&config)
+                            .unwrap_or_default();
+                        if let Some(existing) = gl.get_game_mut(&game_name) {
+                            if let Some(mtime) = game.get_last_sync_mtime(&device.id) {
+                                existing.set_last_sync_mtime(&device.id, mtime);
+                            }
+                        }
+                        if let Err(e) = ludusavi::sync::operations::write_game_list_to_cloud(&config, &gl) {
+                            log::warn!("[ForceDownloadGame] Failed to persist last_sync_mtime: {}", e);
+                        }
+                        Ok(())
                     },
                     |result| match result {
                         Ok(_) => Message::ShowTimedNotification("✓ Download completed".to_string()),
