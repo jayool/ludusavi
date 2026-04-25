@@ -400,8 +400,13 @@ pub fn upload_game(
     game.latest_write_time_utc = scan.latest_write_time_utc;
     game.storage_bytes = scan.storage_bytes;
 
-    let _ = zip_path.remove();
+    // Tras un upload exitoso, este device ha "visto" el cloud en el estado actual.
+    // Guardamos el latest_write_time_utc como referencia para detectar conflicts futuros.
+    if let Some(mtime) = scan.latest_write_time_utc {
+        game.set_last_sync_mtime(&device.id, mtime);
+    }
 
+    let _ = zip_path.remove();
     log::info!("[{}] Upload complete", game.name);
     Ok(())
 }
@@ -411,7 +416,7 @@ pub fn download_game(
     config: &Config,
     app_dir: &StrictPath,
     device: &DeviceIdentity,
-    game: &GameMetaData,
+    game: &mut GameMetaData,
 ) -> Result<(), SyncError> {
     let local_path = game
         .path_by_device
@@ -468,8 +473,13 @@ pub fn download_game(
         Some(&game.id),
     )?;
 
-    let _ = zip_path.remove();
+    // Tras un download exitoso, este device ha "visto" el cloud en el estado actual.
+    // El cloud tiene latest_write_time_utc, que ahora también es el mtime de los saves locales.
+    if let Some(mtime) = game.latest_write_time_utc {
+        game.set_last_sync_mtime(&device.id, mtime);
+    }
 
+    let _ = zip_path.remove();
     log::info!("[{}] Download complete", game.name);
     Ok(())
 }
