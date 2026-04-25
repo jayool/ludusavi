@@ -1420,7 +1420,8 @@ pub fn create_keep_both_snapshot(
         .as_std_path_buf()
         .map_err(|e| SyncError::IoError(e.to_string()))?;
 
-    copy_dir_recursive(folder, &snapshot_std)?;
+    copy_dir_recursive(folder, &snapshot_std)
+        .map_err(|e| SyncError::IoError(e.to_string()))?;
 
     log::info!(
         "[keep-both] Snapshot created for {} at {:?}",
