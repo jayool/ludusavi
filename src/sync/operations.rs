@@ -1388,3 +1388,45 @@ pub fn delete_safety_backup(app_dir: &StrictPath, game_id: &str) -> Result<(), S
     log::info!("[safety-backup] Deleted for {}", game_id);
     Ok(())
 }
+/// Crea un snapshot permanente del directorio de saves para "Keep both" en conflict resolution.
+/// A diferencia del safety backup automático, este NO se sobrescribe — se identifica por timestamp.
+/// Devuelve el path del snapshot creado.
+pub fn create_keep_both_snapshot(
+    app_dir: &StrictPath,
+    game_id: &str,
+    save_path: &str,
+) -> Result<StrictPath, SyncError> {
+    let folder = std::path::Path::new(save_path);
+    if !folder.is_dir() {
+        return Err(SyncError::IoError(format!(
+            "Cannot create keep-both snapshot — folder does not exist: {save_path}"
+        )));
+    }
+
+    let sanitized = sanitize_game_id_for_fs(game_id);
+    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let snapshot_dir = app_dir
+        .joined("safety-backups")
+        .joined(&sanitized)
+        .joined(&format!("keep-both-{}", timestamp));
+
+    if let Err(e) = snapshot_dir.create_dirs() {
+        return Err(SyncError::IoError(format!(
+            "Cannot create keep-both directory: {e}"
+        )));
+    }
+
+    let snapshot_std = snapshot_dir
+        .as_std_path_buf()
+        .map_err(|e| SyncError::IoError(e.to_string()))?;
+
+    copy_dir_recursive(folder, &snapshot_std)?;
+
+    log::info!(
+        "[keep-both] Snapshot created for {} at {:?}",
+        game_id,
+        snapshot_std
+    );
+
+    Ok(snapshot_dir)
+}
