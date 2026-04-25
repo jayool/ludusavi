@@ -235,6 +235,14 @@ pub enum Message {
     /// Pide confirmación antes de borrar un safety backup.
     RequestDeleteSafetyBackup(String),
     /// Borra el safety backup del juego indicado.
+    /// El usuario pulsa "Keep local" en el banner de conflict — fuerza upload.
+    ResolveConflictKeepLocal(String),
+    /// El usuario pulsa "Keep cloud" en el banner de conflict — fuerza download.
+    ResolveConflictKeepCloud(String),
+    /// Pide confirmación antes de Keep both (operación con disk side-effects).
+    RequestResolveConflictKeepBoth(String),
+    /// Ejecuta el Keep both: snapshot permanente del local + download del cloud.
+    ResolveConflictKeepBoth(String),
     DeleteSafetyBackup(String),
     ForceUploadGame(String),
     ForceDownloadGame(String),
