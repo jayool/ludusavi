@@ -439,7 +439,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             if let Some(game) = game_list.get_game_mut(game_id) {
                 let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
                 let scan = DirectoryScanResult::scan(local_path.as_deref());
-                let status = determine_sync_type(game, &scan);
+                let status = determine_sync_type(game, &scan, &device.id);
                 if status != SyncStatus::RequiresUpload {
                     log::info!("[sync daemon] Skipping upload for {} — already in sync", game.name);
                     debounce_state.lock().unwrap().remove(game_id);
@@ -694,7 +694,7 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                 game.latest_write_time_utc,
                 scan.directory_exists
             );
-            let status = determine_sync_type(game, &scan);
+            let status = determine_sync_type(game, &scan, &device.id);
             log::info!("[sync daemon] [{}] status={:?}", game.name, status);
 
             match status {
@@ -790,7 +790,7 @@ let mut any_changes = false;
             }
             let local_path: Option<String> = game.path_by_device.get(&device.id).map(|e| e.path.clone());
             let scan = DirectoryScanResult::scan(local_path.as_deref());
-            let status = determine_sync_type(game, &scan);
+            let status = determine_sync_type(game, &scan, &device.id);
 
             if status == SyncStatus::RequiresDownload {
                 log::info!("[sync daemon] Downloading (poll): {}", game.name);
@@ -926,13 +926,14 @@ fn calculate_game_status(
             let scan = crate::sync::conflict::DirectoryScanResult::scan(
                 local_path.map(|e| e.path.as_str())
             );
-            let status = crate::sync::conflict::determine_sync_type(game, &scan);
+            let status = crate::sync::conflict::determine_sync_type(game, &scan, device_id);
             match status {
                 crate::sync::conflict::SyncStatus::InSync => "synced".to_string(),
                 crate::sync::conflict::SyncStatus::RequiresUpload => "pending_backup".to_string(),
                 crate::sync::conflict::SyncStatus::RequiresDownload => "pending_restore".to_string(),
                 crate::sync::conflict::SyncStatus::Unknown => "pending_backup".to_string(),
                 crate::sync::conflict::SyncStatus::UnsetDirectory => "pending_backup".to_string(),
+                crate::sync::conflict::SyncStatus::Conflict { .. } => "conflict".to_string(),
             }
         }
     }
