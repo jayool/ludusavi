@@ -4935,9 +4935,11 @@ impl App {
                         .align_y(Alignment::Center)
                         .push(crate::gui::widget::text(game_name.clone()).size(15).width(Length::Fill))
                         .push_if(
-                                    self.sync_in_progress.is_some(),
+                                    self.sync_in_progress.is_some() || self.timed_notification.is_some(),
                                     || {
-                                        let msg = self.sync_in_progress.clone().unwrap_or_default();
+                                        let msg = self.sync_in_progress.clone()
+                                            .or_else(|| self.timed_notification.as_ref().map(|n| n.text.clone()))
+                                            .unwrap_or_default();
                                         crate::gui::widget::text(msg)
                                             .size(12)
                                             .class(style::Text::Muted)
@@ -6294,22 +6296,6 @@ impl App {
 
         let stack = Stack::new()
             .push(Container::new(body).class(style::Container::Primary))
-            .push(
-                self.timed_notification.as_ref().map(|n| {
-                    Container::new(
-                        Container::new(
-                            crate::gui::widget::text(n.text.clone()).size(13)
-                        )
-                        .padding([8, 20])
-                        .align_x(iced::alignment::Horizontal::Center)
-                        .align_y(iced::alignment::Vertical::Center)
-                        .class(style::Container::Notification)
-                    )
-                    .width(Length::Fill)
-                    .padding(padding::top(60))
-                    .align_x(iced::alignment::Horizontal::Center)
-                }),
-            )
             .push(
                 self.modals
                     .last()
