@@ -4555,7 +4555,7 @@ impl App {
                         // Status dot color
                         let dot_class = match status {
                             "synced" => style::Container::DaemonDotActive,
-                            "error" => style::Container::DaemonDotError,
+                            "error" | "conflict" => style::Container::DaemonDotError,
                             "pending_backup" | "pending_restore" => style::Container::DaemonDotPending,
                             _ => style::Container::DaemonDotInactive,
                         };
@@ -4776,7 +4776,7 @@ impl App {
 
                         let dot_class = match status {
                             "synced" => style::Container::DaemonDotActive,
-                            "error" => style::Container::DaemonDotError,
+                            "error" | "conflict" => style::Container::DaemonDotError,
                             "pending_backup" | "pending_restore" => style::Container::DaemonDotPending,
                             _ => style::Container::DaemonDotInactive,
                         };
