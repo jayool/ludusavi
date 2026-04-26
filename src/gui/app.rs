@@ -2373,12 +2373,15 @@ impl App {
 
                 self.updating_manifest = true;
                 self.manifest_notification = Some(Notification::new(TRANSLATOR.updating_manifest()));
-                Self::update_manifest(
-                    self.config.manifest.clone(),
-                    self.cache.manifests.clone(),
-                    force,
-                    self.config.runtime.network_security,
-                )
+                Task::batch([
+                    self.close_modal(),
+                    Self::update_manifest(
+                        self.config.manifest.clone(),
+                        self.cache.manifests.clone(),
+                        force,
+                        self.config.runtime.network_security,
+                    ),
+                ])
             }
             Message::ManifestUpdated(updates) => {
                 self.updating_manifest = false;
