@@ -348,6 +348,7 @@ impl CustomGames {
 pub fn other<'a>(
     updating_manifest: bool,
     daemon_running: bool,
+    service_installed: bool,
     config: &'a Config,
     cache: &'a Cache,
     operation: &Operation,
@@ -396,6 +397,107 @@ pub fn other<'a>(
     .padding(16)
     .class(style::Container::GamesTable);
 
+    // Reglas de habilitación:
+    // - Install service: solo si NO está instalado.
+    // - Uninstall service: solo si está instalado.
+    // - Start daemon: solo si está instalado y NO está corriendo.
+    // - Stop daemon: solo si está instalado y está corriendo.
+    let install_btn = {
+        let enabled = !service_installed;
+        let tooltip_text = if service_installed {
+            Some("Service is already installed.")
+        } else {
+            None
+        };
+        let btn = Button::new(text("Install service").size(13))
+            .padding([7, 14])
+            .class(if enabled { style::Button::Primary } else { style::Button::Ghost })
+            .on_press_maybe(enabled.then_some(Message::InstallService));
+        match tooltip_text {
+            Some(msg) => crate::gui::widget::Tooltip::new(
+                btn,
+                Container::new(text(msg).size(12).class(style::Text::Default))
+                    .padding([6, 10])
+                    .class(style::Container::Tooltip),
+                iced::widget::tooltip::Position::Bottom,
+            ).into(),
+            None => Element::from(btn),
+        }
+    };
+
+    let uninstall_btn = {
+        let enabled = service_installed;
+        let tooltip_text = if !service_installed {
+            Some("Service is not installed.")
+        } else {
+            None
+        };
+        let btn = Button::new(text("Uninstall service").size(13))
+            .padding([7, 14])
+            .class(style::Button::Ghost)
+            .on_press_maybe(enabled.then_some(Message::UninstallService));
+        match tooltip_text {
+            Some(msg) => crate::gui::widget::Tooltip::new(
+                btn,
+                Container::new(text(msg).size(12).class(style::Text::Default))
+                    .padding([6, 10])
+                    .class(style::Container::Tooltip),
+                iced::widget::tooltip::Position::Bottom,
+            ).into(),
+            None => Element::from(btn),
+        }
+    };
+
+    let start_btn = {
+        let enabled = service_installed && !daemon_running;
+        let tooltip_text = if !service_installed {
+            Some("Install the service first.")
+        } else if daemon_running {
+            Some("Daemon is already running.")
+        } else {
+            None
+        };
+        let btn = Button::new(text("Start daemon").size(13))
+            .padding([7, 14])
+            .class(if enabled { style::Button::Primary } else { style::Button::Ghost })
+            .on_press_maybe(enabled.then_some(Message::StartDaemon));
+        match tooltip_text {
+            Some(msg) => crate::gui::widget::Tooltip::new(
+                btn,
+                Container::new(text(msg).size(12).class(style::Text::Default))
+                    .padding([6, 10])
+                    .class(style::Container::Tooltip),
+                iced::widget::tooltip::Position::Bottom,
+            ).into(),
+            None => Element::from(btn),
+        }
+    };
+
+    let stop_btn = {
+        let enabled = service_installed && daemon_running;
+        let tooltip_text = if !service_installed {
+            Some("Install the service first.")
+        } else if !daemon_running {
+            Some("Daemon is not running.")
+        } else {
+            None
+        };
+        let btn = Button::new(text("Stop daemon").size(13))
+            .padding([7, 14])
+            .class(style::Button::Ghost)
+            .on_press_maybe(enabled.then_some(Message::StopDaemon));
+        match tooltip_text {
+            Some(msg) => crate::gui::widget::Tooltip::new(
+                btn,
+                Container::new(text(msg).size(12).class(style::Text::Default))
+                    .padding([6, 10])
+                    .class(style::Container::Tooltip),
+                iced::widget::tooltip::Position::Bottom,
+            ).into(),
+            None => Element::from(btn),
+        }
+    };
+
     let daemon_card = Container::new(
         Column::new()
             .spacing(10)
@@ -404,32 +506,10 @@ pub fn other<'a>(
             .push(
                 Row::new()
                     .spacing(8)
-                    .push(
-                        Button::new(text("Install service").size(13))
-                            .padding([7, 14])
-                            .class(style::Button::Primary)
-                            .on_press(Message::InstallService)
-                    )
-                    .push(
-                        Button::new(text("Uninstall service").size(13))
-                            .padding([7, 14])
-                            .class(style::Button::Ghost)
-                            .on_press(Message::UninstallService)
-                    )
-                    // BOTÓN CONDICIONAL: Start si parado, Stop si corriendo
-                    .push(
-                        if daemon_running {
-                            Button::new(text("Stop daemon").size(13))
-                                .padding([7, 14])
-                                .class(style::Button::Ghost)
-                                .on_press(Message::StopDaemon)
-                        } else {
-                            Button::new(text("Start daemon").size(13))
-                                .padding([7, 14])
-                                .class(style::Button::Primary)
-                                .on_press(Message::StartDaemon)
-                        }
-                    ),
+                    .push(install_btn)
+                    .push(uninstall_btn)
+                    .push(start_btn)
+                    .push(stop_btn),
             )
     )
     .width(Length::Fill)
