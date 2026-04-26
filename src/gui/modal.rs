@@ -551,7 +551,7 @@ impl Modal {
                 });
                 if has_manifest_error {
                     vec![button::primary(
-                        "Retry",
+                        "Retry".to_string(),
                         Some(Message::UpdateManifest { force: true }),
                     )]
                 } else {
@@ -587,7 +587,7 @@ impl Modal {
                 if has_manifest_error {
                     vec![
                         button::primary(
-                            "Retry",
+                            "Retry".to_string(),
                             Some(Message::UpdateManifest { force: true }),
                         )
                     ]
