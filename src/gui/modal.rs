@@ -569,7 +569,7 @@ impl Modal {
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
             | Self::GameNotes { .. }
-            | Self::ActiveScanGames => vec![],
+            | Self::ActiveScanGames
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
@@ -580,21 +580,6 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. } => vec![],
-            Self::Errors { errors } => {
-                let has_manifest_error = errors.iter().any(|e| {
-                    matches!(e, crate::prelude::Error::ManifestCannotBeUpdated { .. })
-                });
-                if has_manifest_error {
-                    vec![
-                        button::primary(
-                            "Retry".to_string(),
-                            Some(Message::UpdateManifest { force: true }),
-                        )
-                    ]
-                } else {
-                    vec![]
-                }
-            }
         }
     }
 
