@@ -1753,6 +1753,61 @@ impl App {
                     },
                 )
             }
+            Message::StartDaemon => {
+                Task::perform(
+                    async {
+                        #[cfg(target_os = "windows")]
+                        {
+                            std::process::Command::new("powershell.exe")
+                                .args(["-Command", "Start-ScheduledTask -TaskName 'LudusaviDaemon'"])
+                                .output()
+                                .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            Err("Start daemon: not implemented on this platform".to_string())
+                        }
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Daemon started".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
+            Message::StopDaemon => {
+                Task::perform(
+                    async {
+                        #[cfg(target_os = "windows")]
+                        {
+                            std::process::Command::new("powershell.exe")
+                                .args([
+                                    "-Command",
+                                    "Get-Process ludusavi-daemon -ErrorAction SilentlyContinue | Stop-Process -Force",
+                                ])
+                                .output()
+                                .map_err(|e| e.to_string())
+                                .and_then(|out| if out.status.success() {
+                                    Ok(())
+                                } else {
+                                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                                })
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            Err("Stop daemon: not implemented on this platform".to_string())
+                        }
+                    },
+                    |result| match result {
+                        Ok(_) => Message::ShowTimedNotification("✓ Daemon stopped".to_string()),
+                        Err(e) => Message::ShowTimedNotification(format!("✗ Error: {}", e)),
+                    },
+                )
+            }
             Message::Save => {
                 self.save();
                 Task::none()
