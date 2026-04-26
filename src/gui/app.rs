@@ -5689,16 +5689,34 @@ impl App {
                         pending.mode != original.mode || pending.auto_sync != original.auto_sync
                     }).unwrap_or(false);
 
-                let save_button = crate::gui::widget::Button::new(
+                // Detectar si el pending requeriría daemon
+                let pending_requires_daemon = self.pending_game_detail.as_ref().map(|p| {
+                    matches!(p.mode, ludusavi::sync::sync_config::SaveMode::Sync)
+                        || (matches!(
+                            p.mode,
+                            ludusavi::sync::sync_config::SaveMode::Local
+                            | ludusavi::sync::sync_config::SaveMode::Cloud
+                        ) && p.auto_sync)
+                }).unwrap_or(false);
+
+                let save_blocked_by_daemon = pending_requires_daemon && !self.daemon_running;
+                let save_clickable = has_pending && !save_blocked_by_daemon;
+
+                let save_button_inner = crate::gui::widget::Button::new(
                     crate::gui::widget::text("Save changes").size(13)
                 )
                 .padding([8, 20])
-                .class(if has_pending {
+                .class(if save_clickable {
                     style::Button::Primary
                 } else {
                     style::Button::Ghost
                 })
-                .on_press_maybe(has_pending.then_some(Message::SaveGameDetail));
+                .on_press_maybe(save_clickable.then_some(Message::SaveGameDetail));
+
+                let save_button = crate::gui::widget::daemon_required_tooltip(
+                    save_button_inner,
+                    !save_blocked_by_daemon,
+                );
 
                 // Devices section
                 let devices_card = {
@@ -5837,6 +5855,7 @@ impl App {
                                 .spacing(16)
                                 .padding([24, 24])
                                 .push_if(is_cloud_available, || {
+                                    let daemon_running = self.daemon_running;
                                     Container::new(
                                         Row::new()
                                             .spacing(12)
@@ -5847,12 +5866,17 @@ impl App {
                                                     .width(Length::Fill)
                                             )
                                             .push(
-                                                crate::gui::widget::Button::new(
-                                                    crate::gui::widget::text("Enable Sync").size(13)
+                                                crate::gui::widget::daemon_required_tooltip(
+                                                    crate::gui::widget::Button::new(
+                                                        crate::gui::widget::text("Enable Sync").size(13)
+                                                    )
+                                                    .padding([7, 14])
+                                                    .class(style::Button::Primary)
+                                                    .on_press_maybe(daemon_running.then_some(
+                                                        Message::EnableCloudSync(game_name.clone())
+                                                    )),
+                                                    daemon_running,
                                                 )
-                                                .padding([7, 14])
-                                                .class(style::Button::Primary)
-                                                .on_press(Message::EnableCloudSync(game_name.clone()))
                                             )
                                     )
                                     .width(Length::Fill)
