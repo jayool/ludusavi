@@ -640,43 +640,6 @@ pub fn other<'a>(
     .padding(16)
     .class(style::Container::GamesTable);
 
-    // --- SECCIÓN DAEMON ---
-    #[cfg(target_os = "windows")]
-    let install_script = "install-service-windows.ps1";
-    #[cfg(not(target_os = "windows"))]
-    let install_script = "install-service-linux.sh";
-
-    #[cfg(target_os = "windows")]
-    let uninstall_script = "uninstall-service-windows.ps1";
-    #[cfg(not(target_os = "windows"))]
-    let uninstall_script = "uninstall-service-linux.sh";
-
-    let daemon_card = Container::new(
-        Column::new()
-            .spacing(10)
-            .push(text("DAEMON").size(13).class(style::Text::Muted))
-            .push(text("Install or uninstall the sync daemon as a system service.").size(13).class(style::Text::Muted))
-            .push(
-                Row::new()
-                    .spacing(8)
-                    .push(
-                        Button::new(text("Install service").size(13))
-                            .padding([7, 14])
-                            .class(style::Button::Primary)
-                            .on_press(Message::InstallService)
-                    )
-                    .push(
-                        Button::new(text("Uninstall service").size(13))
-                            .padding([7, 14])
-                            .class(style::Button::Ghost)
-                            .on_press(Message::UninstallService)
-                    ),
-            ),
-    )
-    .width(Length::Fill)
-    .padding(16)
-    .class(style::Container::GamesTable);
-
     let content = Column::new()
         .push(header)
         .push(
