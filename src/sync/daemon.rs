@@ -450,6 +450,13 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                             cloud_time,
                             cloud_from
                         );
+                        if sync_config.system_notifications_enabled() {
+                            crate::sync::system_notifications::show_notification(
+                                "Sync conflict detected",
+                                &format!("{} has conflicting changes. Open Ludusavi to resolve.", game.name),
+                                crate::sync::system_notifications::NotificationLevel::Warning,
+                            );
+                        }
                         // Limpiamos el debounce — no insistimos hasta que el usuario decida.
                         debounce_state.lock().unwrap().remove(game_id);
                         // Limpiamos cualquier error previo para que la GUI muestre solo el banner de conflict.
@@ -460,15 +467,30 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                     }
                     SyncStatus::RequiresUpload => {
                         log::info!("[sync daemon] Uploading: {}", game.name);
+                        let game_name_for_notif = game.name.clone();
                         match upload_game(&config, &app_dir, &device, game) {
                             Ok(_) => {
                                 log::info!("[sync daemon] Upload complete: {}", game.name);
                                 any_changes = true;
                                 error_games.remove(game_id);
+                                if sync_config.system_notifications_enabled() {
+                                    crate::sync::system_notifications::show_notification(
+                                        "Saves uploaded",
+                                        &format!("{} saves uploaded to cloud", game_name_for_notif),
+                                        crate::sync::system_notifications::NotificationLevel::Info,
+                                    );
+                                }
                             }
                             Err(e) => {
                                 log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
                                 let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
+                                if sync_config.system_notifications_enabled() {
+                                    crate::sync::system_notifications::show_notification(
+                                        "Upload failed",
+                                        &format!("{}: {}", game_name_for_notif, message),
+                                        crate::sync::system_notifications::NotificationLevel::Error,
+                                    );
+                                }
                                 error_games.insert(game_id.clone(), ErrorInfo { category, direction, message });
                             }
                         }
@@ -831,16 +853,30 @@ let mut any_changes = false;
                     cloud_time,
                     cloud_from
                 );
+                if sync_config.system_notifications_enabled() {
+                    crate::sync::system_notifications::show_notification(
+                        "Sync conflict detected",
+                        &format!("{} has conflicting changes between this device and cloud. Open Ludusavi to resolve.", game.name),
+                        crate::sync::system_notifications::NotificationLevel::Warning,
+                    );
+                }
                 continue;
             }
 
             if status == SyncStatus::RequiresDownload {
                 log::info!("[sync daemon] Downloading (poll): {}", game.name);
+                let game_name_for_notif = game.name.clone();
                 match download_game(config, app_dir, device, game) {
                     Ok(_) => {
                         log::info!("[sync daemon] Download complete: {}", game.name);
                         any_changes = true;
-
+                        if sync_config.system_notifications_enabled() {
+                            crate::sync::system_notifications::show_notification(
+                                "Saves downloaded",
+                                &format!("{} saves downloaded from cloud", game_name_for_notif),
+                                crate::sync::system_notifications::NotificationLevel::Info,
+                            );
+                        }
                         // Re-registrar el directorio en el watcher
                         if let Some(path) = watched_paths.get(&game_id) {
                             if Path::new(path).is_dir() {
@@ -854,6 +890,13 @@ let mut any_changes = false;
                     Err(e) => {
                         log::error!("[sync daemon] Download failed for {}: {e}", game.name);
                         let (category, message, direction) = classify_error(&e, OperationDirection::Download);
+                        if sync_config.system_notifications_enabled() {
+                            crate::sync::system_notifications::show_notification(
+                                "Download failed",
+                                &format!("{}: {}", game_name_for_notif, message),
+                                crate::sync::system_notifications::NotificationLevel::Error,
+                            );
+                        }
                         error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                     }
                 }
