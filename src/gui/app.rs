@@ -6352,6 +6352,7 @@ impl App {
                 &self.modifiers,
                 &self.sync_in_progress,
                 &self.timed_notification,
+                self.daemon_running,
             ),
         };
 
