@@ -982,7 +982,8 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => 1,
+            | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::UpdatingManifest => 1,
         }
     }
 
@@ -1021,6 +1022,7 @@ impl Modal {
                                     | Self::ConfirmRestoreSafetyBackup { .. }
                                     | Self::ConfirmDeleteSafetyBackup { .. }
                                     | Self::ConfirmResolveConflictKeepBoth { .. }
+                                    | Self::UpdatingManifest
                                     | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
