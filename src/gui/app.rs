@@ -1831,11 +1831,12 @@ impl App {
                 }
                 Task::none()
             }
-            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing) => {
+            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing, service_installed) => {
                 self.daemon_running = running;
                 self.sync_status = sync_status;
                 self.game_list = game_list;
                 self.rclone_missing = rclone_missing;
+                self.service_installed = service_installed;
                 Task::none()
             }
             Message::SetGameSaveMode(game, mode) => {
@@ -4475,7 +4476,23 @@ impl App {
                     false
                 }
             };
-            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing)
+
+            // Detectar si el servicio (scheduled task) está instalado.
+            #[cfg(target_os = "windows")]
+            let service_installed = {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                std::process::Command::new("schtasks.exe")
+                    .args(["/query", "/TN", "LudusaviDaemon"])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+                    .map(|out| out.status.success())
+                    .unwrap_or(false)
+            };
+            #[cfg(not(target_os = "windows"))]
+            let service_installed = false;
+
+            Message::DaemonStatusChecked(running, sync_status, game_list, rclone_missing, service_installed)
         }));
 
         iced::Subscription::batch(subscriptions)
