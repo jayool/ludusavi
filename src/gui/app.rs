@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
+use iced::{keyboard, padding, widget::scrollable, Alignment, Length, Subscription, Task};
 
 use ludusavi::sync::bridge::register_game_after_backup;
 
@@ -6300,12 +6300,14 @@ impl App {
                         Container::new(
                             crate::gui::widget::text(n.text.clone()).size(13)
                         )
-                        .padding([10, 18])
+                        .padding([8, 20])
+                        .align_x(iced::alignment::Horizontal::Center)
+                        .align_y(iced::alignment::Vertical::Center)
                         .class(style::Container::Notification)
                     )
                     .width(Length::Fill)
-                    .padding(16)
-                    .align_x(iced::alignment::Horizontal::Right)
+                    .padding(padding::top(60))
+                    .align_x(iced::alignment::Horizontal::Center)
                 }),
             )
             .push(
@@ -6319,7 +6321,6 @@ impl App {
             .height(Length::Fill)
             .push(stack)
             .push_if(self.progress.visible(), || self.progress.view(&self.operation))
-            .push(self.manifest_notification.as_ref().map(|x| x.view()))
             .into()
     }
 }
