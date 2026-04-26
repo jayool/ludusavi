@@ -14,21 +14,26 @@ pub enum NotificationLevel {
 /// En plataformas no soportadas, es no-op (solo loguea).
 #[cfg(target_os = "windows")]
 pub fn show_notification(title: &str, body: &str, _level: NotificationLevel) {
-    use notify_rust::Notification;
+    use tauri_winrt_notification::{Toast, Duration as ToastDuration};
 
     log::info!("[system-notifications] Attempting to show: {} - {}", title, body);
 
-    let mut n = Notification::new();
-    n.summary(title)
-        .body(body)
-        .appname("Ludusavi")
-        .timeout(notify_rust::Timeout::Milliseconds(5000));
+    // Usamos el AppID de PowerShell que YA existe registrado en todos los Windows.
+    // Esto hace que la notificación aparezca en el Action Center.
+    // El downside: la notificación dirá "Windows PowerShell" como app emisora.
+    // Para que dijera "Ludusavi" haría falta registrar nuestro propio AppUserModelID
+    // en el registro de Windows (típicamente desde un instalador).
+    let app_id = Toast::POWERSHELL_APP_ID;
 
-    n.app_id("Ludusavi.SaveSync");
+    let result = Toast::new(app_id)
+        .title(title)
+        .text1(body)
+        .duration(ToastDuration::Short)
+        .show();
 
-    match n.show() {
+    match result {
         Ok(_) => log::info!("[system-notifications] Notification shown successfully"),
-        Err(e) => log::warn!("[system-notifications] Failed to show notification: {}", e),
+        Err(e) => log::warn!("[system-notifications] Failed to show notification: {:?}", e),
     }
 }
 
