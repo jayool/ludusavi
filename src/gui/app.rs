@@ -6345,6 +6345,7 @@ impl App {
             }
             Screen::Other => screen::other(
                 self.updating_manifest,
+                self.daemon_running,
                 &self.config,
                 &self.cache,
                 &self.operation,
@@ -6352,7 +6353,6 @@ impl App {
                 &self.modifiers,
                 &self.sync_in_progress,
                 &self.timed_notification,
-                self.daemon_running,
             ),
         };
 
