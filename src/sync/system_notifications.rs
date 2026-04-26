@@ -16,19 +16,19 @@ pub enum NotificationLevel {
 pub fn show_notification(title: &str, body: &str, _level: NotificationLevel) {
     use notify_rust::Notification;
 
+    log::info!("[system-notifications] Attempting to show: {} - {}", title, body);
+
     let mut n = Notification::new();
     n.summary(title)
         .body(body)
         .appname("Ludusavi")
         .timeout(notify_rust::Timeout::Milliseconds(5000));
 
-    // Forzar el AppUserModelID usando uno conocido del sistema.
-    // Esto hace que Windows muestre la notificación en el Action Center
-    // bajo el nombre de la app correcta y no del proceso parent.
     n.app_id("Ludusavi.SaveSync");
 
-    if let Err(e) = n.show() {
-        log::warn!("[system-notifications] Failed to show notification: {}", e);
+    match n.show() {
+        Ok(_) => log::info!("[system-notifications] Notification shown successfully"),
+        Err(e) => log::warn!("[system-notifications] Failed to show notification: {}", e),
     }
 }
 
