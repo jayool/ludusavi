@@ -360,6 +360,7 @@ pub fn other<'a>(
     let is_cloud_path_valid = crate::cloud::validate_cloud_path(&config.cloud.path).is_ok();
     let sync_games_config = ludusavi::sync::sync_config::SyncGamesConfig::load();
     let safety_backups_enabled = sync_games_config.safety_backups_enabled();
+    let system_notifications_enabled = sync_games_config.system_notifications_enabled();
 
     let header = Container::new(
         Row::new()
@@ -550,6 +551,26 @@ pub fn other<'a>(
                     )
                     .push(
                         text("Safety backups before destructive operations")
+                            .size(12)
+                            .class(style::Text::Muted),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Button::new(text(if system_notifications_enabled { "ON" } else { "OFF" }).size(12))
+                            .padding([6, 14])
+                            .class(if system_notifications_enabled {
+                                style::Button::Primary
+                            } else {
+                                style::Button::Ghost
+                            })
+                            .on_press(Message::ToggleSystemNotificationsEnabled(!system_notifications_enabled)),
+                    )
+                    .push(
+                        text("System notifications when daemon syncs in background")
                             .size(12)
                             .class(style::Text::Muted),
                     ),
