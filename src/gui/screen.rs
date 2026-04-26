@@ -347,6 +347,7 @@ impl CustomGames {
 
 pub fn other<'a>(
     updating_manifest: bool,
+    daemon_running: bool,
     config: &'a Config,
     cache: &'a Cache,
     operation: &Operation,
@@ -390,6 +391,46 @@ pub fn other<'a>(
             .push(text("ROOTS").size(13).class(style::Text::Muted))
             .push(text("Game roots are required to detect save file locations automatically.").size(13).class(style::Text::Muted))
             .push(editor::root(config, histories, modifiers)),
+    )
+    .width(Length::Fill)
+    .padding(16)
+    .class(style::Container::GamesTable);
+
+    let daemon_card = Container::new(
+        Column::new()
+            .spacing(10)
+            .push(text("DAEMON").size(13).class(style::Text::Muted))
+            .push(text("Install or uninstall the sync daemon as a system service.").size(13).class(style::Text::Muted))
+            .push(
+                Row::new()
+                    .spacing(8)
+                    .push(
+                        Button::new(text("Install service").size(13))
+                            .padding([7, 14])
+                            .class(style::Button::Primary)
+                            .on_press(Message::InstallService)
+                    )
+                    .push(
+                        Button::new(text("Uninstall service").size(13))
+                            .padding([7, 14])
+                            .class(style::Button::Ghost)
+                            .on_press(Message::UninstallService)
+                    )
+                    // BOTÓN CONDICIONAL: Start si parado, Stop si corriendo
+                    .push(
+                        if daemon_running {
+                            Button::new(text("Stop daemon").size(13))
+                                .padding([7, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::StopDaemon)
+                        } else {
+                            Button::new(text("Start daemon").size(13))
+                                .padding([7, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::StartDaemon)
+                        }
+                    ),
+            )
     )
     .width(Length::Fill)
     .padding(16)
