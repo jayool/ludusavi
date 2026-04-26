@@ -252,6 +252,10 @@ pub enum Message {
     GameDetailFilesToggled,
     InstallService,
     UninstallService,
+    /// Arranca el daemon (Windows: Start-ScheduledTask)
+    StartDaemon,
+    /// Para el daemon (Windows: kill del proceso)
+    StopDaemon,
     EnableCloudSync(String),
     AddGameRequested,
     AddGameNameChanged(String),
