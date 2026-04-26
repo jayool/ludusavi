@@ -228,6 +228,8 @@ pub enum Message {
     SyncNow(String),
     /// Toggle del flag global "safety backups enabled" en sync-games.json.
     ToggleSafetyBackupsEnabled(bool),
+    /// Toggle global para mostrar notificaciones nativas del SO desde el daemon.
+    ToggleSystemNotificationsEnabled(bool),
     /// Pide confirmación antes de restaurar un safety backup.
     RequestRestoreSafetyBackup(String),
     /// Ejecuta el restore del safety backup del juego indicado.
