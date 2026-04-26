@@ -741,28 +741,58 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
             match &status {
                 SyncStatus::RequiresDownload => {
                     log::info!("[sync daemon] Downloading on startup: {}", game.name);
+                    let game_name_for_notif = game.name.clone();
                     match download_game(config, app_dir, device, game) {
                         Ok(_) => {
                             log::info!("[sync daemon] Download complete: {}", game.name);
                             any_changes = true;
+                            if sync_config.system_notifications_enabled() {
+                                crate::sync::system_notifications::show_notification(
+                                    "Saves downloaded",
+                                    &format!("{} saves downloaded from cloud", game_name_for_notif),
+                                    crate::sync::system_notifications::NotificationLevel::Info,
+                                );
+                            }
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Download failed for {}: {e}", game.name);
                             let (category, message, direction) = classify_error(&e, OperationDirection::Download);
+                            if sync_config.system_notifications_enabled() {
+                                crate::sync::system_notifications::show_notification(
+                                    "Download failed",
+                                    &format!("{}: {}", game_name_for_notif, message),
+                                    crate::sync::system_notifications::NotificationLevel::Error,
+                                );
+                            }
                             error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                         }
                     }
                 }
                 SyncStatus::RequiresUpload => {
                     log::info!("[sync daemon] Uploading on startup: {}", game.name);
+                    let game_name_for_notif = game.name.clone();
                     match upload_game(config, app_dir, device, game) {
                         Ok(_) => {
                             log::info!("[sync daemon] Upload complete: {}", game.name);
                             any_changes = true;
+                            if sync_config.system_notifications_enabled() {
+                                crate::sync::system_notifications::show_notification(
+                                    "Saves uploaded",
+                                    &format!("{} saves uploaded to cloud", game_name_for_notif),
+                                    crate::sync::system_notifications::NotificationLevel::Info,
+                                );
+                            }
                         }
                         Err(e) => {
                             log::error!("[sync daemon] Upload failed for {}: {e}", game.name);
                             let (category, message, direction) = classify_error(&e, OperationDirection::Upload);
+                            if sync_config.system_notifications_enabled() {
+                                crate::sync::system_notifications::show_notification(
+                                    "Upload failed",
+                                    &format!("{}: {}", game_name_for_notif, message),
+                                    crate::sync::system_notifications::NotificationLevel::Error,
+                                );
+                            }
                             error_games.insert(game.name.clone(), ErrorInfo { category, direction, message });
                         }
                     }
