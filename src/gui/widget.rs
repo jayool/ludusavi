@@ -363,6 +363,31 @@ impl<'a> IcedButtonExt<'a> for Button<'a> {
     }
 }
 
+/// Wrap an element in a tooltip when daemon is stopped.
+/// If daemon is running, returns the element as-is.
+/// If daemon is stopped, wraps in a tooltip explaining the disabled state.
+pub fn daemon_required_tooltip<'a>(
+    element: impl Into<Element<'a>>,
+    daemon_running: bool,
+) -> Element<'a> {
+    if daemon_running {
+        element.into()
+    } else {
+        Tooltip::new(
+            element.into(),
+            Container::new(
+                text("Daemon not running. Start it from Settings.")
+                    .size(12)
+                    .class(crate::gui::style::Text::Default),
+            )
+            .padding([6, 10])
+            .class(crate::gui::style::Container::Tooltip),
+            iced::widget::tooltip::Position::Bottom,
+        )
+        .into()
+    }
+}
+
 pub mod operation {
     use iced::{
         advanced::widget::{
