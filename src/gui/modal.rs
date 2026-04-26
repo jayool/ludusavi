@@ -1009,10 +1009,7 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. }
-            | Self::UpdatingManifest
-            | Self::Error { .. }
-            | Self::Errors { .. } => 1,
+            | Self::ConfirmResolveConflictKeepBoth { .. } => 1,
         }
     }
 
