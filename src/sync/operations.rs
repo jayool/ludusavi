@@ -57,26 +57,34 @@ fn temp_zip_dir(app_dir: &StrictPath) -> StrictPath {
 /// Crea un zip de todos los ficheros en `folder_path` y lo escribe en `zip_path`.
 pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Result<(), SyncError> {
     let folder = std::path::Path::new(folder_path);
-
     if !folder.is_dir() {
-        return Err(SyncError::IoError(format!("Folder does not exist: {folder_path}")));
+        return Err(SyncError::IoError(format!(
+            "Folder does not exist or is not a directory: {folder_path}"
+        )));
     }
-
     if let Err(e) = zip_path.create_parent_dir() {
-        return Err(SyncError::IoError(e.to_string()));
+        return Err(SyncError::IoError(format!(
+            "Failed to create parent dir for zip ({}): {e}",
+            zip_path.render()
+        )));
     }
+    let zip_std = zip_path
+        .as_std_path_buf()
+        .map_err(|e| SyncError::IoError(format!("Cannot resolve zip path: {e}")))?;
 
-    let file = std::fs::File::create(
-        zip_path
-            .as_std_path_buf()
-            .map_err(|e| SyncError::IoError(e.to_string()))?,
-    )
-    .map_err(|e| SyncError::IoError(e.to_string()))?;
-
+    let file = std::fs::File::create(&zip_std).map_err(|e| {
+        SyncError::IoError(format!(
+            "Failed to create zip file at {:?}: {e}",
+            zip_std
+        ))
+    })?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::FileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .large_file(true);
+
+    let mut files_processed = 0u32;
+    let mut bytes_processed = 0u64;
 
     for entry in walkdir::WalkDir::new(folder)
         .follow_links(true)
@@ -87,26 +95,54 @@ pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Resul
         let path = entry.path();
         let relative = path
             .strip_prefix(folder)
-            .map_err(|e| SyncError::ZipError(e.to_string()))?;
+            .map_err(|e| SyncError::ZipError(format!("strip_prefix failed for {:?}: {e}", path)))?;
         let zip_entry_name = relative.to_string_lossy().replace('\\', "/");
 
         zip.start_file(&zip_entry_name, options)
-            .map_err(|e| SyncError::ZipError(e.to_string()))?;
+            .map_err(|e| SyncError::ZipError(format!(
+                "Failed to start zip entry {} (file {:?}): {e}",
+                zip_entry_name, path
+            )))?;
 
-        let mut f = std::fs::File::open(path).map_err(|e| SyncError::IoError(e.to_string()))?;
+        let mut f = std::fs::File::open(path).map_err(|e| {
+            SyncError::IoError(format!(
+                "Failed to open source file {:?} for zipping: {e}",
+                path
+            ))
+        })?;
 
         let mut buffer = [0u8; 65536];
         loop {
-            let n = f.read(&mut buffer).map_err(|e| SyncError::IoError(e.to_string()))?;
+            let n = f.read(&mut buffer).map_err(|e| {
+                SyncError::IoError(format!(
+                    "Failed to read from source file {:?}: {e}",
+                    path
+                ))
+            })?;
             if n == 0 {
                 break;
             }
-            zip.write_all(&buffer[..n])
-                .map_err(|e| SyncError::ZipError(e.to_string()))?;
+            zip.write_all(&buffer[..n]).map_err(|e| {
+                SyncError::ZipError(format!(
+                    "Failed to write to zip (entry {}): {e}",
+                    zip_entry_name
+                ))
+            })?;
+            bytes_processed += n as u64;
         }
+
+        files_processed += 1;
     }
 
-    zip.finish().map_err(|e| SyncError::ZipError(e.to_string()))?;
+    zip.finish().map_err(|e| SyncError::ZipError(format!("zip.finish() failed: {e}")))?;
+
+    log::debug!(
+        "[zip] Created {:?} ({} files, {} bytes)",
+        zip_std,
+        files_processed,
+        bytes_processed
+    );
+
     Ok(())
 }
 
