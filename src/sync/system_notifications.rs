@@ -22,6 +22,11 @@ pub fn show_notification(title: &str, body: &str, _level: NotificationLevel) {
         .appname("Ludusavi")
         .timeout(notify_rust::Timeout::Milliseconds(5000));
 
+    // Forzar el AppUserModelID usando uno conocido del sistema.
+    // Esto hace que Windows muestre la notificación en el Action Center
+    // bajo el nombre de la app correcta y no del proceso parent.
+    n.app_id("Ludusavi.SaveSync");
+
     if let Err(e) = n.show() {
         log::warn!("[system-notifications] Failed to show notification: {}", e);
     }
