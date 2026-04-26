@@ -6536,6 +6536,7 @@ impl App {
             Screen::Other => screen::other(
                 self.updating_manifest,
                 self.daemon_running,
+                self.service_installed,
                 &self.config,
                 &self.cache,
                 &self.operation,
