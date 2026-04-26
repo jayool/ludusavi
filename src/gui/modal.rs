@@ -545,8 +545,20 @@ impl Modal {
                     )]
                 }
             }
+            Self::Errors { errors } => {
+                let has_manifest_error = errors.iter().any(|e| {
+                    matches!(e, crate::prelude::Error::ManifestCannotBeUpdated { .. })
+                });
+                if has_manifest_error {
+                    vec![button::primary(
+                        "Retry",
+                        Some(Message::UpdateManifest { force: true }),
+                    )]
+                } else {
+                    vec![]
+                }
+            }
             Self::Error { .. }
-            | Self::Errors { .. }
             | Self::Exiting
             | Self::ConfirmBackup { .. }
             | Self::ConfirmRestore { .. }
@@ -568,6 +580,21 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. } => vec![],
+            Self::Errors { errors } => {
+                let has_manifest_error = errors.iter().any(|e| {
+                    matches!(e, crate::prelude::Error::ManifestCannotBeUpdated { .. })
+                });
+                if has_manifest_error {
+                    vec![
+                        button::primary(
+                            "Retry",
+                            Some(Message::UpdateManifest { force: true }),
+                        )
+                    ]
+                } else {
+                    vec![]
+                }
+            }
         }
     }
 
