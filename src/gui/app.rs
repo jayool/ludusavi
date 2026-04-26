@@ -6280,6 +6280,8 @@ impl App {
                 &self.operation,
                 &self.text_histories,
                 &self.modifiers,
+                &self.sync_in_progress,
+                &self.timed_notification,
             ),
         };
 
