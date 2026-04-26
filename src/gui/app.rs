@@ -2751,6 +2751,18 @@ impl App {
                 ).expires(2));
                 Task::none()
             }
+            Message::ToggleSystemNotificationsEnabled(enabled) => {
+                self.sync_games_config.system_notifications_enabled = enabled;
+                self.sync_games_config.save();
+                self.timed_notification = Some(Notification::new(
+                    if enabled {
+                        "✓ System notifications enabled".to_string()
+                    } else {
+                        "✓ System notifications disabled".to_string()
+                    }
+                ).expires(2));
+                Task::none()
+            }
             Message::RequestRestoreSafetyBackup(game) => {
                 self.show_modal(Modal::ConfirmRestoreSafetyBackup { game })
             }
