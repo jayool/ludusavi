@@ -778,6 +778,13 @@ fn check_downloads(config: &Config, app_dir: &StrictPath, device: &DeviceIdentit
                         cloud_time,
                         cloud_from
                     );
+                    if sync_config.system_notifications_enabled() {
+                        crate::sync::system_notifications::show_notification(
+                            "Sync conflict detected",
+                            &format!("{} has conflicting changes. Open Ludusavi to resolve.", game.name),
+                            crate::sync::system_notifications::NotificationLevel::Warning,
+                        );
+                    }
                     // No hacemos nada automático. La GUI verá status=conflict
                     // en daemon-status.json y mostrará el banner de resolución.
                 }
