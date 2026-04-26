@@ -983,7 +983,9 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. }
-            | Self::UpdatingManifest => 1,
+            | Self::UpdatingManifest
+            | Self::Error { .. }
+            | Self::Errors { .. } => 1,
         }
     }
 
@@ -1023,6 +1025,8 @@ impl Modal {
                                     | Self::ConfirmDeleteSafetyBackup { .. }
                                     | Self::ConfirmResolveConflictKeepBoth { .. }
                                     | Self::UpdatingManifest
+                                    | Self::Error { .. }
+                                    | Self::Errors { .. }
                                     | Self::NoMissingRoots => Length::Shrink,
                                     _ => Length::FillPortion(self.body_height_portion()),
                                 }),
