@@ -209,8 +209,8 @@ pub fn determine_sync_type(
                 );
                 return SyncStatus::RequiresUpload;
             }
-            log::warn!(
-                "[{}] CONFLICT: both local and cloud changed since last sync (local={}, cloud={}, from={:?})",
+            log::debug!(
+                "[{}] CONFLICT detected: local={} cloud={} from={:?}",
                 game.name,
                 scan_latest,
                 cloud_latest,
