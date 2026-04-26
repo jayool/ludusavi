@@ -5047,94 +5047,106 @@ impl App {
                         .push_if(
                             matches!(mode, ludusavi::sync::sync_config::SaveMode::Sync),
                             || {
+                                let dr = self.daemon_running;
                                 Row::new()
                                     .spacing(8)
-                                    .push(
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Sync now").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Primary)
-                                        .on_press(Message::SyncNow(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::SyncNow(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Backup").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncBackup(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncBackup(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Restore").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncRestore(game_name.clone()))
-                                    )
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncRestore(game_name.clone()))),
+                                        dr,
+                                    ))
                             }
                         )
                         .push_if(
                             matches!(mode, ludusavi::sync::sync_config::SaveMode::Local) && auto_sync_current,
                             || {
+                                let dr = self.daemon_running;
                                 Row::new()
                                     .spacing(8)
-                                    .push(
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Sync now").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Primary)
-                                        .on_press(Message::SyncNow(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::SyncNow(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Backup").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncBackup(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncBackup(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Restore").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncRestore(game_name.clone()))
-                                    )
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncRestore(game_name.clone()))),
+                                        dr,
+                                    ))
                             }
                         )
                         .push_if(
                             matches!(mode, ludusavi::sync::sync_config::SaveMode::Cloud) && auto_sync_current,
                             || {
+                                let dr = self.daemon_running;
                                 Row::new()
                                     .spacing(8)
-                                    .push(
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Sync now").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Primary)
-                                        .on_press(Message::SyncNow(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::SyncNow(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Backup").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncBackup(game_name.clone()))
-                                    )
-                                    .push(
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncBackup(game_name.clone()))),
+                                        dr,
+                                    ))
+                                    .push(crate::gui::widget::daemon_required_tooltip(
                                         crate::gui::widget::Button::new(
                                             crate::gui::widget::text("Restore").size(13)
                                         )
                                         .padding([7, 14])
                                         .class(style::Button::Ghost)
-                                        .on_press(Message::RequestSyncRestore(game_name.clone()))
-                                    )
+                                        .on_press_maybe(dr.then_some(Message::RequestSyncRestore(game_name.clone()))),
+                                        dr,
+                                    ))
                             }
                         )
                         .push_if(
