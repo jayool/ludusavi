@@ -5295,34 +5295,38 @@ impl App {
                                         .push(crate::gui::widget::text("Cloud saves:").size(12).class(style::Text::Muted).width(120))
                                         .push(crate::gui::widget::text(format!("{}, from {}", cloud_str, cloud_from_str)).size(12)),
                                 )
-                                .push(
+                                .push({
+                                    let dr = self.daemon_running;
                                     Row::new()
                                         .spacing(8)
-                                        .push(
+                                        .push(crate::gui::widget::daemon_required_tooltip(
                                             crate::gui::widget::Button::new(
                                                 crate::gui::widget::text("Keep local").size(12)
                                             )
                                             .padding([6, 14])
                                             .class(style::Button::Primary)
-                                            .on_press(Message::ResolveConflictKeepLocal(g_local))
-                                        )
-                                        .push(
+                                            .on_press_maybe(dr.then_some(Message::ResolveConflictKeepLocal(g_local))),
+                                            dr,
+                                        ))
+                                        .push(crate::gui::widget::daemon_required_tooltip(
                                             crate::gui::widget::Button::new(
                                                 crate::gui::widget::text("Keep cloud").size(12)
                                             )
                                             .padding([6, 14])
                                             .class(style::Button::Primary)
-                                            .on_press(Message::ResolveConflictKeepCloud(g_cloud))
-                                        )
-                                        .push(
+                                            .on_press_maybe(dr.then_some(Message::ResolveConflictKeepCloud(g_cloud))),
+                                            dr,
+                                        ))
+                                        .push(crate::gui::widget::daemon_required_tooltip(
                                             crate::gui::widget::Button::new(
                                                 crate::gui::widget::text("Keep both").size(12)
                                             )
                                             .padding([6, 14])
                                             .class(style::Button::Ghost)
-                                            .on_press(Message::RequestResolveConflictKeepBoth(g_both))
-                                        ),
-                                )
+                                            .on_press_maybe(dr.then_some(Message::RequestResolveConflictKeepBoth(g_both))),
+                                            dr,
+                                        ))
+                                })
                         )
                         .width(Length::Fill)
                         .padding(14)
@@ -5398,12 +5402,16 @@ impl App {
                         let buttons_row = Row::new()
                             .spacing(8)
                             .push_if(primary_action == ActionButton::Retry, || {
-                                crate::gui::widget::Button::new(
-                                    crate::gui::widget::text("Retry").size(12)
+                                let dr = self.daemon_running;
+                                crate::gui::widget::daemon_required_tooltip(
+                                    crate::gui::widget::Button::new(
+                                        crate::gui::widget::text("Retry").size(12)
+                                    )
+                                    .padding([6, 14])
+                                    .class(style::Button::Primary)
+                                    .on_press_maybe(dr.then_some(Message::SyncNow(g.clone()))),
+                                    dr,
                                 )
-                                .padding([6, 14])
-                                .class(style::Button::Primary)
-                                .on_press(Message::SyncNow(g.clone()))
                             })
                             .push_if(primary_action == ActionButton::ReconfigureCloud, || {
                                 crate::gui::widget::Button::new(
