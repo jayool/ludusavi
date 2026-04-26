@@ -1487,6 +1487,12 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::EnableCloudSync(game_name) => {
+                if !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.sync_games_config.games.insert(
                     game_name.clone(),
                     ludusavi::sync::sync_config::GameSyncConfig {
@@ -1864,6 +1870,21 @@ impl App {
                     if switching_to_cloud && self.rclone_missing {
                         self.timed_notification = Some(Notification::new(
                             "✗ Rclone not available. Check Settings.".to_string()
+                        ).expires(4));
+                        return Task::none();
+                    }
+
+                    // Bloquear si el resultado requiere daemon y daemon no está corriendo.
+                    // Casos que requieren daemon: SYNC, LOCAL+auto, CLOUD+auto.
+                    let requires_daemon = matches!(new_mode, ludusavi::sync::sync_config::SaveMode::Sync)
+                        || (matches!(
+                            new_mode,
+                            ludusavi::sync::sync_config::SaveMode::Local
+                            | ludusavi::sync::sync_config::SaveMode::Cloud
+                        ) && pending.auto_sync);
+                    if requires_daemon && !self.daemon_running {
+                        self.timed_notification = Some(Notification::new(
+                            "✗ Daemon not running. Start it from Settings.".to_string()
                         ).expires(4));
                         return Task::none();
                     }
