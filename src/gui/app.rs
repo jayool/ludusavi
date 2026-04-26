@@ -130,6 +130,7 @@ pub struct App {
     modifiers: keyboard::Modifiers,
     jump_to_game_after_scan: Option<String>,
     daemon_running: bool,
+    service_installed: bool,
     sync_status: std::collections::HashMap<String, GameStatusInfo>,
     rclone_missing: bool,
     games_search: String,
