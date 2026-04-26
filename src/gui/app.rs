@@ -6297,6 +6297,21 @@ impl App {
         let stack = Stack::new()
             .push(Container::new(body).class(style::Container::Primary))
             .push(
+                self.timed_notification.as_ref().map(|n| {
+                    Container::new(
+                        Container::new(
+                            crate::gui::widget::text(n.text.clone())
+                                .size(13)
+                        )
+                        .padding([10, 18])
+                        .class(style::Container::Notification)
+                    )
+                    .width(Length::Fill)
+                    .padding(16)
+                    .align_x(iced::alignment::Horizontal::Right)
+                }),
+            )
+            .push(
                 self.modals
                     .last()
                     .map(|modal| modal.view(&self.config, &self.text_histories, &self.operation)),
