@@ -27,6 +27,8 @@ pub struct SyncGamesConfig {
     pub games: HashMap<String, GameSyncConfig>,
     #[serde(default = "default_true")]
     pub safety_backups_enabled: bool,
+    #[serde(default = "default_true")]
+    pub system_notifications_enabled: bool,
 }
 
 impl Default for SyncGamesConfig {
@@ -34,6 +36,7 @@ impl Default for SyncGamesConfig {
         Self {
             games: HashMap::new(),
             safety_backups_enabled: true,
+            system_notifications_enabled: true,
         }
     }
 }
@@ -88,5 +91,9 @@ impl SyncGamesConfig {
     }
         pub fn safety_backups_enabled(&self) -> bool {
         self.safety_backups_enabled
+    }
+
+    pub fn system_notifications_enabled(&self) -> bool {
+        self.system_notifications_enabled
     }
 }
