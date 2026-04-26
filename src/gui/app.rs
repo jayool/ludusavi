@@ -2502,9 +2502,34 @@ impl App {
             Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::CancelOperation => self.cancel_operation(),
             Message::RequestSyncBackup(game_name) => {
+                // Si el modo es CLOUD/SYNC requiere daemon. LOCAL no.
+                let mode = self.sync_games_config.get_mode(&game_name);
+                let needs_daemon = matches!(
+                    mode,
+                    ludusavi::sync::sync_config::SaveMode::Cloud
+                    | ludusavi::sync::sync_config::SaveMode::Sync
+                );
+                if needs_daemon && !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.show_modal(Modal::ConfirmSyncBackup { game: game_name })
             }
             Message::RequestSyncRestore(game_name) => {
+                let mode = self.sync_games_config.get_mode(&game_name);
+                let needs_daemon = matches!(
+                    mode,
+                    ludusavi::sync::sync_config::SaveMode::Cloud
+                    | ludusavi::sync::sync_config::SaveMode::Sync
+                );
+                if needs_daemon && !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.show_modal(Modal::ConfirmSyncRestore { game: game_name })
             }
             Message::RequestForceUpload(game_name) => {
@@ -2840,6 +2865,21 @@ impl App {
                 Task::none()
             }
             Message::RequestRestoreSafetyBackup(game) => {
+                let mode = self.sync_games_config.get_mode(&game);
+                let needs_daemon = matches!(
+                    mode,
+                    ludusavi::sync::sync_config::SaveMode::Cloud
+                    | ludusavi::sync::sync_config::SaveMode::Sync
+                ) || (
+                    matches!(mode, ludusavi::sync::sync_config::SaveMode::Local)
+                    && self.sync_games_config.get_auto_sync(&game)
+                );
+                if needs_daemon && !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.show_modal(Modal::ConfirmRestoreSafetyBackup { game })
             }
             Message::RestoreSafetyBackup(game_name) => {
@@ -2923,6 +2963,12 @@ impl App {
                 Task::none()
             }
             Message::ResolveConflictKeepLocal(game_name) => {
+                if !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.sync_in_progress = Some("⏳ Uploading local saves...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
@@ -2951,6 +2997,12 @@ impl App {
                 )
             }
             Message::ResolveConflictKeepCloud(game_name) => {
+                if !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.sync_in_progress = Some("⏳ Downloading cloud saves...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
@@ -2998,6 +3050,12 @@ impl App {
                 )
             }
             Message::RequestResolveConflictKeepBoth(game) => {
+                if !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.show_modal(Modal::ConfirmResolveConflictKeepBoth { game })
             }
             Message::ResolveConflictKeepBoth(game_name) => {
@@ -3151,6 +3209,12 @@ impl App {
                 Task::none()
             }
             Message::SyncNow(game_name) => {
+                if !self.daemon_running {
+                    self.timed_notification = Some(Notification::new(
+                        "✗ Daemon not running. Start it from Settings.".to_string()
+                    ).expires(4));
+                    return Task::none();
+                }
                 self.sync_in_progress = Some("⏳ Syncing...".to_string());
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
@@ -5573,30 +5637,48 @@ impl App {
                                     .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Local))
                                 })
                                 .push({
+                                    // CLOUD por sí mismo no requiere daemon (sync OFF). Solo bloqueamos si auto está ON.
                                     let g = game_for_mode.clone();
-                                    crate::gui::widget::Button::new(
-                                        crate::gui::widget::text("CLOUD").size(12)
+                                    let dr = self.daemon_running;
+                                    let auto_on = self.pending_game_detail.as_ref()
+                                        .map(|p| p.auto_sync)
+                                        .unwrap_or_else(|| self.sync_games_config.get_auto_sync(&game_name));
+                                    let blocked = auto_on && !dr;
+                                    crate::gui::widget::daemon_required_tooltip(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("CLOUD").size(12)
+                                        )
+                                        .padding([6, 14])
+                                        .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Cloud) {
+                                            style::Button::Primary
+                                        } else {
+                                            style::Button::Ghost
+                                        })
+                                        .on_press_maybe((!blocked).then_some(
+                                            Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Cloud)
+                                        )),
+                                        !blocked,
                                     )
-                                    .padding([6, 14])
-                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Cloud) {
-                                        style::Button::Primary
-                                    } else {
-                                        style::Button::Ghost
-                                    })
-                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Cloud))
                                 })
                                 .push({
+                                    // SYNC siempre requiere daemon.
                                     let g = game_for_mode.clone();
-                                    crate::gui::widget::Button::new(
-                                        crate::gui::widget::text("SYNC").size(12)
+                                    let dr = self.daemon_running;
+                                    crate::gui::widget::daemon_required_tooltip(
+                                        crate::gui::widget::Button::new(
+                                            crate::gui::widget::text("SYNC").size(12)
+                                        )
+                                        .padding([6, 14])
+                                        .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Sync) {
+                                            style::Button::Primary
+                                        } else {
+                                            style::Button::Ghost
+                                        })
+                                        .on_press_maybe(dr.then_some(
+                                            Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Sync)
+                                        )),
+                                        dr,
                                     )
-                                    .padding([6, 14])
-                                    .class(if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Sync) {
-                                        style::Button::Primary
-                                    } else {
-                                        style::Button::Ghost
-                                    })
-                                    .on_press(Message::SetGameSaveMode(g, ludusavi::sync::sync_config::SaveMode::Sync))
                                 }),
                         )
                         .push(crate::gui::widget::text("SAVE LOCATION").size(13).class(style::Text::Muted))
@@ -5669,18 +5751,28 @@ impl App {
                                         Row::new()
                                             .spacing(10)
                                             .align_y(Alignment::Center)
-                                            .push(
-                                                crate::gui::widget::Button::new(
-                                                    crate::gui::widget::text(if auto_sync { "ON" } else { "OFF" }).size(12)
+                                            .push({
+                                                // Bloquear el toggle si activarlo (pasar a ON) requiere daemon.
+                                                // Si ya está ON, dejar siempre clicable (para poder apagarlo).
+                                                let dr = self.daemon_running;
+                                                let toggle_to_on = !auto_sync;
+                                                let blocked = toggle_to_on && !dr;
+                                                crate::gui::widget::daemon_required_tooltip(
+                                                    crate::gui::widget::Button::new(
+                                                        crate::gui::widget::text(if auto_sync { "ON" } else { "OFF" }).size(12)
+                                                    )
+                                                    .padding([6, 14])
+                                                    .class(if auto_sync {
+                                                        style::Button::Primary
+                                                    } else {
+                                                        style::Button::Ghost
+                                                    })
+                                                    .on_press_maybe((!blocked).then_some(
+                                                        Message::SetGameAutoSync(g, !auto_sync)
+                                                    )),
+                                                    !blocked,
                                                 )
-                                                .padding([6, 14])
-                                                .class(if auto_sync {
-                                                    style::Button::Primary
-                                                } else {
-                                                    style::Button::Ghost
-                                                })
-                                                .on_press(Message::SetGameAutoSync(g, !auto_sync))
-                                            )
+                                            })
                                             .push(
                                                 crate::gui::widget::text(
                                                     if matches!(current_mode, ludusavi::sync::sync_config::SaveMode::Local) {
