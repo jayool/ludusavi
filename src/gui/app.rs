@@ -5972,14 +5972,29 @@ impl App {
                                                                     .class(style::Text::Muted),
                                                                 ),
                                                         )
-                                                        .push(
-                                                            crate::gui::widget::Button::new(
-                                                                crate::gui::widget::text("Restore").size(12)
+                                                        .push({
+                                                            // Restore safety bloqueado si el modo actual requiere daemon vigilando.
+                                                            let mode_needs_daemon = matches!(
+                                                                saved_mode,
+                                                                ludusavi::sync::sync_config::SaveMode::Cloud
+                                                                | ludusavi::sync::sync_config::SaveMode::Sync
+                                                            ) || (
+                                                                matches!(saved_mode, ludusavi::sync::sync_config::SaveMode::Local)
+                                                                && self.sync_games_config.get_auto_sync(&game_name)
+                                                            );
+                                                            let restore_blocked = mode_needs_daemon && !self.daemon_running;
+                                                            crate::gui::widget::daemon_required_tooltip(
+                                                                crate::gui::widget::Button::new(
+                                                                    crate::gui::widget::text("Restore").size(12)
+                                                                )
+                                                                .padding([6, 14])
+                                                                .class(style::Button::Primary)
+                                                                .on_press_maybe((!restore_blocked).then_some(
+                                                                    Message::RequestRestoreSafetyBackup(g_restore)
+                                                                )),
+                                                                !restore_blocked,
                                                             )
-                                                            .padding([6, 14])
-                                                            .class(style::Button::Primary)
-                                                            .on_press(Message::RequestRestoreSafetyBackup(g_restore))
-                                                        )
+                                                        })
                                                         .push(
                                                             crate::gui::widget::Button::new(
                                                                 crate::gui::widget::text("Delete").size(12)
