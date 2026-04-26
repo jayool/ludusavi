@@ -352,6 +352,8 @@ pub fn other<'a>(
     operation: &Operation,
     histories: &'a TextHistories,
     modifiers: &keyboard::Modifiers,
+    sync_in_progress: &Option<String>,
+    timed_notification: &Option<crate::gui::notification::Notification>,
 ) -> Element<'a> {
     let is_rclone_valid = config.apps.rclone.is_valid();
     let is_cloud_configured = config.cloud.remote.is_some();
@@ -364,7 +366,18 @@ pub fn other<'a>(
             .padding([0, 24])
             .height(52)
             .align_y(Alignment::Center)
-            .push(text("Settings").size(15).width(Length::Fill)),
+            .push(text("Settings").size(15).width(Length::Fill))
+            .push_if(
+                sync_in_progress.is_some() || timed_notification.is_some(),
+                || {
+                    let msg = sync_in_progress.clone()
+                        .or_else(|| timed_notification.as_ref().map(|n| n.text.clone()))
+                        .unwrap_or_default();
+                    text(msg)
+                        .size(12)
+                        .class(style::Text::Muted)
+                }
+            ),
     )
     .width(Length::Fill)
     .class(style::Container::TopBar);
