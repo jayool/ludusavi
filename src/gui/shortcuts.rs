@@ -19,10 +19,6 @@ use crate::{
     scan::registry::RegistryItem,
 };
 
-fn path_appears_valid(path: &str) -> bool {
-    !path.contains("://")
-}
-
 pub enum Shortcut {
     Undo,
     Redo,
@@ -52,17 +48,6 @@ impl Shortcut {
             match config {
                 Some(config) => config.reset(value),
                 None => *config = Some(value.into()),
-            }
-        }
-    }
-
-    pub fn apply_to_registry_path_field(&self, config: &mut RegistryItem, history: &mut TextHistory) {
-        match self {
-            Shortcut::Undo => {
-                config.reset(history.undo());
-            }
-            Shortcut::Redo => {
-                config.reset(history.redo());
             }
         }
     }
@@ -311,111 +296,6 @@ impl TextHistories {
         self.modal.password.clear();
     }
 
-    pub fn input<'a>(&self, subject: UndoSubject) -> Element<'a> {
-        let current = match &subject {
-            UndoSubject::BackupTarget => self.backup_target.current(),
-            UndoSubject::RootPath(i) => self.roots.get(*i).map(|x| x.path.current()).unwrap_or_default(),
-            UndoSubject::RootLutrisDatabase(i) => self
-                .roots
-                .get(*i)
-                .map(|x| x.lutris_database.current())
-                .unwrap_or_default(),
-            UndoSubject::SecondaryManifest(i) => self
-                .secondary_manifests
-                .get(*i)
-                .map(|x| x.current())
-                .unwrap_or_default(),
-            UndoSubject::RcloneExecutable => self.rclone_executable.current(),
-            UndoSubject::RcloneArguments => self.rclone_arguments.current(),
-            UndoSubject::CloudRemoteId => self.cloud_remote_id.current(),
-            UndoSubject::CloudPath => self.cloud_path.current(),
-            UndoSubject::ModalField(field) => match field {
-                ModalInputKind::Url => self.modal.url.current(),
-                ModalInputKind::Host => self.modal.host.current(),
-                ModalInputKind::Port => self.modal.port.current(),
-                ModalInputKind::Username => self.modal.username.current(),
-                ModalInputKind::Password => self.modal.password.current(),
-            },
-        };
-
-        let event: Box<dyn Fn(String) -> Message> = match subject.clone() {
-            UndoSubject::BackupTarget => Box::new(Message::config(config::Event::BackupTarget)),
-            UndoSubject::RootPath(i) => Box::new(Message::config(move |value| {
-                config::Event::Root(EditAction::Change(i, value))
-            })),
-            UndoSubject::RootLutrisDatabase(i) => Box::new(Message::config(move |value| {
-                config::Event::RootLutrisDatabase(i, value)
-            })),
-            UndoSubject::SecondaryManifest(i) => Box::new(Message::config(move |value| {
-                config::Event::SecondaryManifest(EditAction::Change(i, value))
-            })),
-            UndoSubject::RcloneExecutable => Box::new(Message::config(config::Event::RcloneExecutable)),
-            UndoSubject::RcloneArguments => Box::new(Message::config(config::Event::RcloneArguments)),
-            UndoSubject::CloudRemoteId => Box::new(Message::config(config::Event::CloudRemoteId)),
-            UndoSubject::CloudPath => Box::new(Message::config(config::Event::CloudPath)),
-            UndoSubject::ModalField(field) => Box::new(move |value| {
-                Message::EditedModalField(match field {
-                    ModalInputKind::Url => ModalField::Url(value),
-                    ModalInputKind::Host => ModalField::Host(value),
-                    ModalInputKind::Port => ModalField::Port(value),
-                    ModalInputKind::Username => ModalField::Username(value),
-                    ModalInputKind::Password => ModalField::Password(value),
-                })
-            }),
-        };
-
-        let placeholder = match &subject {
-            UndoSubject::BackupTarget => "".to_string(),
-            UndoSubject::RootPath(_) => "".to_string(),
-            UndoSubject::RootLutrisDatabase(_) => "".to_string(),
-            UndoSubject::SecondaryManifest(_) => "".to_string(),
-            UndoSubject::RcloneExecutable => TRANSLATOR.executable_label(),
-            UndoSubject::RcloneArguments => TRANSLATOR.arguments_label(),
-            UndoSubject::CloudRemoteId => "".to_string(),
-            UndoSubject::CloudPath => "".to_string(),
-            UndoSubject::ModalField(_) => "".to_string(),
-        };
-
-        let icon = match &subject {
-            UndoSubject::BackupTarget
-            | UndoSubject::RootPath(_)
-            | UndoSubject::RootLutrisDatabase(_)
-            | UndoSubject::RcloneExecutable => (!path_appears_valid(&current)).then_some(ERROR_ICON),
-            UndoSubject::SecondaryManifest(_)
-            | UndoSubject::RcloneArguments
-            | UndoSubject::CloudRemoteId
-            | UndoSubject::CloudPath
-            | UndoSubject::ModalField(_) => None,
-        };
-
-        let id: Option<iced::widget::Id> = None;
-
-        Undoable::new(
-            {
-                let mut input = TextInput::new(&placeholder, &current)
-                    .on_input(event)
-                    .class(style::TextInput)
-                    .width(Length::Fill)
-                    .padding(5);
-
-                if let Some(icon) = icon {
-                    input = input.icon(icon);
-                }
-
-                if subject.privacy().sensitive() {
-                    input = input.secure(true);
-                }
-
-                if let Some(id) = id {
-                    input = input.id(id);
-                }
-
-                input
-            },
-            move |action| Message::UndoRedo(action, subject.clone()),
-        )
-        .into()
-    }
 pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
         let current = match &subject {
             UndoSubject::BackupTarget => self.backup_target.current(),
