@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iced::{keyboard, padding, widget::scrollable, Alignment, Length, Subscription, Task};
+use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
 
 use ludusavi::sync::bridge::register_game_after_backup;
 
