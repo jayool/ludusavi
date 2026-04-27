@@ -8,7 +8,7 @@ use iced::Length;
 use crate::{
     cloud::Remote,
     gui::{
-        common::{Message, UndoSubject, ERROR_ICON},
+        common::{Message, UndoSubject},
         modal::{ModalField, ModalInputKind},
         style,
         widget::{Element, TextInput, Undoable},
