@@ -226,7 +226,6 @@ pub struct TextHistories {
     pub backup_target: TextHistory,
     pub restore_source: TextHistory,
     pub backup_search_game_name: TextHistory,
-    pub restore_search_game_name: TextHistory,
     pub custom_games_search_game_name: TextHistory,
     pub roots: Vec<RootHistory>,
     pub secondary_manifests: Vec<TextHistory>,
@@ -248,7 +247,6 @@ impl TextHistories {
             backup_target: TextHistory::path(&config.backup.path),
             restore_source: TextHistory::path(&config.restore.path),
             backup_search_game_name: TextHistory::raw(""),
-            restore_search_game_name: TextHistory::raw(""),
             rclone_executable: TextHistory::path(&config.apps.rclone.path),
             rclone_arguments: TextHistory::raw(&config.apps.rclone.arguments),
             cloud_path: TextHistory::raw(&config.cloud.path),
@@ -435,7 +433,6 @@ pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
                 ModalInputKind::Username => self.modal.username.current(),
                 ModalInputKind::Password => self.modal.password.current(),
             },
-            _ => return self.input(subject),
         };
 
         let event: Box<dyn Fn(String) -> Message> = match subject.clone() {
@@ -462,7 +459,6 @@ pub fn input_small<'a>(&self, subject: UndoSubject) -> Element<'a> {
                     ModalInputKind::Password => ModalField::Password(value),
                 })
             }),
-            _ => return self.input(subject),
         };
 
         let is_password = matches!(
