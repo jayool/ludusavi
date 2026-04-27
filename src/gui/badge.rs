@@ -36,15 +36,7 @@ impl Badge {
             width: None,
         }
     }
-
-    pub fn icon(icon: Icon) -> Self {
-        Self {
-            text: icon.as_char().to_string(),
-            icon: true,
-            ..Default::default()
-        }
-    }
-
+    
     pub fn scan_change(change: ScanChange) -> Self {
         Self {
             text: change.symbol().to_string(),
@@ -66,35 +58,12 @@ impl Badge {
         Self::scan_change(ScanChange::New)
     }
 
-    pub fn new_entry_with_count(count: usize) -> Self {
-        Self {
-            text: format!("{}{}", crate::lang::ADD_SYMBOL, count),
-            change: Some(ScanChange::New),
-            tooltip: Some(TRANSLATOR.new_tooltip()),
-            ..Default::default()
-        }
-    }
-
     pub fn changed_entry() -> Self {
         Self::scan_change(ScanChange::Different)
     }
 
     pub fn removed_entry() -> Self {
         Self::scan_change(ScanChange::Removed)
-    }
-
-    pub fn changed_entry_with_count(count: usize) -> Self {
-        Self {
-            text: format!("{}{}", crate::lang::CHANGE_SYMBOL, count),
-            change: Some(ScanChange::Different),
-            tooltip: Some(TRANSLATOR.updated_tooltip()),
-            ..Default::default()
-        }
-    }
-
-    pub fn on_press(mut self, message: Message) -> Self {
-        self.on_press = Some(message);
-        self
     }
 
     pub fn faded(mut self, faded: bool) -> Self {
