@@ -236,26 +236,10 @@ impl Message {
                     return Message::AddGamePathChanged(crate::path::render_pathbuf(&path));
                 }
                 BrowseSubject::BackupTarget => config::Event::BackupTarget(crate::path::render_pathbuf(&path)),
-                BrowseSubject::RestoreSource => config::Event::RestoreSource(crate::path::render_pathbuf(&path)),
                 BrowseSubject::Root(i) => config::Event::Root(EditAction::Change(
                     i,
                     globetter::Pattern::escape(&crate::path::render_pathbuf(&path)),
                 )),
-                BrowseSubject::RedirectSource(i) => config::Event::Redirect(
-                    EditAction::Change(i, crate::path::render_pathbuf(&path)),
-                    Some(RedirectEditActionField::Source),
-                ),
-                BrowseSubject::RedirectTarget(i) => config::Event::Redirect(
-                    EditAction::Change(i, crate::path::render_pathbuf(&path)),
-                    Some(RedirectEditActionField::Target),
-                ),
-                BrowseSubject::CustomGameFile(i, j) => config::Event::CustomGameFile(
-                    i,
-                    EditAction::Change(j, globetter::Pattern::escape(&crate::path::render_pathbuf(&path))),
-                ),
-                BrowseSubject::BackupFilterIgnoredPath(i) => {
-                    config::Event::BackupFilterIgnoredPath(EditAction::Change(i, crate::path::render_pathbuf(&path)))
-                }
             }
             .into(),
             None => Message::Ignore,
@@ -724,28 +708,14 @@ impl UndoSubject {
     pub fn privacy(&self) -> Privacy {
         match self {
             UndoSubject::BackupTarget
-            | UndoSubject::RestoreSource
-            | UndoSubject::BackupSearchGameName
-            | UndoSubject::RestoreSearchGameName
-            | UndoSubject::CustomGamesSearchGameName
             | UndoSubject::RootPath(_)
             | UndoSubject::RootLutrisDatabase(_)
             | UndoSubject::SecondaryManifest(_)
-            | UndoSubject::RedirectSource(_)
-            | UndoSubject::RedirectTarget(_)
-            | UndoSubject::CustomGameName(_)
-            | UndoSubject::CustomGameAlias(_)
-            | UndoSubject::CustomGameFile(_, _)
-            | UndoSubject::CustomGameRegistry(_, _)
-            | UndoSubject::CustomGameInstallDir(_, _)
-            | UndoSubject::CustomGameWinePrefix(_, _)
-            | UndoSubject::BackupFilterIgnoredPath(_)
-            | UndoSubject::BackupFilterIgnoredRegistry(_)
             | UndoSubject::RcloneExecutable
             | UndoSubject::RcloneArguments
             | UndoSubject::CloudRemoteId
             | UndoSubject::CloudPath
-            | UndoSubject::BackupComment(_) => Privacy::Public,
+            => Privacy::Public,
             UndoSubject::ModalField(field) => match field {
                 ModalInputKind::Url | ModalInputKind::Host | ModalInputKind::Port | ModalInputKind::Username => {
                     Privacy::Public
@@ -797,7 +767,6 @@ impl From<Screen> for ScrollSubject {
     fn from(value: Screen) -> Self {
         match value {
             Screen::Backup => Self::Backup,
-            Screen::Restore => Self::Restore,
             Screen::GameDetail(_) => Self::GameDetail,
             Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::CustomGames => Self::Other,
         }
