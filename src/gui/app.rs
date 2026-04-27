@@ -2712,7 +2712,6 @@ impl App {
                             Task::perform(
                                 async move {
                                     tokio::task::spawn_blocking(move || {
-                                        let app_dir = crate::prelude::app_dir();
                                         let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
             
                                         if let Some(game_list) = ludusavi::sync::operations::read_game_list_from_cloud(&config) {
