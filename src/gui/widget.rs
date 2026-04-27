@@ -285,20 +285,6 @@ impl<'a> IcedParentExt<'a> for Row<'a> {
     }
 }
 
-pub trait IcedButtonExt<'a> {
-    fn on_press_if(self, condition: bool, msg: impl FnOnce() -> Message) -> Self;
-}
-
-impl<'a> IcedButtonExt<'a> for Button<'a> {
-    fn on_press_if(self, condition: bool, msg: impl FnOnce() -> Message) -> Self {
-        if condition {
-            self.on_press(msg())
-        } else {
-            self
-        }
-    }
-}
-
 /// Wrap an element in a tooltip when daemon is stopped.
 /// If daemon is running, returns the element as-is.
 /// If daemon is stopped, wraps in a tooltip explaining the disabled state.
