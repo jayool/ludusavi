@@ -5,7 +5,6 @@ use iced::{widget::text_input, Length};
 use crate::{
     cloud::{rclone_monitor, Remote, RemoteChoice},
     gui::{
-        icon::Icon,
         modal::{ModalField, ModalInputKind},
     },
     lang::TRANSLATOR,
