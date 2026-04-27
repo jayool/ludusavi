@@ -91,11 +91,7 @@ impl Badge {
             })
             .padding([2, 10])
             .class(match self.change {
-                None => match self.on_press.as_ref() {
-                    Some(Message::FilterDuplicates { game: None, .. }) => style::Container::BadgeActivated,
-                    _ if self.faded => style::Container::BadgeFaded,
-                    _ => style::Container::Badge,
-                },
+                None => if self.faded { style::Container::BadgeFaded } else { style::Container::Badge },
                 Some(change) => style::Container::ChangeBadge {
                     change,
                     faded: self.faded,
