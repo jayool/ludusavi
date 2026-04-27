@@ -5,7 +5,6 @@ use iced::{keyboard, padding, Alignment, Length};
 use crate::{
     cloud::{Remote, RemoteChoice},
     gui::{
-        badge::Badge,
         button,
         common::{BrowseFileSubject, BrowseSubject, Message, Operation, ScrollSubject, UndoSubject},
         editor,
@@ -15,21 +14,19 @@ use crate::{
         shortcuts::TextHistories,
         style,
         widget::{
-            checkbox, number_input, pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space,
+            pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space,
         },
     },
-    lang::{Language, TRANSLATOR},
-    prelude::{AVAILABLE_PARALELLISM, STEAM_DECK},
+    lang::TRANSLATOR,
     resource::{
         cache::Cache,
-        config::{self, BackupFormat, CloudFilter, Config, SortKey, Theme, ZipCompression},
-        manifest::{Manifest, Store},
+        config::{self, Config, SortKey},
+        manifest::Manifest,
     },
     scan::{DuplicateDetector, Duplication, OperationStatus, ScanKind},
 };
 
 const RCLONE_URL: &str = "https://rclone.org/downloads";
-const RELEASE_URL: &str = "https://github.com/mtkennerly/ludusavi/releases";
 
 fn template(content: Column) -> Element {
     Container::new(content.spacing(15).align_x(Alignment::Center))
