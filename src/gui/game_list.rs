@@ -35,7 +35,6 @@ pub struct GameListEntry {
     pub scan_info: ScanInfo,
     pub backup_info: Option<BackupInfo>,
     pub tree: Option<FileTree>,
-    pub comment_editor: Option<iced::widget::text_editor::Content<iced::Renderer>>,
     pub game_layout: Option<GameLayout>,
     /// The `scan_info` gets mutated in response to things like toggling saves off,
     /// so we need a persistent flag to say if the game has been scanned yet.
@@ -168,20 +167,6 @@ impl GameList {
         }
     }
 
-    pub fn toggle_game_expanded(
-        &mut self,
-        game: &str,
-        duplicate_detector: &DuplicateDetector,
-        config: &Config,
-        scan_kind: ScanKind,
-    ) {
-        if self.expanded_games.contains(game) {
-            self.collapse_game(game);
-        } else {
-            self.expand_game(game, duplicate_detector, config, scan_kind);
-        }
-    }
-
     pub fn expand_game(
         &mut self,
         game: &str,
@@ -197,20 +182,6 @@ impl GameList {
         for entry in self.entries.iter_mut() {
             if entry.scan_info.game_name == game {
                 entry.refresh_tree(duplicate_detector, config, scan_kind);
-                break;
-            }
-        }
-    }
-
-    pub fn collapse_game(&mut self, game: &str) {
-        if !self.expanded_games.contains(game) {
-            return;
-        }
-
-        self.expanded_games.remove(game);
-        for entry in self.entries.iter_mut() {
-            if entry.scan_info.game_name == game {
-                entry.clear_tree();
                 break;
             }
         }
@@ -387,86 +358,6 @@ impl GameList {
 
     pub fn contains_unscanned_games(&self) -> bool {
         self.entries.iter().any(|x| !x.scanned)
-    }
-
-    pub fn toggle_backup_comment_editor(&mut self, game: &str) {
-        let index = self.find_game(game);
-
-        if let Some(i) = index {
-            self.entries[i].comment_editor = match self.entries[i].comment_editor {
-                Some(_) => None,
-                None => Some(
-                    self.entries[i]
-                        .scan_info
-                        .backup
-                        .as_ref()
-                        .and_then(|x| x.comment())
-                        .map(|x| iced::widget::text_editor::Content::with_text(x))
-                        .unwrap_or_default(),
-                ),
-            };
-        }
-    }
-
-    pub fn set_comment(&mut self, game: &str, comment: String) -> bool {
-        let Some(index) = self.find_game(game) else {
-            return false;
-        };
-        let entry = &mut self.entries[index];
-
-        let Some(editor) = entry.comment_editor.as_mut() else {
-            return false;
-        };
-        *editor = iced::widget::text_editor::Content::with_text(&comment);
-
-        let Some(backup) = &mut entry.scan_info.backup else {
-            return false;
-        };
-        let Some(layout) = &mut entry.game_layout else {
-            return false;
-        };
-
-        layout.set_backup_comment(&backup.id(), &comment);
-        backup.set_comment(comment);
-
-        true
-    }
-
-    pub fn apply_comment_action(&mut self, game: &str, action: iced::widget::text_editor::Action) -> Option<String> {
-        let index = self.find_game(game)?;
-        let entry = &mut self.entries[index];
-
-        let editor = entry.comment_editor.as_mut()?;
-        let backup = entry.scan_info.backup.as_mut()?;
-        let layout = entry.game_layout.as_mut()?;
-
-        editor.perform(action);
-        let comment = editor.text().trim().to_string();
-
-        layout.set_backup_comment(&backup.id(), &comment);
-        backup.set_comment(comment.clone());
-
-        Some(comment)
-    }
-
-    pub fn toggle_locked(&mut self, game: &str) -> bool {
-        let Some(index) = self.find_game(game) else {
-            return false;
-        };
-        let entry = &mut self.entries[index];
-        let Some(backup) = &mut entry.scan_info.backup else {
-            return false;
-        };
-        let Some(layout) = &mut entry.game_layout else {
-            return false;
-        };
-
-        let new = !backup.locked();
-
-        layout.set_backup_locked(&backup.id(), new);
-        backup.set_locked(new);
-
-        true
     }
 
     pub fn save_layout(&mut self, game: &str) {
