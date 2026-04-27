@@ -1,11 +1,8 @@
-use std::collections::HashSet;
-
-use iced::{keyboard, padding, Alignment, Length};
+use iced::{padding, Alignment, Length};
 
 use crate::{
     cloud::{Remote, RemoteChoice},
     gui::{
-        badge::Badge,
         button,
         common::{BrowseFileSubject, BrowseSubject, Message, Operation, ScrollSubject, UndoSubject},
         editor,
@@ -15,48 +12,19 @@ use crate::{
         shortcuts::TextHistories,
         style,
         widget::{
-            pick_list, text, Button, Column, Container, Element, IcedParentExt, Row, Space,
+            pick_list, text, Button, Column, Container, Element, IcedParentExt, Row,
         },
     },
     lang::TRANSLATOR,
     resource::{
         cache::Cache,
-        config::{self, Config, SortKey},
+        config::{self, Config},
         manifest::Manifest,
     },
-    scan::{DuplicateDetector, Duplication, OperationStatus, ScanKind},
+    scan::ScanKind,
 };
 
 const RCLONE_URL: &str = "https://rclone.org/downloads";
-
-fn template(content: Column) -> Element {
-    Container::new(content.spacing(15).align_x(Alignment::Center))
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .padding(padding::all(5))
-        .into()
-}
-
-fn make_status_row<'a>(status: &OperationStatus, duplication: Duplication) -> Row<'a> {
-    let size = 25;
-
-    Row::new()
-        .padding([0, 20])
-        .align_y(Alignment::Center)
-        .spacing(15)
-        .push(text(TRANSLATOR.processed_games(status)).size(size))
-        .push_if(status.changed_games.new > 0, || {
-            Badge::new_entry_with_count(status.changed_games.new).view()
-        })
-        .push_if(status.changed_games.different > 0, || {
-            Badge::changed_entry_with_count(status.changed_games.different).view()
-        })
-        .push(text("|").size(size))
-        .push(text(TRANSLATOR.processed_bytes(status)).size(size))
-        .push_if(!duplication.resolved(), || {
-            Badge::new(&TRANSLATOR.badge_duplicates()).view()
-        })
-}
 
 #[derive(Default)]
 pub struct Backup {
@@ -75,98 +43,6 @@ impl Backup {
         }
     }
 
-    pub fn view(
-        &self,
-        config: &Config,
-        manifest: &Manifest,
-        operation: &Operation,
-        histories: &TextHistories,
-        modifiers: &keyboard::Modifiers,
-        daemon_running: bool,
-        sync_status: &std::collections::HashMap<String, String>,
-    ) -> Element {
-        let sort = &config.backup.sort;
-
-        let duplicatees = self.log.duplicatees(&self.duplicate_detector);
-
-        let content = Column::new()
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(20)
-                    .align_y(Alignment::Center)
-                    .push(button::backup_preview(operation, self.log.is_filtered()))
-                    .push(button::backup(operation, self.log.is_filtered()))
-                    .push(button::toggle_all_scanned_games(
-                        self.log.all_visible_entries_selected(
-                            config,
-                            Self::SCAN_KIND,
-                            manifest,
-                            &self.duplicate_detector,
-                            duplicatees.as_ref(),
-                        ),
-                        self.log.is_filtered(),
-                    ))
-                    .push(button::filter(self.log.search.show)),
-            )
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(6)
-                    .align_y(Alignment::Center)
-                    .push(
-                        Container::new(Space::new().width(8).height(8)).class(if daemon_running {
-                            style::Container::DaemonDotActive
-                        } else {
-                            style::Container::DaemonDotInactive
-                        }),
-                    )
-                    .push(text(if daemon_running {
-                        "Sync daemon running"
-                    } else {
-                        "Sync daemon stopped"
-                    })),
-            )
-            .push(make_status_row(
-                &self.log.compute_operation_status(
-                    config,
-                    Self::SCAN_KIND,
-                    manifest,
-                    &self.duplicate_detector,
-                    duplicatees.as_ref(),
-                ),
-                self.duplicate_detector.overall(),
-            ))
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(20)
-                    .align_y(Alignment::Center)
-                    .push(text(TRANSLATOR.backup_target_label()))
-                    .push(histories.input_small(UndoSubject::BackupTarget))
-                    .push(button::choose_folder(BrowseSubject::BackupTarget, modifiers))
-                    .push("|")
-                    .push(text(TRANSLATOR.sort_label()))
-                    .push(
-                        pick_list(SortKey::ALL, Some(sort.key), Message::config(config::Event::SortKey))
-                            .class(style::PickList::Primary),
-                    )
-                    .push(button::sort_order(sort.reversed)),
-            )
-            .push(self.log.view(
-                Self::SCAN_KIND,
-                config,
-                manifest,
-                &self.duplicate_detector,
-                duplicatees.as_ref(),
-                operation,
-                histories,
-                modifiers,
-                sync_status,
-            ));
-
-        template(content)
-    }
 }
 
 #[derive(Default)]
@@ -184,100 +60,6 @@ impl Restore {
             ..Default::default()
         }
     }
-
-    pub fn view(
-        &self,
-        config: &Config,
-        manifest: &Manifest,
-        operation: &Operation,
-        histories: &TextHistories,
-        modifiers: &keyboard::Modifiers,
-        sync_status: &std::collections::HashMap<String, String>,
-        daemon_running: bool,
-    ) -> Element {
-        let sort = &config.restore.sort;
-
-        let duplicatees = self.log.duplicatees(&self.duplicate_detector);
-
-        let content = Column::new()
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(20)
-                    .align_y(Alignment::Center)
-                    .push(button::restore_preview(operation, self.log.is_filtered()))
-                    .push(button::restore(operation, self.log.is_filtered()))
-                    .push(button::toggle_all_scanned_games(
-                        self.log.all_visible_entries_selected(
-                            config,
-                            Self::SCAN_KIND,
-                            manifest,
-                            &self.duplicate_detector,
-                            duplicatees.as_ref(),
-                        ),
-                        self.log.is_filtered(),
-                    ))
-                    .push(button::validate_backups(operation))
-                    .push(button::filter(self.log.search.show)),
-            )
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(6)
-                    .align_y(Alignment::Center)
-                    .push(
-                        Container::new(Space::new().width(8).height(8)).class(if daemon_running {
-                            style::Container::DaemonDotActive
-                        } else {
-                            style::Container::DaemonDotInactive
-                        }),
-                    )
-                    .push(text(if daemon_running {
-                        "Sync daemon running"
-                    } else {
-                        "Sync daemon stopped"
-                    })),
-            )
-            .push(make_status_row(
-                &self.log.compute_operation_status(
-                    config,
-                    Self::SCAN_KIND,
-                    manifest,
-                    &self.duplicate_detector,
-                    duplicatees.as_ref(),
-                ),
-                self.duplicate_detector.overall(),
-            ))
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(20)
-                    .align_y(Alignment::Center)
-                    .push(text(TRANSLATOR.restore_source_label()))
-                    .push(histories.input(UndoSubject::RestoreSource))
-                    .push(button::choose_folder(BrowseSubject::RestoreSource, modifiers))
-                    .push("|")
-                    .push(text(TRANSLATOR.sort_label()))
-                    .push(
-                        pick_list(SortKey::ALL, Some(sort.key), Message::config(config::Event::SortKey))
-                            .class(style::PickList::Primary),
-                    )
-                    .push(button::sort_order(sort.reversed)),
-            )
-            .push(self.log.view(
-                Self::SCAN_KIND,
-                config,
-                manifest,
-                &self.duplicate_detector,
-                duplicatees.as_ref(),
-                operation,
-                histories,
-                modifiers,
-                sync_status,
-            ));
-
-        template(content)
-    }
 }
 
 #[derive(Default)]
@@ -286,60 +68,13 @@ pub struct CustomGames {
 }
 
 impl CustomGames {
-    pub fn view<'a>(
-        &'a self,
-        config: &Config,
-        manifest: &Manifest,
-        operating: bool,
-        histories: &'a TextHistories,
-        modifiers: &keyboard::Modifiers,
-    ) -> Element<'a> {
-        let content = Column::new()
-            .push(
-                Row::new()
-                    .padding([0, 20])
-                    .spacing(20)
-                    .align_y(Alignment::Center)
-                    .push(button::add_game())
-                    .push(button::toggle_all_custom_games(
-                        self.all_visible_game_selected(config),
-                        self.is_filtered(),
-                    ))
-                    .push(button::sort(config::Event::SortCustomGames))
-                    .push(button::filter(self.filter.enabled)),
-            )
-            .push(self.filter.view(histories))
-            .push(editor::custom_games(
-                config,
-                manifest,
-                operating,
-                histories,
-                modifiers,
-                &self.filter,
-            ));
-
-        template(content)
-    }
-
-    fn is_filtered(&self) -> bool {
-        self.filter.enabled
-    }
-
-    pub fn visible_games(&self, config: &Config) -> Vec<usize> {
+pub fn visible_games(&self, config: &Config) -> Vec<usize> {
         config
             .custom_games
             .iter()
             .enumerate()
             .filter_map(|(i, game)| self.filter.qualifies(game).then_some(i))
             .collect()
-    }
-
-    fn all_visible_game_selected(&self, config: &Config) -> bool {
-        config
-            .custom_games
-            .iter()
-            .filter(|game| self.filter.qualifies(game))
-            .all(|x| !x.ignore)
     }
 }
 
