@@ -876,9 +876,6 @@ pub enum GameAction {
     MakeAlias,
 }
 
-impl GameAction {
-}
-
 impl ToString for GameAction {
     fn to_string(&self) -> String {
         match self {
