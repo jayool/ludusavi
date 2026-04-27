@@ -7,6 +7,7 @@ use crate::gui::{
 
 pub enum Icon {
     AddCircle,
+    Copy,
     ArrowBack,
     ArrowDownward,
     ArrowForward,
@@ -29,6 +30,7 @@ impl Icon {
     pub const fn as_char(&self) -> char {
         match self {
             Self::AddCircle => '\u{E147}',
+            Self::Copy => '\u{e14d}',
             Self::ArrowBack => '\u{e5c4}',
             Self::ArrowDownward => '\u{E5DB}',
             Self::ArrowForward => '\u{e5c8}',
