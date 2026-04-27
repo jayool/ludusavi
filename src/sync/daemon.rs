@@ -134,9 +134,6 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         .map(|(name, _)| name.clone())
         .collect();
 
-    // Leer o crear el game-list del cloud
-    let mut game_list = read_game_list_from_cloud(&config).unwrap_or_default();
-
     // Auto-registrar rutas para juegos sin ruta en este dispositivo
     if let Err(e) = auto_register_paths(&config, &device, &sync_config) {
         log::error!("[sync daemon] Error during path auto-registration: {e}");
