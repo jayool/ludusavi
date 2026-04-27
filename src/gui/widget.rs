@@ -1,10 +1,8 @@
-use std::ops::RangeInclusive;
-
 use iced::{widget as w, Alignment, Length};
 
 use crate::{
     gui::{
-        common::{Message, Operation, UndoSubject},
+        common::{Message, Operation},
         icon::Icon,
         style::{self, Theme},
     },
@@ -113,67 +111,6 @@ pub mod id {
     pub fn game_detail_scroll() -> Id {
         (*GAME_DETAIL_SCROLL).clone()
     }
-}
-
-pub fn number_input<'a>(
-    value: i32,
-    label: String,
-    range: RangeInclusive<i32>,
-    change: impl Fn(i32) -> Message,
-) -> Element<'a> {
-    Container::new(
-        Row::new()
-            .spacing(5)
-            .align_y(Alignment::Center)
-            .push(text(label))
-            .push(text(value.to_string()))
-            .push({
-                Button::new(Icon::Remove.text().width(Length::Shrink))
-                    .on_press_if(&value > range.start(), || (change)(value - 1))
-                    .class(style::Button::Negative)
-                    .padding(5)
-            })
-            .push({
-                Button::new(Icon::Add.text().width(Length::Shrink))
-                    .on_press_if(&value < range.end(), || (change)(value + 1))
-                    .class(style::Button::Primary)
-                    .padding(5)
-            }),
-    )
-    .into()
-}
-
-pub fn text_editor<'a>(
-    content: &'a w::text_editor::Content,
-    on_action: impl Fn(w::text_editor::Action) -> Message + 'a,
-    undo_subject: UndoSubject,
-) -> Element<'a> {
-    w::text_editor(content)
-        .on_action(on_action)
-        .key_binding(move |event| {
-            use crate::gui::undoable;
-            use iced::keyboard::Key;
-            use w::text_editor::{Binding, Status};
-
-            match event.status {
-                Status::Active | Status::Hovered | Status::Disabled => None,
-                Status::Focused { .. } => match event.key.as_ref() {
-                    Key::Character("z") if event.modifiers.command() && event.modifiers.shift() => Some(
-                        Binding::Custom(Message::UndoRedo(undoable::Action::Redo, undo_subject.clone())),
-                    ),
-                    Key::Character("z") if event.modifiers.command() => Some(Binding::Custom(Message::UndoRedo(
-                        undoable::Action::Undo,
-                        undo_subject.clone(),
-                    ))),
-                    Key::Character("y") if event.modifiers.command() => Some(Binding::Custom(Message::UndoRedo(
-                        undoable::Action::Redo,
-                        undo_subject.clone(),
-                    ))),
-                    _ => Binding::from_key_press(event),
-                },
-            }
-        })
-        .into()
 }
 
 #[derive(Default)]
