@@ -68,8 +68,6 @@ pub struct CustomGames {
     pub filter: CustomGamesFilter,
 }
 
-impl CustomGames {
-
 pub fn other<'a>(
     updating_manifest: bool,
     daemon_running: bool,
