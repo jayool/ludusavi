@@ -1,4 +1,6 @@
-use iced::{padding, Alignment, Length};
+use std::collections::HashSet;
+
+use iced::{keyboard, padding, Alignment, Length};
 
 use crate::{
     cloud::{Remote, RemoteChoice},
@@ -18,10 +20,9 @@ use crate::{
     lang::TRANSLATOR,
     resource::{
         cache::Cache,
-        config::{self, Config},
-        manifest::Manifest,
+        config::Config,
     },
-    scan::ScanKind,
+    scan::{DuplicateDetector, ScanKind},
 };
 
 const RCLONE_URL: &str = "https://rclone.org/downloads";
