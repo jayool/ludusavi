@@ -86,12 +86,4 @@ impl CustomGamesFilter {
     pub fn reset(&mut self) {
         self.name.clear();
     }
-
-    pub fn qualifies(&self, game: &CustomGame) -> bool {
-        !self.enabled
-            || self.name.is_empty()
-            || fuzzy_matcher::skim::SkimMatcherV2::default()
-                .fuzzy_match(&game.name.to_lowercase(), &self.name.to_lowercase())
-                .is_some()
-    }
 }
