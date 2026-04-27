@@ -1,6 +1,6 @@
 use iced::{
-    keyboard, padding,
-    widget::Space,
+    keyboard,
+    widget::{space, Space},
     Alignment, Length,
 };
 
@@ -16,7 +16,7 @@ use crate::{
     resource::{
         cache::Cache,
         config::{self, Config, SecondaryManifestConfigKind},
-        manifest::{Manifest, Store},
+        manifest::Store,
     },
 };
 
