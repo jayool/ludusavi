@@ -2650,12 +2650,12 @@ impl App {
                         self.sync_in_progress = Some("⏳ Uploading to cloud...".to_string());
                         let config = self.config.clone();
                         let game_name = name.clone();
-                        let app_dir = crate::prelude::app_dir();
                         return Task::batch([
                             self.close_modal(),
                             Task::perform(
                                 async move {
                                     tokio::task::spawn_blocking(move || {
+                                        let app_dir = crate::prelude::app_dir();
                                         let zip_path = config.backup.path.joined(&format!("{}.zip", game_name));
                                         if zip_path.is_file() {
                                             let device = ludusavi::sync::device::DeviceIdentity::load_or_create(&app_dir);
