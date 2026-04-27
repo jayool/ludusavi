@@ -13,10 +13,8 @@ use crate::{
         style,
         widget::{Element, TextInput, Undoable},
     },
-    lang::TRANSLATOR,
     prelude::{EditAction, StrictPath},
     resource::config::{self, Config, CustomGame},
-    scan::registry::RegistryItem,
 };
 
 pub enum Shortcut {
