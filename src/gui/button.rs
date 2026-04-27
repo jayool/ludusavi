@@ -7,8 +7,8 @@ use crate::{
         style,
         widget::{text, Button, Element, Text},
     },
+    lang::TRANSLATOR,
     prelude::EditAction,
-    resource::config,
 };
 
 const WIDTH: u32 = 125;
