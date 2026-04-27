@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 
-use iced::{
-    alignment::Horizontal as HorizontalAlignment, keyboard::Modifiers, padding, widget::tooltip, Alignment, Length,
-};
+use iced::{alignment::Horizontal as HorizontalAlignment, padding, widget::tooltip, Alignment, Length};
 
 use crate::{
     gui::{
@@ -24,11 +22,11 @@ use crate::{
     lang::TRANSLATOR,
     resource::{
         cache::Cache,
-        config::{self, Config, Sort},
-        manifest::{Manifest, Os},
+        config::{Config, Sort},
+        manifest::Manifest,
     },
     scan::{
-        layout::GameLayout, BackupInfo, DuplicateDetector, ScanChange, ScanInfo, ScanKind,
+        layout::GameLayout, BackupInfo, DuplicateDetector, ScanInfo, ScanKind,
     },
 };
 
