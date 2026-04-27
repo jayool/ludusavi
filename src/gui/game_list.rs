@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use iced::{
     alignment::Horizontal as HorizontalAlignment, keyboard::Modifiers, padding, widget::tooltip, Alignment, Length,
@@ -9,8 +9,7 @@ use crate::{
         badge::Badge,
         button,
         common::{
-            BackupPhase, GameAction, GameSelection, Message, Operation, RestorePhase, Screen, ScrollSubject,
-            UndoSubject,
+            BackupPhase, GameAction, GameSelection, Message, Operation, RestorePhase, UndoSubject,
         },
         file_tree::FileTree,
         icon::Icon,
@@ -26,10 +25,10 @@ use crate::{
     resource::{
         cache::Cache,
         config::{self, Config, Sort},
-        manifest::{self, Manifest, Os},
+        manifest::{Manifest, Os},
     },
     scan::{
-        game_filter, layout::GameLayout, BackupInfo, DuplicateDetector, OperationStatus, ScanChange, ScanInfo, ScanKind,
+        layout::GameLayout, BackupInfo, DuplicateDetector, ScanChange, ScanInfo, ScanKind,
     },
 };
 
@@ -46,328 +45,6 @@ pub struct GameListEntry {
 }
 
 impl GameListEntry {
-    fn view(
-        &self,
-        scan_kind: ScanKind,
-        config: &Config,
-        manifest: &Manifest,
-        duplicate_detector: &DuplicateDetector,
-        operation: &Operation,
-        expanded: bool,
-        modifiers: &Modifiers,
-        filtering_duplicates: bool,
-        sync_status: &std::collections::HashMap<String, String>,
-    ) -> Container {
-        let successful = match &self.backup_info {
-            Some(x) => x.successful(),
-            _ => true,
-        };
-
-        let enabled = config.is_game_enabled_for_operation(&self.scan_info.game_name, scan_kind);
-        let all_items_ignored = self.scan_info.all_ignored();
-        let customized = config.is_game_customized(&self.scan_info.game_name);
-        let customized_pure = customized && !manifest.0.contains_key(&self.scan_info.game_name);
-        let name = self.scan_info.game_name.clone();
-        let operating = !operation.idle();
-        let changes = self.scan_info.overall_change();
-        let duplication = duplicate_detector.is_game_duplicated(&self.scan_info.game_name);
-        let display_name = config.display_name(&self.scan_info.game_name);
-
-        Container::new(
-            Column::new()
-                .padding(5)
-                .spacing(5)
-                .align_x(Alignment::Center)
-                .push(
-                    Row::new()
-                        .spacing(15)
-                        .align_y(Alignment::Center)
-                        .push({
-                            let name = name.clone();
-                            checkbox(
-                                "",
-                                enabled,
-                                Message::config(move |enabled| config::Event::GameListEntryEnabled {
-                                    name: name.clone(),
-                                    enabled,
-                                    scan_kind,
-                                }),
-                            )
-                            .spacing(0)
-                            .class(style::Checkbox)
-                        })
-                        .push(
-                            Button::new(text(display_name.to_string()).align_x(HorizontalAlignment::Center))
-                                .on_press_maybe(if self.scanned {
-                                    Some(Message::ToggleGameListEntryExpanded {
-                                        name: self.scan_info.game_name.clone(),
-                                    })
-                                } else if !operating {
-                                    match scan_kind {
-                                        ScanKind::Backup => Some(Message::Backup(BackupPhase::Start {
-                                            preview: true,
-                                            repair: false,
-                                            jump: false,
-                                            games: Some(GameSelection::single(self.scan_info.game_name.clone())),
-                                        })),
-                                        ScanKind::Restore => Some(Message::Restore(RestorePhase::Start {
-                                            preview: true,
-                                            games: Some(GameSelection::single(self.scan_info.game_name.clone())),
-                                        })),
-                                    }
-                                } else {
-                                    None
-                                })
-                                .class(if !self.scanned {
-                                    style::Button::GameListEntryTitleUnscanned
-                                } else if !enabled || all_items_ignored {
-                                    style::Button::GameListEntryTitleDisabled
-                                } else if successful {
-                                    style::Button::GameListEntryTitle
-                                } else {
-                                    style::Button::GameListEntryTitleFailed
-                                })
-                                .width(Length::Fill)
-                                .padding(2),
-                        )
-                        .push(match changes {
-                            ScanChange::New => Some(Badge::new_entry().faded(!enabled).view()),
-                            ScanChange::Different => Some(Badge::changed_entry().faded(!enabled).view()),
-                            ScanChange::Removed => None,
-                            ScanChange::Same => None,
-                            ScanChange::Unknown => None,
-                        })
-                        .push_if(self.scan_info.any_ignored(), || {
-                            Badge::new(
-                                &TRANSLATOR
-                                    .processed_subset(self.scan_info.total_items(), self.scan_info.enabled_items()),
-                            )
-                            .view()
-                        })
-                        .push_if(!duplication.unique(), || {
-                            Badge::new(&TRANSLATOR.badge_duplicates())
-                                .faded(duplication.resolved())
-                                .on_press(Message::FilterDuplicates {
-                                    scan_kind,
-                                    game: (!filtering_duplicates).then_some(name.clone()),
-                                })
-                                .view()
-                        })
-                        .push_if(customized, || {
-                            Badge::new(&TRANSLATOR.custom_label().to_uppercase())
-                                .on_press(Message::ShowCustomGame { name: name.clone() })
-                                .view()
-                        })
-                        .push_if(display_name != name, || {
-                            Badge::new(&TRANSLATOR.alias_label().to_uppercase())
-                                .on_press(Message::ShowCustomGame {
-                                    name: display_name.to_string(),
-                                })
-                                .view()
-                        })
-                        .push_if(!successful, || Badge::new(&TRANSLATOR.badge_failed()).view())
-                        .push({
-                            match sync_status.get(&self.scan_info.game_name).map(|s| s.as_str()) {
-                                Some("synced") => Some(Badge::new("Synced").view()),
-                                _ => None,
-                            }
-                        })
-                        .push({
-                            self.scan_info
-                                .backup
-                                .as_ref()
-                                .and_then(|backup| backup.comment().cloned())
-                                .map(|comment| {
-                                    Tooltip::new(
-                                        Icon::Comment.text().width(Length::Shrink),
-                                        text(comment).size(16),
-                                        tooltip::Position::Top,
-                                    )
-                                    .gap(5)
-                                    .class(style::Container::Tooltip)
-                                })
-                        })
-                        .push({
-                            manifest.0.get(&name).and_then(|data| {
-                                (scan_kind.is_backup() && !data.notes.is_empty())
-                                    .then(|| button::show_game_notes(name.clone(), data.notes.clone()))
-                            })
-                        })
-                        .push({
-                            self.scan_info
-                                .backup
-                                .as_ref()
-                                .and_then(|backup| backup.os())
-                                .and_then(|os| {
-                                    (os != Os::HOST && os != Os::Other).then(|| Badge::new(&format!("{os:?}")).view())
-                                })
-                        })
-                        .push({
-                            self.scan_info
-                                .backup
-                                .as_ref()
-                                .and_then(|backup| backup.locked().then_some(Icon::Lock.text().width(Length::Shrink)))
-                        })
-                        .push(
-                            Row::new()
-                                .push({
-                                    if self.scan_info.available_backups.len() == 1 {
-                                        self.scan_info.backup.as_ref().map(|backup| {
-                                            Container::new(
-                                                text(backup.label())
-                                                    .size(14)
-                                                    .line_height(1.1)
-                                                    .align_x(HorizontalAlignment::Center),
-                                            )
-                                            .padding(padding::top(2).right(2))
-                                            .center_x(150)
-                                            .center_y(20)
-                                        })
-                                    } else if !self.scan_info.available_backups.is_empty() {
-                                        if operating {
-                                            self.scan_info.backup.as_ref().map(|backup| {
-                                                Container::new(
-                                                    Container::new(
-                                                        text(backup.label())
-                                                            .size(14)
-                                                            .align_x(HorizontalAlignment::Center),
-                                                    )
-                                                    .padding(padding::top(2))
-                                                    .center_x(148)
-                                                    .center_y(25)
-                                                    .class(style::Container::DisabledBackup),
-                                                )
-                                                .padding(padding::right(2))
-                                            })
-                                        } else {
-                                            let game = self.scan_info.game_name.clone();
-                                            let content = Container::new(
-                                                pick_list(
-                                                    self.scan_info.available_backups.clone(),
-                                                    self.scan_info.backup.as_ref().cloned(),
-                                                    move |backup| Message::SelectedBackupToRestore {
-                                                        game: game.clone(),
-                                                        backup,
-                                                    },
-                                                )
-                                                .text_size(12)
-                                                .width(Length::Fill)
-                                                .class(style::PickList::Backup),
-                                            )
-                                            .padding(padding::right(2))
-                                            .center_x(150)
-                                            .center_y(25);
-                                            Some(content)
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .push({
-                                    let confirm = !modifiers.alt();
-                                    let action = if modifiers.shift() {
-                                        Some(match scan_kind {
-                                            ScanKind::Backup => GameAction::PreviewBackup,
-                                            ScanKind::Restore => GameAction::PreviewRestore,
-                                        })
-                                    } else if modifiers.command() {
-                                        Some(match scan_kind {
-                                            ScanKind::Backup => GameAction::Backup { confirm },
-                                            ScanKind::Restore => GameAction::Restore { confirm },
-                                        })
-                                    } else {
-                                        None
-                                    };
-                                    if let Some(action) = action {
-                                        let button = Button::new(action.icon().text().width(45))
-                                            .on_press_if(!operating, || Message::GameAction {
-                                                action,
-                                                game: self.scan_info.game_name.clone(),
-                                            })
-                                            .class(style::Button::GameActionPrimary)
-                                            .padding(2);
-                                        Container::new(
-                                            Tooltip::new(
-                                                button,
-                                                text(action.to_string()).size(16),
-                                                tooltip::Position::Top,
-                                            )
-                                            .gap(5)
-                                            .class(style::Container::Tooltip),
-                                        )
-                                    } else {
-                                        let options = GameAction::options(
-                                            scan_kind,
-                                            operating,
-                                            customized,
-                                            customized_pure,
-                                            self.scan_info.backup.is_some(),
-                                            self.scan_info
-                                                .backup
-                                                .as_ref()
-                                                .map(|backup| backup.locked())
-                                                .unwrap_or_default(),
-                                        );
-                                        let game_name = self.scan_info.game_name.clone();
-
-                                        let menu = crate::gui::popup_menu::PopupMenu::new(options, move |action| {
-                                            Message::GameAction {
-                                                action,
-                                                game: game_name.clone(),
-                                            }
-                                        })
-                                        .width(49)
-                                        .class(style::PickList::Popup);
-                                        Container::new(menu)
-                                    }
-                                })
-                                .push(
-                                    Container::new(text({
-                                        let summed = self.scan_info.sum_bytes(self.backup_info.as_ref());
-                                        if summed == 0 && !self.scan_info.found_anything() {
-                                            "".to_string()
-                                        } else {
-                                            TRANSLATOR.adjusted_size(summed)
-                                        }
-                                    }))
-                                    .center_x(115),
-                                ),
-                        ),
-                )
-                .push(self.comment_editor.as_ref().map(|x| {
-                    Row::new()
-                        .align_y(Alignment::Center)
-                        .padding([0, 20])
-                        .spacing(20)
-                        .push(text(TRANSLATOR.comment_label()))
-                        .push(text_editor(
-                            x,
-                            |action| Message::EditedBackupComment {
-                                game: self.scan_info.game_name.clone(),
-                                action,
-                            },
-                            UndoSubject::BackupComment(self.scan_info.game_name.clone()),
-                        ))
-                        .push(button::hide(Message::GameAction {
-                            action: GameAction::Comment,
-                            game: name.clone(),
-                        }))
-                }))
-                .push({
-                    expanded
-                        .then(|| {
-                            self.tree.as_ref().map(|tree| {
-                                tree.view(&self.scan_info.game_name, config, scan_kind)
-                                    .width(Length::Fill)
-                            })
-                        })
-                        .flatten()
-                }),
-        )
-        .id(name)
-        .class(style::Container::GameListEntry)
-    }
-
     pub fn refresh_tree(&mut self, duplicate_detector: &DuplicateDetector, config: &Config, scan_kind: ScanKind) {
         match self.tree.as_mut() {
             Some(tree) => tree.reset_nodes(
@@ -405,89 +82,6 @@ pub struct GameList {
 }
 
 impl GameList {
-    pub fn duplicatees(&self, duplicate_detector: &DuplicateDetector) -> Option<HashSet<String>> {
-        self.filter_duplicates_of.as_ref().and_then(|game| {
-            let mut duplicatees = duplicate_detector.duplicate_games(game);
-            if duplicatees.is_empty() {
-                None
-            } else {
-                duplicatees.insert(game.clone());
-                Some(duplicatees)
-            }
-        })
-    }
-
-    pub fn view(
-        &self,
-        scan_kind: ScanKind,
-        config: &Config,
-        manifest: &Manifest,
-        duplicate_detector: &DuplicateDetector,
-        duplicatees: Option<&HashSet<String>>,
-        operation: &Operation,
-        histories: &TextHistories,
-        modifiers: &Modifiers,
-        sync_status: &std::collections::HashMap<String, String>,
-    ) -> Container {
-        Container::new(
-            Column::new()
-                .spacing(15)
-                .push({
-                    self.search.view(
-                        match scan_kind {
-                            ScanKind::Backup => Screen::Backup,
-                            ScanKind::Restore => Screen::Restore,
-                        },
-                        histories,
-                        config.scan.show_deselected_games,
-                        self.manifests(manifest),
-                    )
-                })
-                .push({
-                    let content = self
-                        .entries
-                        .iter()
-                        .filter(|entry| {
-                            self.filter_game(entry, scan_kind, config, manifest, duplicate_detector, duplicatees)
-                        })
-                        .fold(
-                            Column::new()
-                                .width(Length::Fill)
-                                .padding(padding::bottom(5).left(15).right(15))
-                                .spacing(5),
-                            |parent, x| {
-                                parent.push(x.view(
-                                    scan_kind,
-                                    config,
-                                    manifest,
-                                    duplicate_detector,
-                                    operation,
-                                    self.expanded_games.contains(&x.scan_info.game_name),
-                                    modifiers,
-                                    duplicatees.is_some(),
-                                    sync_status,
-                                ))
-                            },
-                        );
-                    ScrollSubject::game_list(scan_kind).into_widget(content)
-                }),
-        )
-    }
-
-    pub fn all_visible_entries_selected(
-        &self,
-        config: &Config,
-        scan_kind: ScanKind,
-        manifest: &Manifest,
-        duplicate_detector: &DuplicateDetector,
-        duplicatees: Option<&HashSet<String>>,
-    ) -> bool {
-        self.entries
-            .iter()
-            .filter(|entry| self.filter_game(entry, scan_kind, config, manifest, duplicate_detector, duplicatees))
-            .all(|x| config.is_game_enabled_for_operation(&x.scan_info.game_name, scan_kind))
-    }
-
     fn filter_game(
         &self,
         entry: &GameListEntry,
@@ -556,33 +150,6 @@ impl GameList {
 
     pub fn is_filtered(&self) -> bool {
         self.search.show || self.filter_duplicates_of.is_some()
-    }
-
-    pub fn compute_operation_status(
-        &self,
-        config: &Config,
-        scan_kind: ScanKind,
-        manifest: &Manifest,
-        duplicate_detector: &DuplicateDetector,
-        duplicatees: Option<&HashSet<String>>,
-    ) -> OperationStatus {
-        let mut status = OperationStatus::default();
-        for entry in self.entries.iter() {
-            if !self.filter_game(entry, scan_kind, config, manifest, duplicate_detector, duplicatees) {
-                continue;
-            }
-
-            status.total_games += 1;
-            status.total_bytes += entry.scan_info.total_possible_bytes();
-            if !entry.scan_info.all_ignored()
-                && config.is_game_enabled_for_operation(&entry.scan_info.game_name, scan_kind)
-            {
-                status.processed_games += 1;
-                status.processed_bytes += entry.scan_info.sum_bytes(None);
-                status.changed_games.add(entry.scan_info.overall_change());
-            }
-        }
-        status
     }
 
     pub fn sort(&mut self, sort: &Sort, config: &Config) {
@@ -910,22 +477,5 @@ impl GameList {
         let Some(layout) = &mut entry.game_layout else { return };
 
         layout.save();
-    }
-
-    fn manifests(&self, manifest: &Manifest) -> Vec<game_filter::Manifest> {
-        let mut manifests = BTreeSet::new();
-        manifests.insert(&manifest::Source::Primary);
-        manifests.insert(&manifest::Source::Custom);
-
-        for entry in &self.entries {
-            if let Some(data) = manifest.0.get(&entry.scan_info.game_name) {
-                manifests.extend(data.sources.iter());
-            }
-        }
-
-        manifests
-            .into_iter()
-            .map(|x| game_filter::Manifest::new(x.clone()))
-            .collect()
     }
 }
