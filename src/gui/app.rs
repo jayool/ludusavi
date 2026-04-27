@@ -11,7 +11,7 @@ use crate::{
     cloud::{rclone_monitor, Rclone, Remote},
     gui::{
         common::{
-            BackupPhase, BrowseFileSubject, BrowseSubject, Flags, GameAction, GameSelection, Message, Operation,
+            BackupPhase, BrowseFileSubject, BrowseSubject, Flags, GameSelection, Message, Operation,
             RestorePhase, Screen, ScrollSubject, UndoSubject, ValidatePhase,
         },
         modal::{self, CloudModalState, Modal, ModalField, ModalInputKind},
@@ -2345,20 +2345,12 @@ impl App {
                             self.config.backup.sort.key = value;
                             self.backup_screen.log.sort(&self.config.backup.sort, &self.config);
                         }
-                        Screen::Restore => {
-                            self.config.restore.sort.key = value;
-                            self.restore_screen.log.sort(&self.config.restore.sort, &self.config);
-                        }
                         _ => {}
                     },
                     config::Event::SortReversed(value) => match self.screen {
                         Screen::Backup => {
                             self.config.backup.sort.reversed = value;
                             self.backup_screen.log.sort(&self.config.backup.sort, &self.config);
-                        }
-                        Screen::Restore => {
-                            self.config.restore.sort.reversed = value;
-                            self.restore_screen.log.sort(&self.config.restore.sort, &self.config);
                         }
                         _ => {}
                     },
@@ -3373,7 +3365,6 @@ impl App {
                     },
                 )
             }
-            Message::ShowGameNotes { game, notes } => self.show_modal(Modal::GameNotes { game, notes }),
             Message::FindRoots => {
                 let missing = self.config.find_missing_roots();
                 if missing.is_empty() {
@@ -3415,41 +3406,10 @@ impl App {
                 }
                 self.switch_screen(screen)
             }
-            Message::ToggleGameListEntryExpanded { name } => {
-                match self.screen {
-                    Screen::Backup => {
-                        self.backup_screen.log.toggle_game_expanded(
-                            &name,
-                            &self.backup_screen.duplicate_detector,
-                            &self.config,
-                            ScanKind::Backup,
-                        );
-                    }
-                    Screen::Restore => {
-                        self.restore_screen.log.toggle_game_expanded(
-                            &name,
-                            &self.restore_screen.duplicate_detector,
-                            &self.config,
-                            ScanKind::Restore,
-                        );
-                    }
-                    _ => {}
-                }
-                Task::none()
-            }
             Message::ToggleGameListEntryTreeExpanded { name, keys } => {
                 match self.screen {
                     Screen::Backup => {
                         for entry in &mut self.backup_screen.log.entries {
-                            if entry.scan_info.game_name == name {
-                                if let Some(tree) = entry.tree.as_mut() {
-                                    tree.expand_or_collapse_keys(&keys);
-                                }
-                            }
-                        }
-                    }
-                    Screen::Restore => {
-                        for entry in &mut self.restore_screen.log.entries {
                             if entry.scan_info.game_name == name {
                                 if let Some(tree) = entry.tree.as_mut() {
                                     tree.expand_or_collapse_keys(&keys);
@@ -3471,11 +3431,6 @@ impl App {
                 }
                 Task::none()
             }
-            Message::ToggleCustomGameExpanded { index, expanded } => {
-                self.config.custom_games[index].expanded = expanded;
-                self.save_config();
-                Task::none()
-            }
             Message::Filter { event } => {
                 let mut task = None;
 
@@ -3484,10 +3439,6 @@ impl App {
                         Screen::Backup => {
                             self.backup_screen.log.search.show = !self.backup_screen.log.search.show;
                             task = Some(iced::widget::operation::focus(id::backup_search()));
-                        }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.show = !self.restore_screen.log.search.show;
-                            task = Some(iced::widget::operation::focus(id::restore_search()));
                         }
                         Screen::CustomGames => {
                             self.custom_games_screen.filter.enabled = !self.custom_games_screen.filter.enabled;
@@ -3503,9 +3454,6 @@ impl App {
                         Screen::Backup => {
                             self.backup_screen.log.search.toggle_filter(filter, enabled);
                         }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.toggle_filter(filter, enabled);
-                        }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
@@ -3513,10 +3461,6 @@ impl App {
                         Screen::Backup => {
                             self.text_histories.backup_search_game_name.push(&value);
                             self.backup_screen.log.search.game_name = value;
-                        }
-                        Screen::Restore => {
-                            self.text_histories.restore_search_game_name.push(&value);
-                            self.restore_screen.log.search.game_name = value;
                         }
                         Screen::CustomGames => {
                             self.text_histories.custom_games_search_game_name.push(&value);
@@ -3529,10 +3473,6 @@ impl App {
                             self.backup_screen.log.search.reset();
                             self.text_histories.backup_search_game_name.push("");
                         }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.reset();
-                            self.text_histories.restore_search_game_name.push("");
-                        }
                         Screen::CustomGames => {
                             self.custom_games_screen.filter.reset();
                             self.text_histories.custom_games_search_game_name.push("");
@@ -3543,18 +3483,12 @@ impl App {
                         Screen::Backup => {
                             self.backup_screen.log.search.uniqueness.choice = value;
                         }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.uniqueness.choice = value;
-                        }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterCompleteness(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.completeness.choice = value;
-                        }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.completeness.choice = value;
                         }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
@@ -3563,9 +3497,6 @@ impl App {
                         Screen::Backup => {
                             self.backup_screen.log.search.enablement.choice = value;
                         }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.enablement.choice = value;
-                        }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
@@ -3573,18 +3504,12 @@ impl App {
                         Screen::Backup => {
                             self.backup_screen.log.search.change.choice = value;
                         }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.change.choice = value;
-                        }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
                     },
                     game_filter::Event::EditedFilterManifest(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.manifest.choice = value;
-                        }
-                        Screen::Restore => {
-                            self.restore_screen.log.search.manifest.choice = value;
                         }
                         Screen::CustomGames => {}
                         Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
@@ -3623,70 +3548,6 @@ impl App {
                 self.save_config();
                 Task::none()
             }
-            Message::SelectAllGames => {
-                match self.screen {
-                    Screen::Backup => {
-                        for name in self.backup_screen.log.visible_games(
-                            ScanKind::Backup,
-                            &self.config,
-                            &self.manifest.extended,
-                            &self.backup_screen.duplicate_detector,
-                        ) {
-                            self.config.enable_game_for_backup(&name);
-                        }
-                    }
-                    Screen::Restore => {
-                        for name in self.restore_screen.log.visible_games(
-                            ScanKind::Restore,
-                            &self.config,
-                            &self.manifest.extended,
-                            &self.restore_screen.duplicate_detector,
-                        ) {
-                            self.config.enable_game_for_restore(&name);
-                        }
-                    }
-                    Screen::CustomGames => {
-                        for i in self.custom_games_screen.visible_games(&self.config) {
-                            self.config.enable_custom_game(i);
-                        }
-                    }
-                    _ => {}
-                }
-                self.save_config();
-                Task::none()
-            }
-            Message::DeselectAllGames => {
-                match self.screen {
-                    Screen::Backup => {
-                        for name in self.backup_screen.log.visible_games(
-                            ScanKind::Backup,
-                            &self.config,
-                            &self.manifest.extended,
-                            &self.backup_screen.duplicate_detector,
-                        ) {
-                            self.config.disable_game_for_backup(&name);
-                        }
-                    }
-                    Screen::Restore => {
-                        for name in self.restore_screen.log.visible_games(
-                            ScanKind::Restore,
-                            &self.config,
-                            &self.manifest.extended,
-                            &self.restore_screen.duplicate_detector,
-                        ) {
-                            self.config.disable_game_for_restore(&name);
-                        }
-                    }
-                    Screen::CustomGames => {
-                        for i in self.custom_games_screen.visible_games(&self.config) {
-                            self.config.disable_custom_game(i);
-                        }
-                    }
-                    _ => {}
-                }
-                self.save_config();
-                Task::none()
-            }
             Message::OpenDir { path } => {
                 let path2 = path.clone();
                 Task::future(async move {
@@ -3704,14 +3565,7 @@ impl App {
             Message::OpenDirSubject(subject) => {
                 let path = match subject {
                     BrowseSubject::BackupTarget => self.config.backup.path.clone(),
-                    BrowseSubject::RestoreSource => self.config.restore.path.clone(),
                     BrowseSubject::Root(i) => self.config.roots[i].path().clone(),
-                    BrowseSubject::RedirectSource(i) => self.config.redirects[i].source.clone(),
-                    BrowseSubject::RedirectTarget(i) => self.config.redirects[i].target.clone(),
-                    BrowseSubject::CustomGameFile(i, j) => {
-                        StrictPath::new(self.config.custom_games[i].files[j].clone())
-                    }
-                    BrowseSubject::BackupFilterIgnoredPath(i) => self.config.backup.filter.ignored_paths[i].clone(),
                     BrowseSubject::AddGamePath => return Task::none(),
                 };
 
@@ -3777,22 +3631,6 @@ impl App {
                         &mut self.config.backup.path,
                         &mut self.text_histories.backup_target,
                     ),
-                    UndoSubject::RestoreSource => shortcut.apply_to_strict_path_field(
-                        &mut self.config.restore.path,
-                        &mut self.text_histories.restore_source,
-                    ),
-                    UndoSubject::BackupSearchGameName => shortcut.apply_to_string_field(
-                        &mut self.backup_screen.log.search.game_name,
-                        &mut self.text_histories.backup_search_game_name,
-                    ),
-                    UndoSubject::RestoreSearchGameName => shortcut.apply_to_string_field(
-                        &mut self.restore_screen.log.search.game_name,
-                        &mut self.text_histories.restore_search_game_name,
-                    ),
-                    UndoSubject::CustomGamesSearchGameName => shortcut.apply_to_string_field(
-                        &mut self.custom_games_screen.filter.name,
-                        &mut self.text_histories.custom_games_search_game_name,
-                    ),
                     UndoSubject::RootPath(i) => shortcut.apply_to_strict_path_field(
                         self.config.roots[i].path_mut(),
                         &mut self.text_histories.roots[i].path,
@@ -3816,47 +3654,6 @@ impl App {
                             }
                         }
                     }
-                    UndoSubject::RedirectSource(i) => shortcut.apply_to_strict_path_field(
-                        &mut self.config.redirects[i].source,
-                        &mut self.text_histories.redirects[i].source,
-                    ),
-                    UndoSubject::RedirectTarget(i) => shortcut.apply_to_strict_path_field(
-                        &mut self.config.redirects[i].target,
-                        &mut self.text_histories.redirects[i].target,
-                    ),
-                    UndoSubject::CustomGameName(i) => shortcut.apply_to_string_field(
-                        &mut self.config.custom_games[i].name,
-                        &mut self.text_histories.custom_games[i].name,
-                    ),
-                    UndoSubject::CustomGameAlias(i) => {
-                        if let Some(alias) = self.config.custom_games[i].alias.as_mut() {
-                            shortcut.apply_to_string_field(alias, &mut self.text_histories.custom_games[i].alias)
-                        }
-                    }
-                    UndoSubject::CustomGameFile(i, j) => shortcut.apply_to_string_field(
-                        &mut self.config.custom_games[i].files[j],
-                        &mut self.text_histories.custom_games[i].files[j],
-                    ),
-                    UndoSubject::CustomGameRegistry(i, j) => shortcut.apply_to_string_field(
-                        &mut self.config.custom_games[i].registry[j],
-                        &mut self.text_histories.custom_games[i].registry[j],
-                    ),
-                    UndoSubject::CustomGameInstallDir(i, j) => shortcut.apply_to_string_field(
-                        &mut self.config.custom_games[i].install_dir[j],
-                        &mut self.text_histories.custom_games[i].install_dir[j],
-                    ),
-                    UndoSubject::CustomGameWinePrefix(i, j) => shortcut.apply_to_string_field(
-                        &mut self.config.custom_games[i].wine_prefix[j],
-                        &mut self.text_histories.custom_games[i].wine_prefix[j],
-                    ),
-                    UndoSubject::BackupFilterIgnoredPath(i) => shortcut.apply_to_strict_path_field(
-                        &mut self.config.backup.filter.ignored_paths[i],
-                        &mut self.text_histories.backup_filter_ignored_paths[i],
-                    ),
-                    UndoSubject::BackupFilterIgnoredRegistry(i) => shortcut.apply_to_registry_path_field(
-                        &mut self.config.backup.filter.ignored_registry[i],
-                        &mut self.text_histories.backup_filter_ignored_registry[i],
-                    ),
                     UndoSubject::RcloneExecutable => shortcut.apply_to_strict_path_field(
                         &mut self.config.apps.rclone.path,
                         &mut self.text_histories.rclone_executable,
@@ -3883,79 +3680,10 @@ impl App {
                         }
                         return Task::none();
                     }
-                    UndoSubject::BackupComment(game) => {
-                        if let Some(info) = self.text_histories.backup_comments.get_mut(&game) {
-                            let comment = match shortcut {
-                                Shortcut::Undo => info.undo(),
-                                Shortcut::Redo => info.redo(),
-                            };
-
-                            let updated = self.restore_screen.log.set_comment(&game, comment);
-                            if updated {
-                                self.save_backup(&game);
-                            }
-                        }
-                    }
                 }
                 self.save_config();
                 Task::none()
             }
-            Message::SelectedBackupToRestore { game, backup } => {
-                self.backups_to_restore.insert(game.clone(), backup.id());
-                self.handle_restore(RestorePhase::Start {
-                    preview: true,
-                    games: Some(GameSelection::single(game)),
-                })
-            }
-            Message::GameAction { action, game } => match action {
-                GameAction::PreviewBackup => self.handle_backup(BackupPhase::Start {
-                    preview: true,
-                    repair: false,
-                    jump: false,
-                    games: Some(GameSelection::single(game)),
-                }),
-                GameAction::Backup { confirm } => {
-                    if confirm {
-                        self.handle_backup(BackupPhase::Confirm {
-                            games: Some(GameSelection::single(game)),
-                        })
-                    } else {
-                        self.handle_backup(BackupPhase::Start {
-                            preview: false,
-                            repair: false,
-                            jump: false,
-                            games: Some(GameSelection::single(game)),
-                        })
-                    }
-                }
-                GameAction::PreviewRestore => self.handle_restore(RestorePhase::Start {
-                    preview: true,
-                    games: Some(GameSelection::single(game)),
-                }),
-                GameAction::Restore { confirm } => {
-                    if confirm {
-                        self.handle_restore(RestorePhase::Confirm {
-                            games: Some(GameSelection::single(game)),
-                        })
-                    } else {
-                        self.handle_restore(RestorePhase::Start {
-                            preview: false,
-                            games: Some(GameSelection::single(game)),
-                        })
-                    }
-                }
-                GameAction::Customize => self.customize_game(game),
-                GameAction::Wiki => Self::open_wiki(game),
-                GameAction::Comment => self.toggle_backup_comment_editor(game),
-                GameAction::Lock | GameAction::Unlock => {
-                    let updated = self.restore_screen.log.toggle_locked(&game);
-                    if updated {
-                        self.save_backup(&game);
-                    }
-                    Task::none()
-                }
-                GameAction::MakeAlias => self.customize_game_as_alias(game),
-            },
             Message::Scrolled { subject, position } => {
                 self.scroll_offsets.insert(subject, position);
                 Task::none()
@@ -3964,26 +3692,7 @@ impl App {
                 self.scroll_offsets.insert(subject, position);
                 iced::widget::operation::scroll_to(subject.id(), position)
             }
-            Message::EditedBackupComment { game, action } => {
-                if let Some(comment) = self.restore_screen.log.apply_comment_action(&game, action) {
-                    self.save_backup(&game);
-                    if let Some(info) = self.text_histories.backup_comments.get_mut(&game) {
-                        info.push(&comment);
-                    }
-                }
-
-                Task::none()
-            }
-            Message::FilterDuplicates { scan_kind, game } => {
-                let log = match scan_kind {
-                    ScanKind::Backup => &mut self.backup_screen.log,
-                    ScanKind::Restore => &mut self.restore_screen.log,
-                };
-                log.filter_duplicates_of = game;
-                Task::none()
-            }
             Message::OpenUrl(url) => Self::open_url(url),
-            Message::OpenUrlAndCloseModal(url) => Task::batch([Self::open_url(url), self.close_modal()]),
             Message::GameDetailFilesToggled => {
                 self.game_detail_files_expanded = !self.game_detail_files_expanded;
                 if self.game_detail_files_expanded {
@@ -4085,18 +3794,6 @@ impl App {
                 self.config.cloud.remote = None;
                 self.save_config();
                 self.show_error(Error::UnableToConfigureCloud(error))
-            }
-            Message::ConfirmSynchronizeCloud { direction } => {
-                let local = self.config.backup.path.clone();
-
-                self.show_modal(Modal::ConfirmCloudSync {
-                    local: local.render(),
-                    cloud: self.config.cloud.path.clone(),
-                    direction,
-                    changes: vec![],
-                    page: 0,
-                    state: CloudModalState::Initial,
-                })
             }
             Message::SynchronizeCloud { direction, finality } => {
                 let local = self.config.backup.path.clone();
@@ -4200,19 +3897,6 @@ impl App {
                     modal.set_page(page);
                 }
                 Task::none()
-            }
-            Message::ShowCustomGame { name } => {
-                use crate::gui::widget::operation::container_scroll_offset;
-
-                let subject = ScrollSubject::CustomGames;
-
-                self.scroll_offsets.remove(&subject);
-                self.screen = Screen::CustomGames;
-
-                container_scroll_offset(name.clone().into()).map(move |offset| match offset {
-                    Some(position) => Message::Scroll { subject, position },
-                    None => Message::Ignore,
-                })
             }
             Message::ShowScanActiveGames => self.show_modal(Modal::ActiveScanGames),
             Message::CopyText(text) => iced::clipboard::write(text),
@@ -4586,7 +4270,7 @@ impl App {
 
         // --- MAIN CONTENT ---
         let main_content = match self.screen {
-            Screen::Backup | Screen::Restore | Screen::CustomGames | Screen::Games => {
+            Screen::Backup | Screen::CustomGames | Screen::Games => {
                 let entries: Vec<_> = self.backup_screen.log.entries.iter().collect();
                 let game_list = &self.game_list;
                 let sync_status = &self.sync_status;
