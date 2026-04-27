@@ -11,12 +11,12 @@ use crate::{
         common::{Message, UndoSubject, ERROR_ICON},
         modal::{ModalField, ModalInputKind},
         style,
-        widget::{id, Element, TextInput, Undoable},
+        widget::{Element, TextInput, Undoable},
     },
     lang::TRANSLATOR,
-    prelude::{EditAction, RedirectEditActionField, StrictPath},
+    prelude::{EditAction, StrictPath},
     resource::config::{self, Config, CustomGame},
-    scan::{game_filter, registry::RegistryItem},
+    scan::registry::RegistryItem,
 };
 
 fn path_appears_valid(path: &str) -> bool {
@@ -316,10 +316,6 @@ impl TextHistories {
     pub fn input<'a>(&self, subject: UndoSubject) -> Element<'a> {
         let current = match &subject {
             UndoSubject::BackupTarget => self.backup_target.current(),
-            UndoSubject::RestoreSource => self.restore_source.current(),
-            UndoSubject::BackupSearchGameName => self.backup_search_game_name.current(),
-            UndoSubject::RestoreSearchGameName => self.restore_search_game_name.current(),
-            UndoSubject::CustomGamesSearchGameName => self.custom_games_search_game_name.current(),
             UndoSubject::RootPath(i) => self.roots.get(*i).map(|x| x.path.current()).unwrap_or_default(),
             UndoSubject::RootLutrisDatabase(i) => self
                 .roots
@@ -328,40 +324,6 @@ impl TextHistories {
                 .unwrap_or_default(),
             UndoSubject::SecondaryManifest(i) => self
                 .secondary_manifests
-                .get(*i)
-                .map(|x| x.current())
-                .unwrap_or_default(),
-            UndoSubject::RedirectSource(i) => self.redirects.get(*i).map(|x| x.source.current()).unwrap_or_default(),
-            UndoSubject::RedirectTarget(i) => self.redirects.get(*i).map(|x| x.target.current()).unwrap_or_default(),
-            UndoSubject::CustomGameName(i) => self.custom_games.get(*i).map(|x| x.name.current()).unwrap_or_default(),
-            UndoSubject::CustomGameAlias(i) => self.custom_games.get(*i).map(|x| x.alias.current()).unwrap_or_default(),
-            UndoSubject::CustomGameFile(i, j) => self
-                .custom_games
-                .get(*i)
-                .and_then(|x| x.files.get(*j).map(|y| y.current()))
-                .unwrap_or_default(),
-            UndoSubject::CustomGameRegistry(i, j) => self
-                .custom_games
-                .get(*i)
-                .and_then(|x| x.registry.get(*j).map(|y| y.current()))
-                .unwrap_or_default(),
-            UndoSubject::CustomGameInstallDir(i, j) => self
-                .custom_games
-                .get(*i)
-                .and_then(|x| x.install_dir.get(*j).map(|y| y.current()))
-                .unwrap_or_default(),
-            UndoSubject::CustomGameWinePrefix(i, j) => self
-                .custom_games
-                .get(*i)
-                .and_then(|x| x.wine_prefix.get(*j).map(|y| y.current()))
-                .unwrap_or_default(),
-            UndoSubject::BackupFilterIgnoredPath(i) => self
-                .backup_filter_ignored_paths
-                .get(*i)
-                .map(|x| x.current())
-                .unwrap_or_default(),
-            UndoSubject::BackupFilterIgnoredRegistry(i) => self
-                .backup_filter_ignored_registry
                 .get(*i)
                 .map(|x| x.current())
                 .unwrap_or_default(),
@@ -376,21 +338,10 @@ impl TextHistories {
                 ModalInputKind::Username => self.modal.username.current(),
                 ModalInputKind::Password => self.modal.password.current(),
             },
-            UndoSubject::BackupComment(game) => self.backup_comments.get(game).map(|x| x.current()).unwrap_or_default(),
         };
 
         let event: Box<dyn Fn(String) -> Message> = match subject.clone() {
             UndoSubject::BackupTarget => Box::new(Message::config(config::Event::BackupTarget)),
-            UndoSubject::RestoreSource => Box::new(Message::config(config::Event::RestoreSource)),
-            UndoSubject::BackupSearchGameName => Box::new(|value| Message::Filter {
-                event: game_filter::Event::EditedGameName(value),
-            }),
-            UndoSubject::RestoreSearchGameName => Box::new(|value| Message::Filter {
-                event: game_filter::Event::EditedGameName(value),
-            }),
-            UndoSubject::CustomGamesSearchGameName => Box::new(|value| Message::Filter {
-                event: game_filter::Event::EditedGameName(value),
-            }),
             UndoSubject::RootPath(i) => Box::new(Message::config(move |value| {
                 config::Event::Root(EditAction::Change(i, value))
             })),
@@ -399,36 +350,6 @@ impl TextHistories {
             })),
             UndoSubject::SecondaryManifest(i) => Box::new(Message::config(move |value| {
                 config::Event::SecondaryManifest(EditAction::Change(i, value))
-            })),
-            UndoSubject::RedirectSource(i) => Box::new(Message::config(move |value| {
-                config::Event::Redirect(EditAction::Change(i, value), Some(RedirectEditActionField::Source))
-            })),
-            UndoSubject::RedirectTarget(i) => Box::new(Message::config(move |value| {
-                config::Event::Redirect(EditAction::Change(i, value), Some(RedirectEditActionField::Target))
-            })),
-            UndoSubject::CustomGameName(i) => Box::new(Message::config(move |value| {
-                config::Event::CustomGame(EditAction::Change(i, value))
-            })),
-            UndoSubject::CustomGameAlias(i) => {
-                Box::new(Message::config(move |value| config::Event::CustomGameAlias(i, value)))
-            }
-            UndoSubject::CustomGameFile(i, j) => Box::new(Message::config(move |value| {
-                config::Event::CustomGameFile(i, EditAction::Change(j, value))
-            })),
-            UndoSubject::CustomGameRegistry(i, j) => Box::new(Message::config(move |value| {
-                config::Event::CustomGameRegistry(i, EditAction::Change(j, value))
-            })),
-            UndoSubject::CustomGameInstallDir(i, j) => Box::new(Message::config(move |value| {
-                config::Event::CustomGameInstallDir(i, EditAction::Change(j, value))
-            })),
-            UndoSubject::CustomGameWinePrefix(i, j) => Box::new(Message::config(move |value| {
-                config::Event::CustomGameWinePrefix(i, EditAction::Change(j, value))
-            })),
-            UndoSubject::BackupFilterIgnoredPath(i) => Box::new(Message::config(move |value| {
-                config::Event::BackupFilterIgnoredPath(EditAction::Change(i, value))
-            })),
-            UndoSubject::BackupFilterIgnoredRegistry(i) => Box::new(Message::config(move |value| {
-                config::Event::BackupFilterIgnoredRegistry(EditAction::Change(i, value))
             })),
             UndoSubject::RcloneExecutable => Box::new(Message::config(config::Event::RcloneExecutable)),
             UndoSubject::RcloneArguments => Box::new(Message::config(config::Event::RcloneArguments)),
@@ -443,71 +364,33 @@ impl TextHistories {
                     ModalInputKind::Password => ModalField::Password(value),
                 })
             }),
-            // TODO: This is now handled separately with a `TextEditor`.
-            UndoSubject::BackupComment(_) => Box::new(|_| Message::Ignore),
         };
 
         let placeholder = match &subject {
             UndoSubject::BackupTarget => "".to_string(),
-            UndoSubject::RestoreSource => "".to_string(),
-            UndoSubject::BackupSearchGameName => TRANSLATOR.search_game_name_placeholder(),
-            UndoSubject::RestoreSearchGameName => TRANSLATOR.search_game_name_placeholder(),
-            UndoSubject::CustomGamesSearchGameName => TRANSLATOR.search_game_name_placeholder(),
             UndoSubject::RootPath(_) => "".to_string(),
             UndoSubject::RootLutrisDatabase(_) => "".to_string(),
             UndoSubject::SecondaryManifest(_) => "".to_string(),
-            UndoSubject::RedirectSource(_) => TRANSLATOR.redirect_source_placeholder(),
-            UndoSubject::RedirectTarget(_) => TRANSLATOR.redirect_target_placeholder(),
-            UndoSubject::CustomGameName(_) => TRANSLATOR.custom_game_name_placeholder(),
-            UndoSubject::CustomGameAlias(_) => TRANSLATOR.custom_game_name_placeholder(),
-            UndoSubject::CustomGameFile(_, _) => "".to_string(),
-            UndoSubject::CustomGameRegistry(_, _) => "".to_string(),
-            UndoSubject::CustomGameInstallDir(_, _) => "".to_string(),
-            UndoSubject::CustomGameWinePrefix(_, _) => "".to_string(),
-            UndoSubject::BackupFilterIgnoredPath(_) => "".to_string(),
-            UndoSubject::BackupFilterIgnoredRegistry(_) => "".to_string(),
             UndoSubject::RcloneExecutable => TRANSLATOR.executable_label(),
             UndoSubject::RcloneArguments => TRANSLATOR.arguments_label(),
             UndoSubject::CloudRemoteId => "".to_string(),
             UndoSubject::CloudPath => "".to_string(),
             UndoSubject::ModalField(_) => "".to_string(),
-            UndoSubject::BackupComment(_) => TRANSLATOR.comment_label(),
         };
 
         let icon = match &subject {
             UndoSubject::BackupTarget
-            | UndoSubject::RestoreSource
             | UndoSubject::RootPath(_)
             | UndoSubject::RootLutrisDatabase(_)
-            | UndoSubject::RedirectSource(_)
-            | UndoSubject::RedirectTarget(_)
-            | UndoSubject::CustomGameFile(_, _)
-            | UndoSubject::CustomGameInstallDir(_, _)
-            | UndoSubject::CustomGameWinePrefix(_, _)
-            | UndoSubject::BackupFilterIgnoredPath(_)
             | UndoSubject::RcloneExecutable => (!path_appears_valid(&current)).then_some(ERROR_ICON),
-            UndoSubject::CustomGameName(_) | UndoSubject::CustomGameAlias(_) => {
-                (current.trim() != current).then_some(ERROR_ICON)
-            }
             UndoSubject::SecondaryManifest(_)
-            | UndoSubject::BackupSearchGameName
-            | UndoSubject::RestoreSearchGameName
-            | UndoSubject::CustomGamesSearchGameName
-            | UndoSubject::CustomGameRegistry(_, _)
-            | UndoSubject::BackupFilterIgnoredRegistry(_)
             | UndoSubject::RcloneArguments
             | UndoSubject::CloudRemoteId
             | UndoSubject::CloudPath
-            | UndoSubject::ModalField(_)
-            | UndoSubject::BackupComment(_) => None,
+            | UndoSubject::ModalField(_) => None,
         };
 
-        let id = match &subject {
-            UndoSubject::BackupSearchGameName => Some(id::backup_search()),
-            UndoSubject::RestoreSearchGameName => Some(id::restore_search()),
-            UndoSubject::CustomGamesSearchGameName => Some(id::custom_games_search()),
-            _ => None,
-        };
+        let id: Option<iced::widget::Id> = None;
 
         Undoable::new(
             {
