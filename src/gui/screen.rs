@@ -5,6 +5,7 @@ use iced::{keyboard, padding, Alignment, Length};
 use crate::{
     cloud::{Remote, RemoteChoice},
     gui::{
+        badge::Badge,
         button,
         common::{BrowseFileSubject, BrowseSubject, Message, Operation, ScrollSubject, UndoSubject},
         editor,
