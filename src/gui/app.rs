@@ -5479,7 +5479,6 @@ impl App {
                             && primary_action == ActionButton::Retry;
 
                         let g = game_name.clone();
-                        let g2 = game_name.clone();
 
                         let buttons_row = Row::new()
                             .spacing(8)
