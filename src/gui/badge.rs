@@ -3,7 +3,6 @@ use iced::{alignment, padding, widget::tooltip, Length};
 use crate::{
     gui::{
         common::Message,
-        icon::Icon,
         style,
         widget::{text, Button, Container, Tooltip},
     },
