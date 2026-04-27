@@ -1806,7 +1806,7 @@ impl App {
                         }
                         #[cfg(not(target_os = "windows"))]
                         {
-                            Err("Stop daemon: not implemented on this platform".to_string())
+                            Err::<(), String>("Stop daemon: not implemented on this platform".to_string())
                         }
                     },
                     |result| match result {
