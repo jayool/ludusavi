@@ -346,12 +346,4 @@ impl GameList {
     pub fn contains_unscanned_games(&self) -> bool {
         self.entries.iter().any(|x| !x.scanned)
     }
-
-    pub fn save_layout(&mut self, game: &str) {
-        let Some(index) = self.find_game(game) else { return };
-        let entry = &mut self.entries[index];
-        let Some(layout) = &mut entry.game_layout else { return };
-
-        layout.save();
-    }
 }
