@@ -132,16 +132,9 @@ pub enum Message {
     FindRoots,
     ConfirmAddMissingRoots(Vec<Root>),
     SwitchScreen(Screen),
-    ToggleGameListEntryExpanded {
-        name: String,
-    },
     ToggleGameListEntryTreeExpanded {
         name: String,
         keys: Vec<TreeNodeKey>,
-    },
-    ToggleCustomGameExpanded {
-        index: usize,
-        expanded: bool,
     },
     Filter {
         event: game_filter::Event,
@@ -149,8 +142,6 @@ pub enum Message {
     BrowseDir(BrowseSubject),
     BrowseFile(BrowseFileSubject),
     SelectedFile(BrowseFileSubject, StrictPath),
-    SelectAllGames,
-    DeselectAllGames,
     OpenDir {
         path: StrictPath,
     },
@@ -163,14 +154,6 @@ pub enum Message {
         url: String,
     },
     KeyboardEvent(iced::keyboard::Event),
-    SelectedBackupToRestore {
-        game: String,
-        backup: Backup,
-    },
-    GameAction {
-        action: GameAction,
-        game: String,
-    },
     UndoRedo(crate::gui::undoable::Action, UndoSubject),
     Scrolled {
         subject: ScrollSubject,
@@ -180,26 +163,10 @@ pub enum Message {
         subject: ScrollSubject,
         position: iced::widget::scrollable::AbsoluteOffset,
     },
-    ShowGameNotes {
-        game: String,
-        notes: Vec<manifest::Note>,
-    },
-    EditedBackupComment {
-        game: String,
-        action: iced::widget::text_editor::Action,
-    },
-    FilterDuplicates {
-        scan_kind: ScanKind,
-        game: Option<String>,
-    },
     OpenUrl(String),
-    OpenUrlAndCloseModal(String),
     EditedCloudRemote(RemoteChoice),
     ConfigureCloudSuccess(Remote),
     ConfigureCloudFailure(CommandError),
-    ConfirmSynchronizeCloud {
-        direction: SyncDirection,
-    },
     SynchronizeCloud {
         direction: SyncDirection,
         finality: Finality,
@@ -208,9 +175,6 @@ pub enum Message {
     FinalizeRemote(Remote),
     EditedModalField(ModalField),
     ModalChangePage(usize),
-    ShowCustomGame {
-        name: String,
-    },
     ShowScanActiveGames,
     CopyText(String),
     OpenRegistry(RegistryItem),
@@ -725,7 +689,6 @@ pub enum Screen {
     ThisDevice,
     AllDevices,
     Backup,
-    Restore,
     CustomGames,
     Other,
 }
@@ -733,12 +696,7 @@ pub enum Screen {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BrowseSubject {
     BackupTarget,
-    RestoreSource,
     Root(usize),
-    RedirectSource(usize),
-    RedirectTarget(usize),
-    CustomGameFile(usize, usize),
-    BackupFilterIgnoredPath(usize),
     AddGamePath,
 }
 
@@ -752,29 +710,14 @@ pub enum BrowseFileSubject {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UndoSubject {
     BackupTarget,
-    RestoreSource,
-    BackupSearchGameName,
-    RestoreSearchGameName,
-    CustomGamesSearchGameName,
     RootPath(usize),
     RootLutrisDatabase(usize),
     SecondaryManifest(usize),
-    RedirectSource(usize),
-    RedirectTarget(usize),
-    CustomGameName(usize),
-    CustomGameAlias(usize),
-    CustomGameFile(usize, usize),
-    CustomGameRegistry(usize, usize),
-    CustomGameInstallDir(usize, usize),
-    CustomGameWinePrefix(usize, usize),
-    BackupFilterIgnoredPath(usize),
-    BackupFilterIgnoredRegistry(usize),
     RcloneExecutable,
     RcloneArguments,
     CloudRemoteId,
     CloudPath,
     ModalField(ModalInputKind),
-    BackupComment(String),
 }
 
 impl UndoSubject {
@@ -857,48 +800,6 @@ impl From<Screen> for ScrollSubject {
             Screen::Restore => Self::Restore,
             Screen::GameDetail(_) => Self::GameDetail,
             Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::CustomGames => Self::Other,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameAction {
-    Customize,
-    PreviewBackup,
-    Backup { confirm: bool },
-    PreviewRestore,
-    Restore { confirm: bool },
-    Wiki,
-    Comment,
-    Lock,
-    Unlock,
-    MakeAlias,
-}
-
-impl ToString for GameAction {
-    fn to_string(&self) -> String {
-        match self {
-            Self::PreviewBackup | Self::PreviewRestore => TRANSLATOR.preview_button(),
-            Self::Backup { confirm } => {
-                if *confirm {
-                    TRANSLATOR.backup_button()
-                } else {
-                    TRANSLATOR.backup_button_no_confirmation()
-                }
-            }
-            Self::Restore { confirm } => {
-                if *confirm {
-                    TRANSLATOR.restore_button()
-                } else {
-                    TRANSLATOR.restore_button_no_confirmation()
-                }
-            }
-            Self::Customize => TRANSLATOR.customize_button(),
-            Self::Wiki => TRANSLATOR.pcgamingwiki(),
-            Self::Comment => TRANSLATOR.comment_button(),
-            Self::Lock => TRANSLATOR.lock_button(),
-            Self::Unlock => TRANSLATOR.unlock_button(),
-            Self::MakeAlias => TRANSLATOR.alias_label(),
         }
     }
 }
