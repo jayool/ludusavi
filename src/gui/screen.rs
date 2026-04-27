@@ -69,15 +69,6 @@ pub struct CustomGames {
 }
 
 impl CustomGames {
-pub fn visible_games(&self, config: &Config) -> Vec<usize> {
-        config
-            .custom_games
-            .iter()
-            .enumerate()
-            .filter_map(|(i, game)| self.filter.qualifies(game).then_some(i))
-            .collect()
-    }
-}
 
 pub fn other<'a>(
     updating_manifest: bool,

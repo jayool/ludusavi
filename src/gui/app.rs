@@ -74,7 +74,6 @@ impl iced::Executor for Executor {
 pub enum SaveKind {
     Config,
     Cache,
-    Backup(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -217,7 +216,6 @@ impl App {
             match item {
                 SaveKind::Config => self.config.save(),
                 SaveKind::Cache => self.cache.save(),
-                SaveKind::Backup(game) => self.restore_screen.log.save_layout(game),
             }
 
             false
@@ -230,11 +228,6 @@ impl App {
 
     fn save_cache(&mut self) {
         self.pending_save.insert(SaveKind::Cache, Instant::now());
-    }
-
-    fn save_backup(&mut self, game: &str) {
-        self.pending_save
-            .insert(SaveKind::Backup(game.to_string()), Instant::now());
     }
 
     fn invalidate_path_caches(&self) {
@@ -1217,45 +1210,6 @@ impl App {
         }
     }
 
-    fn customize_game(&mut self, name: String) -> Task<Message> {
-        let game = Self::make_custom_game(name, &self.manifest);
-
-        self.text_histories.add_custom_game(&game);
-        self.config.custom_games.push(game);
-        self.save_config();
-
-        self.scroll_offsets.insert(
-            ScrollSubject::CustomGames,
-            scrollable::AbsoluteOffset { x: 0.0, y: f32::MAX },
-        );
-        self.switch_screen(Screen::CustomGames)
-    }
-
-    fn customize_game_as_alias(&mut self, name: String) -> Task<Message> {
-        let game = CustomGame {
-            name: "".to_string(),
-            ignore: false,
-            integration: config::Integration::Override,
-            alias: Some(name),
-            prefer_alias: true,
-            files: vec![],
-            registry: vec![],
-            install_dir: vec![],
-            wine_prefix: vec![],
-            expanded: true,
-        };
-
-        self.text_histories.add_custom_game(&game);
-        self.config.custom_games.push(game);
-        self.save_config();
-
-        self.scroll_offsets.insert(
-            ScrollSubject::CustomGames,
-            scrollable::AbsoluteOffset { x: 0.0, y: f32::MAX },
-        );
-        self.switch_screen(Screen::CustomGames)
-    }
-
     fn update_manifest(
         config: config::ManifestConfig,
         cache: cache::Manifests,
@@ -1286,16 +1240,6 @@ impl App {
                 }
             }
         })
-    }
-
-    fn open_wiki(game: String) -> Task<Message> {
-        let url = format!("https://www.pcgamingwiki.com/wiki/{}", game.replace(' ', "_"));
-        Self::open_url(url)
-    }
-
-    fn toggle_backup_comment_editor(&mut self, name: String) -> Task<Message> {
-        self.restore_screen.log.toggle_backup_comment_editor(&name);
-        Task::none()
     }
 
     fn switch_screen(&mut self, screen: Screen) -> Task<Message> {

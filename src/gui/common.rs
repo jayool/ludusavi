@@ -7,17 +7,16 @@ use crate::{
     gui::{
         modal::{ModalField, ModalInputKind},
     },
-    lang::TRANSLATOR,
-    prelude::{CommandError, EditAction, Error, Finality, Privacy, RedirectEditActionField, StrictPath, SyncDirection},
+    prelude::{CommandError, EditAction, Error, Finality, Privacy, StrictPath, SyncDirection},
     resource::{
         config::{self, Root},
-        manifest::{self, Manifest, ManifestUpdate},
+        manifest::{Manifest, ManifestUpdate},
     },
     scan::{
         game_filter,
-        layout::{Backup, BackupLayout, GameLayout},
+        layout::{BackupLayout, GameLayout},
         registry::RegistryItem,
-        BackupInfo, Launchers, ScanInfo, ScanKind, SteamShortcuts,
+        BackupInfo, Launchers, ScanInfo, SteamShortcuts,
     },
 };
 
