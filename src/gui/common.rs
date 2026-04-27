@@ -1,13 +1,13 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use iced::{widget::text_input, Length};
+use iced::Length;
 
 use crate::{
     cloud::{rclone_monitor, Remote, RemoteChoice},
     gui::{
         modal::{ModalField, ModalInputKind},
     },
-    prelude::{CommandError, EditAction, Error, Finality, Privacy, StrictPath, SyncDirection},
+    prelude::{CommandError, EditAction, Error, Finality, StrictPath, SyncDirection},
     resource::{
         config::{self, Root},
         manifest::{Manifest, ManifestUpdate},
