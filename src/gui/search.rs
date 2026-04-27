@@ -1,7 +1,7 @@
 use fuzzy_matcher::FuzzyMatcher;
 
 use crate::{
-    resource::config::CustomGame,
+    resource::{config::CustomGame, manifest::Manifest},
     scan::{
         game_filter::{self, FilterKind},
         Duplication, ScanInfo,
