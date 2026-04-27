@@ -223,20 +223,6 @@ impl App {
             false
         });
     }
-
-    /// Toca el mtime de sync-games.json para forzar al daemon a reiniciarse.
-    /// Necesario tras operaciones que usan atomic swap (extract_zip_to_directory,
-    /// restore_safety_backup), porque el swap invalida los handles del file watcher
-    /// del daemon en Windows.
-    fn force_daemon_restart() {
-        let sync_games_path = crate::prelude::app_dir().joined("sync-games.json");
-        if let Ok(path_buf) = sync_games_path.as_std_path_buf() {
-            let _ = filetime::set_file_mtime(
-                &path_buf,
-                filetime::FileTime::from_system_time(std::time::SystemTime::now()),
-            );
-        }
-    }
     
     fn save_config(&mut self) {
         self.pending_save.insert(SaveKind::Config, Instant::now());
