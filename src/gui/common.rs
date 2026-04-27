@@ -309,10 +309,6 @@ impl Message {
     pub fn config<T>(convert: impl Fn(T) -> config::Event) -> impl Fn(T) -> Self {
         move |value: T| Self::Config { event: convert(value) }
     }
-
-    pub fn config2<T, T2>(convert: impl Fn(T, T2) -> config::Event) -> impl Fn(T, T2) -> Self {
-        move |v1: T, v2: T2| Self::Config { event: convert(v1, v2) }
-    }
 }
 
 impl From<config::Event> for Message {
@@ -829,13 +825,6 @@ pub enum ScrollSubject {
 }
 
 impl ScrollSubject {
-    pub fn game_list(scan_kind: ScanKind) -> Self {
-        match scan_kind {
-            ScanKind::Backup => Self::Backup,
-            ScanKind::Restore => Self::Restore,
-        }
-    }
-
     pub fn id(&self) -> iced::widget::Id {
         match self {
             Self::Backup => crate::gui::widget::id::backup_scroll(),
@@ -888,70 +877,6 @@ pub enum GameAction {
 }
 
 impl GameAction {
-    pub fn options(
-        scan_kind: ScanKind,
-        operating: bool,
-        customized: bool,
-        invented: bool,
-        has_backups: bool,
-        locked: bool,
-    ) -> Vec<Self> {
-        let mut options = vec![];
-
-        if !operating {
-            match scan_kind {
-                ScanKind::Backup => {
-                    options.push(Self::PreviewBackup);
-                    options.push(Self::Backup { confirm: true });
-                }
-                ScanKind::Restore => {
-                    options.push(Self::PreviewRestore);
-                    options.push(Self::Restore { confirm: true });
-                }
-            }
-        }
-
-        if scan_kind.is_backup() && !customized {
-            options.push(Self::Customize);
-        }
-
-        options.push(Self::MakeAlias);
-
-        if scan_kind.is_restore() && has_backups {
-            options.push(Self::Comment);
-
-            if locked {
-                options.push(Self::Unlock);
-            } else {
-                options.push(Self::Lock);
-            }
-        }
-
-        if !invented {
-            options.push(Self::Wiki);
-        }
-
-        options
-    }
-
-    pub fn icon(&self) -> Icon {
-        match self {
-            GameAction::Backup { confirm } | GameAction::Restore { confirm } => {
-                if *confirm {
-                    Icon::PlayCircleOutline
-                } else {
-                    Icon::FastForward
-                }
-            }
-            GameAction::PreviewBackup | GameAction::PreviewRestore => Icon::Refresh,
-            GameAction::Customize => Icon::Edit,
-            GameAction::Wiki => Icon::Language,
-            GameAction::Comment => Icon::Comment,
-            GameAction::Lock => Icon::Lock,
-            GameAction::Unlock => Icon::LockOpen,
-            GameAction::MakeAlias => Icon::Edit,
-        }
-    }
 }
 
 impl ToString for GameAction {
