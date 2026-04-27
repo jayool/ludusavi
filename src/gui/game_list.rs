@@ -1,25 +1,12 @@
 use std::collections::HashSet;
 
-use iced::{alignment::Horizontal as HorizontalAlignment, padding, widget::tooltip, Alignment, Length};
 
 use crate::{
     gui::{
-        badge::Badge,
-        button,
-        common::{
-            BackupPhase, GameAction, GameSelection, Message, Operation, RestorePhase, UndoSubject,
-        },
+        common::GameSelection,
         file_tree::FileTree,
-        icon::Icon,
         search::FilterComponent,
-        shortcuts::TextHistories,
-        style,
-        widget::{
-            checkbox, pick_list, text, text_editor, Button, Column, Container, IcedButtonExt, IcedParentExt, Row,
-            Tooltip,
-        },
     },
-    lang::TRANSLATOR,
     resource::{
         cache::Cache,
         config::{Config, Sort},
