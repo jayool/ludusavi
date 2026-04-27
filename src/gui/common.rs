@@ -20,14 +20,6 @@ use crate::{
     },
 };
 
-pub const ERROR_ICON: text_input::Icon<iced::Font> = text_input::Icon {
-    font: crate::gui::font::ICONS,
-    code_point: crate::gui::icon::Icon::Error.as_char(),
-    size: None,
-    spacing: 5.0,
-    side: text_input::Side::Right,
-};
-
 #[derive(Clone, Debug, Default)]
 pub struct Flags {
     pub update_manifest: bool,
@@ -701,28 +693,6 @@ pub enum UndoSubject {
     CloudRemoteId,
     CloudPath,
     ModalField(ModalInputKind),
-}
-
-impl UndoSubject {
-    pub fn privacy(&self) -> Privacy {
-        match self {
-            UndoSubject::BackupTarget
-            | UndoSubject::RootPath(_)
-            | UndoSubject::RootLutrisDatabase(_)
-            | UndoSubject::SecondaryManifest(_)
-            | UndoSubject::RcloneExecutable
-            | UndoSubject::RcloneArguments
-            | UndoSubject::CloudRemoteId
-            | UndoSubject::CloudPath
-            => Privacy::Public,
-            UndoSubject::ModalField(field) => match field {
-                ModalInputKind::Url | ModalInputKind::Host | ModalInputKind::Port | ModalInputKind::Username => {
-                    Privacy::Public
-                }
-                ModalInputKind::Password => Privacy::Private,
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
