@@ -3,7 +3,6 @@ use iced::{widget as w, Alignment, Length};
 use crate::{
     gui::{
         common::{Message, Operation},
-        icon::Icon,
         style::{self, Theme},
     },
     lang::TRANSLATOR,
