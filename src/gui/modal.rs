@@ -93,7 +93,6 @@ impl ModalField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloudModalState {
-    Initial,
     Previewing,
     Previewed,
     Syncing,
@@ -246,7 +245,6 @@ impl Modal {
             Modal::ConfigureFtpRemote => Kind::ConfigureFtpRemote,
             Modal::ConfigureSmbRemote => Kind::ConfigureSmbRemote,
             Modal::ConfigureWebDavRemote { .. } => Kind::ConfigureWebDavRemote,
-            Modal::GameNotes { .. } => Kind::GameNotes,
             Modal::ActiveScanGames => Kind::ActiveScanGames,
             Modal::ConfirmSyncBackup { .. } => Kind::ConfirmSyncBackup,
             Modal::ConfirmSyncRestore { .. } => Kind::ConfirmSyncRestore,
@@ -277,7 +275,6 @@ impl Modal {
             Modal::ConfigureFtpRemote => false,
             Modal::ConfigureSmbRemote => false,
             Modal::ConfigureWebDavRemote { .. } => false,
-            Modal::GameNotes { .. } => false,
             Modal::ActiveScanGames => false,
             Modal::ConfirmSyncBackup { .. } => false,
             Modal::ConfirmSyncRestore { .. } => false,
@@ -298,7 +295,6 @@ impl Modal {
             Self::Error { .. }
             | Self::Errors { .. }
             | Self::NoMissingRoots
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => ModalVariant::Info,
             Self::ConfirmBackup { .. }
             | Self::ConfirmRestore { .. }
@@ -371,7 +367,6 @@ impl Modal {
             Self::ConfigureFtpRemote { .. } => RemoteChoice::Ftp.to_string(),
             Self::ConfigureSmbRemote { .. } => RemoteChoice::Smb.to_string(),
             Self::ConfigureWebDavRemote { .. } => RemoteChoice::WebDav.to_string(),
-            Self::GameNotes { game, .. } => game.clone(),
             Self::ActiveScanGames => "".to_string(),
             Self::ConfirmSyncBackup { game } => {
                 format!("Back up saves for \"{}\"?\n\nThis will overwrite the existing backup with the current save files.", game)
@@ -417,7 +412,6 @@ impl Modal {
             | Self::Errors { .. }
             | Self::NoMissingRoots
             | Self::BackupValidation { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => Some(Message::CloseModal),
             Self::ConfirmSyncBackup { game } => Some(Message::SyncBackupGame(game.clone())),
             Self::ConfirmRestoreSafetyBackup { game } => Some(Message::RestoreSafetyBackup(game.clone())),
@@ -568,7 +562,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -742,20 +735,6 @@ impl Modal {
                         ModalField::WebDavProvider,
                     ));
             }
-            Self::GameNotes { notes, .. } => {
-                col = notes.iter().fold(col, |parent, note| {
-                    parent.push(
-                        Row::new()
-                            .push(Container::new(Icon::Info.text_narrow()).padding(padding::top(2).left(5).right(10)))
-                            .push(
-                                Column::new()
-                                    .spacing(5)
-                                    .push(text(&note.message).size(16))
-                                    .push(note.source.as_ref().map(|source| text(source).size(12))),
-                            ),
-                    )
-                });
-            }
             Self::ActiveScanGames => {
                 if let Some(games) = operation.active_games() {
                     let now = chrono::Utc::now();
@@ -843,7 +822,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -891,7 +869,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -923,7 +900,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -953,7 +929,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
@@ -983,7 +958,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
-            | Self::GameNotes { .. }
             | Self::ActiveScanGames => 2,
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
