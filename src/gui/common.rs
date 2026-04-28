@@ -28,9 +28,6 @@ pub struct Flags {
 
 #[derive(Debug, Clone)]
 pub enum BackupPhase {
-    Confirm {
-        games: Option<GameSelection>,
-    },
     Start {
         preview: bool,
         /// Was this backup triggered by a validation check?
@@ -58,9 +55,6 @@ pub enum BackupPhase {
 
 #[derive(Debug, Clone)]
 pub enum RestorePhase {
-    Confirm {
-        games: Option<GameSelection>,
-    },
     Start {
         preview: bool,
         games: Option<GameSelection>,
