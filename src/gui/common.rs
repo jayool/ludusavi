@@ -572,7 +572,6 @@ impl Operation {
             Operation::Backup { active_games, .. }
             | Operation::Restore { active_games, .. }
                 active_games.remove(title);
-            }
         }
     }
 }
