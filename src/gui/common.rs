@@ -80,7 +80,6 @@ pub enum Message {
     },
     ManifestUpdated(Vec<Result<Option<ManifestUpdate>, Error>>),
     Backup(BackupPhase),
-    ValidateBackups(ValidatePhase),
     FindRoots,
     ConfirmAddMissingRoots(Vec<Root>),
     SwitchScreen(Screen),
@@ -281,11 +280,6 @@ pub enum Operation {
         games: Option<GameSelection>,
         errors: Vec<Error>,
         cloud_changes: i64,
-        active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
-    },
-    ValidateBackups {
-        cancelling: bool,
-        faulty_games: BTreeSet<String>,
         active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
     },
     Cloud {
