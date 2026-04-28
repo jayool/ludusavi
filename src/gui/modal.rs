@@ -155,10 +155,6 @@ pub enum Modal {
     Exiting,
     NoMissingRoots,
     ConfirmAddMissingRoots(Vec<Root>),
-    BackupValidation {
-        /// Any games with invalid backups.
-        games: BTreeSet<String>,
-    },
     UpdatingManifest,
     ConfirmCloudSync {
         local: String,
@@ -218,7 +214,6 @@ impl Modal {
             Modal::Exiting => Kind::Exiting,
             Modal::NoMissingRoots => Kind::NoMissingRoots,
             Modal::ConfirmAddMissingRoots(..) => Kind::ConfirmAddMissingRoots,
-            Modal::BackupValidation { .. } => Kind::BackupValidation,
             Modal::UpdatingManifest => Kind::UpdatingManifest,
             Modal::ConfirmCloudSync { .. } => Kind::ConfirmCloudSync,
             Modal::ConfigureFtpRemote => Kind::ConfigureFtpRemote,
@@ -246,7 +241,6 @@ impl Modal {
             Modal::Exiting => false,
             Modal::NoMissingRoots => false,
             Modal::ConfirmAddMissingRoots(..) => false,
-            Modal::BackupValidation { .. } => false,
             Modal::UpdatingManifest => false,
             Modal::ConfirmCloudSync { .. } => false,
             Modal::ConfigureFtpRemote => false,
