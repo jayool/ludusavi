@@ -719,6 +719,7 @@ impl App {
 
             match self.operation {
                 Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Load)),
+                Operation::Idle | Operation::Restore { .. } | Operation::Cloud { .. } => None,
             }
         } else if self.operation.integrated_syncing_cloud() {
             self.operation.transition_from_cloud_step(synced);
