@@ -509,13 +509,17 @@ impl Operation {
     pub fn add_active_game(&mut self, title: String) {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
-            Operation::Backup { active_games, .. }
+            Operation::Backup { active_games, .. } => {
+                active_games.insert(title, chrono::Utc::now());
+            }
         }
     }
     pub fn remove_active_game(&mut self, title: &str) {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
-            Operation::Backup { active_games, .. }
+            Operation::Backup { active_games, .. } => {
+                active_games.remove(title);
+            }
         }
     }
 }
