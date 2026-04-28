@@ -127,8 +127,6 @@ pub enum Message {
     OpenRegistry(RegistryItem),
     RequestSyncBackup(String),
     RequestSyncRestore(String),
-    RequestForceUpload(String),
-    RequestForceDownload(String),
     SyncBackupGame(String),
     ConfirmSyncModeChange {
         game: String,
@@ -269,15 +267,6 @@ pub enum Operation {
         syncable_games: HashSet<String>,
         active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
     },
-    Restore {
-        finality: Finality,
-        cancelling: bool,
-        checking_cloud: bool,
-        games: Option<GameSelection>,
-        errors: Vec<Error>,
-        cloud_changes: i64,
-        active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
-    },
     Cloud {
         direction: SyncDirection,
         finality: Finality,
@@ -308,18 +297,6 @@ impl Operation {
         }
     }
 
-    pub fn new_restore(finality: Finality, games: Option<GameSelection>) -> Self {
-        Self::Restore {
-            finality,
-            cancelling: false,
-            checking_cloud: false,
-            games,
-            errors: vec![],
-            cloud_changes: 0,
-            active_games: HashMap::new(),
-        }
-    }
-
     pub fn new_cloud(direction: SyncDirection, finality: Finality) -> Self {
         Self::Cloud {
             direction,
@@ -334,7 +311,6 @@ impl Operation {
         match self {
             Operation::Idle => true,
             Operation::Backup { finality, .. } => finality.preview(),
-            Operation::Restore { finality, .. } => finality.preview(),
             Operation::Cloud { finality, .. } => finality.preview(),
         }
     }
@@ -343,7 +319,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.is_none(),
-            Operation::Restore { games, .. } => games.is_none(),
             Operation::Cloud { .. } => true,
         }
     }
@@ -352,7 +327,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { games, .. } => games.as_ref(),
-            Operation::Restore { games, .. } => games.as_ref(),
             Operation::Cloud { .. } => None,
         }
     }
@@ -361,7 +335,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.as_ref().is_some_and(|xs| !xs.is_empty()),
-            Operation::Restore { games, .. } => games.as_ref().is_some_and(|xs| !xs.is_empty()),
             Operation::Cloud { .. } => false,
         }
     }
@@ -370,7 +343,6 @@ impl Operation {
         match self {
             Operation::Idle => (),
             Operation::Backup { cancelling, .. } => *cancelling = true,
-            Operation::Restore { cancelling, .. } => *cancelling = true,
             Operation::Cloud { cancelling, .. } => *cancelling = true,
         }
     }
@@ -379,7 +351,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { errors, .. } => Some(errors),
-            Operation::Restore { errors, .. } => Some(errors),
             Operation::Cloud { errors, .. } => Some(errors),
         }
     }
@@ -388,7 +359,6 @@ impl Operation {
         match self {
             Operation::Idle => (),
             Operation::Backup { errors, .. } => errors.push(error),
-            Operation::Restore { errors, .. } => errors.push(error),
             Operation::Cloud { errors, .. } => errors.push(error),
         }
     }
@@ -403,10 +373,6 @@ impl Operation {
             } => match finality {
                 Finality::Preview => *checking_cloud = true,
                 Finality::Final => *syncing_cloud = true,
-            },
-            Operation::Restore { checking_cloud, .. } => match finality {
-                Finality::Preview => *checking_cloud = true,
-                Finality::Final => (),
             },
             Operation::Cloud { .. } => (),
         }
@@ -433,11 +399,6 @@ impl Operation {
                     *syncing_cloud = false;
                 }
             }
-            Operation::Restore { checking_cloud, .. } => {
-                if *checking_cloud {
-                    *checking_cloud = false;
-                }
-            }
             Operation::Cloud { .. } => (),
         }
     }
@@ -450,7 +411,6 @@ impl Operation {
                 syncing_cloud,
                 ..
             } => *checking_cloud || *syncing_cloud,
-            Operation::Restore { checking_cloud, .. } => *checking_cloud,
             Operation::Cloud { .. } => true,
         }
     }
@@ -459,7 +419,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { checking_cloud, .. } => *checking_cloud,
-            Operation::Restore { checking_cloud, .. } => *checking_cloud,
             Operation::Cloud { .. } => false,
         }
     }
@@ -468,7 +427,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { syncing_cloud, .. } => *syncing_cloud,
-            Operation::Restore { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -481,7 +439,6 @@ impl Operation {
                 should_sync_cloud_after,
                 ..
             } => *should_sync_cloud_after,
-            Operation::Restore { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -490,7 +447,6 @@ impl Operation {
         match self {
             Operation::Idle => 0,
             Operation::Backup { cloud_changes, .. } => *cloud_changes,
-            Operation::Restore { cloud_changes, .. } => *cloud_changes,
             Operation::Cloud { cloud_changes, .. } => *cloud_changes,
         }
     }
@@ -499,7 +455,6 @@ impl Operation {
         match self {
             Operation::Idle => (),
             Operation::Backup { cloud_changes, .. } => *cloud_changes += 1,
-            Operation::Restore { cloud_changes, .. } => *cloud_changes += 1,
             Operation::Cloud { cloud_changes, .. } => *cloud_changes += 1,
         }
     }
@@ -510,7 +465,6 @@ impl Operation {
             Operation::Backup {
                 force_new_full_backup, ..
             } => *force_new_full_backup,
-            Operation::Restore { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -521,7 +475,6 @@ impl Operation {
             Operation::Backup {
                 force_new_full_backup, ..
             } => *force_new_full_backup = value,
-            Operation::Restore { .. } => (),
             Operation::Cloud { .. } => (),
         }
     }
@@ -531,7 +484,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { syncable_games, .. } => Some(syncable_games),
-            Operation::Restore { .. } => None,
             Operation::Cloud { .. } => None,
         }
     }
@@ -542,7 +494,6 @@ impl Operation {
             Operation::Backup { syncable_games, .. } => {
                 syncable_games.insert(title);
             }
-            Operation::Restore { .. } => {}
             Operation::Cloud { .. } => {}
         }
     }
@@ -551,7 +502,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { active_games, .. } => Some(active_games),
-            Operation::Restore { active_games, .. } => Some(active_games),
             Operation::Cloud { .. } => None,
         }
     }
@@ -560,18 +510,12 @@ impl Operation {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
-            | Operation::Restore { active_games, .. } => {
-                active_games.insert(title, chrono::Utc::now());
-            }
         }
     }
     pub fn remove_active_game(&mut self, title: &str) {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
-            | Operation::Restore { active_games, .. } => {
-                active_games.remove(title);
-            }
         }
     }
 }
@@ -618,7 +562,6 @@ pub enum UndoSubject {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum ScrollSubject {
     Backup,
-    Restore,
     CustomGames,
     Other,
     Modal,
@@ -629,7 +572,6 @@ impl ScrollSubject {
     pub fn id(&self) -> iced::widget::Id {
         match self {
             Self::Backup => crate::gui::widget::id::backup_scroll(),
-            Self::Restore => crate::gui::widget::id::restore_scroll(),
             Self::CustomGames => crate::gui::widget::id::custom_games_scroll(),
             Self::Other => crate::gui::widget::id::other_scroll(),
             Self::Modal => crate::gui::widget::id::modal_scroll(),
