@@ -154,8 +154,6 @@ pub enum Message {
     /// Ejecuta el Keep both: snapshot permanente del local + download del cloud.
     ResolveConflictKeepBoth(String),
     DeleteSafetyBackup(String),
-    ForceUploadGame(String),
-    ForceDownloadGame(String),
     ShowTimedNotification(String),
     GameDetailFilesToggled,
     InstallService,
