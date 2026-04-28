@@ -181,10 +181,6 @@ pub enum Modal {
     ConfigureWebDavRemote {
         provider: WebDavProvider,
     },
-    GameNotes {
-        game: String,
-        notes: Vec<manifest::Note>,
-    },
     ActiveScanGames,
     ConfirmSyncBackup {
         game: String,
