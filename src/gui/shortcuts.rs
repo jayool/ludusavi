@@ -221,7 +221,6 @@ pub struct TextHistories {
     pub cloud_remote_id: TextHistory,
     pub cloud_path: TextHistory,
     pub modal: ModalHistory,
-    pub backup_comments: HashMap<String, TextHistory>,
 }
 
 impl TextHistories {
