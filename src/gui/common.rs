@@ -560,18 +560,18 @@ impl Operation {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
-            | Operation::Restore { active_games, .. }
+            | Operation::Restore { active_games, .. } => {
                 active_games.insert(title, chrono::Utc::now());
             }
         }
     }
-
     pub fn remove_active_game(&mut self, title: &str) {
         match self {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
-            | Operation::Restore { active_games, .. }
+            | Operation::Restore { active_games, .. } => {
                 active_games.remove(title);
+            }
         }
     }
 }
