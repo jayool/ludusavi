@@ -175,11 +175,6 @@ impl Progress {
             } else {
                 TRANSLATOR.scan_label()
             }),
-            Operation::Restore { checking_cloud, .. } => Some(if *checking_cloud {
-                TRANSLATOR.cloud_label()
-            } else {
-                TRANSLATOR.scan_label()
-            }),
             Operation::Cloud { .. } => Some(TRANSLATOR.cloud_label()),
         };
 
@@ -208,11 +203,6 @@ impl Progress {
                 } else {
                     self.game_count()
                 }),
-                Operation::Restore { checking_cloud, .. } => Some(if *checking_cloud {
-                    self.cloud_count()
-                } else {
-                    self.game_count()
-                }),
                 Operation::Cloud { .. } => Some(self.cloud_count()),
             }
         };
@@ -233,7 +223,7 @@ impl Progress {
             )
             .on_press_maybe(match operation {
                 Operation::Idle | Operation::Cloud { .. } => None,
-                Operation::Backup { .. } | Operation::Restore { .. } => {
+                Operation::Backup { .. } => {
                     Some(Message::ShowScanActiveGames)
                 }
             })
