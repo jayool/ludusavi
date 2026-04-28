@@ -12,7 +12,7 @@ use crate::{
     gui::{
         badge::Badge,
         button,
-        common::{GameSelection, Message, Operation, ScrollSubject, UndoSubject},
+        common::{BackupPhase, GameSelection, Message, Operation, ScrollSubject, UndoSubject},
         shortcuts::TextHistories,
         style,
         widget::{pick_list, text, Column, Container, Element, IcedParentExt, Row, Space},
@@ -304,7 +304,7 @@ impl Modal {
         }
     }
 
-    pub fn text(&self, config: &Config) -> String {
+    pub fn text(&self, _config: &Config) -> String {
         match self {
             Self::Error { variant } => TRANSLATOR.handle_error(variant),
             Self::Errors { errors } => errors.iter().map(|x| TRANSLATOR.handle_error(x)).join("\n\n"),
