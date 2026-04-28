@@ -1,7 +1,7 @@
 // Iced has built-in support for some keyboard shortcuts. This module provides
 // support for implementing other shortcuts until Iced provides its own support.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use iced::Length;
 
