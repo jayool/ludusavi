@@ -54,24 +54,6 @@ pub enum BackupPhase {
 }
 
 #[derive(Debug, Clone)]
-pub enum RestorePhase {
-    Start {
-        preview: bool,
-        games: Option<GameSelection>,
-    },
-    CloudCheck,
-    Load,
-    RegisterCommands {
-        restorables: Vec<String>,
-        layout: BackupLayout,
-    },
-    GameScanned {
-        scan_info: Option<ScanInfo>,
-        backup_info: Option<BackupInfo>,
-        game_layout: Box<GameLayout>,
-    },
-    Done,
-}
 
 #[derive(Debug, Clone)]
 pub enum ValidatePhase {
@@ -111,9 +93,7 @@ pub enum Message {
     },
     ManifestUpdated(Vec<Result<Option<ManifestUpdate>, Error>>),
     Backup(BackupPhase),
-    Restore(RestorePhase),
     ValidateBackups(ValidatePhase),
-    CancelOperation,
     FindRoots,
     ConfirmAddMissingRoots(Vec<Root>),
     SwitchScreen(Screen),
