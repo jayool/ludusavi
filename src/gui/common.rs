@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use iced::Length;
 
@@ -52,10 +52,6 @@ pub enum BackupPhase {
     CloudSync,
     Done,
 }
-
-#[derive(Debug, Clone)]
-
-#[derive(Debug, Clone)]
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -324,14 +320,6 @@ impl Operation {
         }
     }
 
-    pub fn new_validate_backups() -> Self {
-        Self::ValidateBackups {
-            cancelling: false,
-            faulty_games: Default::default(),
-            active_games: HashMap::new(),
-        }
-    }
-
     pub fn new_cloud(direction: SyncDirection, finality: Finality) -> Self {
         Self::Cloud {
             direction,
@@ -347,7 +335,6 @@ impl Operation {
             Operation::Idle => true,
             Operation::Backup { finality, .. } => finality.preview(),
             Operation::Restore { finality, .. } => finality.preview(),
-            Operation::ValidateBackups { .. } => true,
             Operation::Cloud { finality, .. } => finality.preview(),
         }
     }
@@ -357,7 +344,6 @@ impl Operation {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.is_none(),
             Operation::Restore { games, .. } => games.is_none(),
-            Operation::ValidateBackups { .. } => true,
             Operation::Cloud { .. } => true,
         }
     }
@@ -367,7 +353,6 @@ impl Operation {
             Operation::Idle => None,
             Operation::Backup { games, .. } => games.as_ref(),
             Operation::Restore { games, .. } => games.as_ref(),
-            Operation::ValidateBackups { .. } => None,
             Operation::Cloud { .. } => None,
         }
     }
@@ -377,7 +362,6 @@ impl Operation {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.as_ref().is_some_and(|xs| !xs.is_empty()),
             Operation::Restore { games, .. } => games.as_ref().is_some_and(|xs| !xs.is_empty()),
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -387,7 +371,6 @@ impl Operation {
             Operation::Idle => (),
             Operation::Backup { cancelling, .. } => *cancelling = true,
             Operation::Restore { cancelling, .. } => *cancelling = true,
-            Operation::ValidateBackups { cancelling, .. } => *cancelling = true,
             Operation::Cloud { cancelling, .. } => *cancelling = true,
         }
     }
@@ -397,7 +380,6 @@ impl Operation {
             Operation::Idle => None,
             Operation::Backup { errors, .. } => Some(errors),
             Operation::Restore { errors, .. } => Some(errors),
-            Operation::ValidateBackups { .. } => None,
             Operation::Cloud { errors, .. } => Some(errors),
         }
     }
@@ -407,7 +389,6 @@ impl Operation {
             Operation::Idle => (),
             Operation::Backup { errors, .. } => errors.push(error),
             Operation::Restore { errors, .. } => errors.push(error),
-            Operation::ValidateBackups { .. } => (),
             Operation::Cloud { errors, .. } => errors.push(error),
         }
     }
@@ -427,7 +408,6 @@ impl Operation {
                 Finality::Preview => *checking_cloud = true,
                 Finality::Final => (),
             },
-            Operation::ValidateBackups { .. } => (),
             Operation::Cloud { .. } => (),
         }
     }
@@ -458,7 +438,6 @@ impl Operation {
                     *checking_cloud = false;
                 }
             }
-            Operation::ValidateBackups { .. } => (),
             Operation::Cloud { .. } => (),
         }
     }
@@ -472,7 +451,6 @@ impl Operation {
                 ..
             } => *checking_cloud || *syncing_cloud,
             Operation::Restore { checking_cloud, .. } => *checking_cloud,
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => true,
         }
     }
@@ -482,7 +460,6 @@ impl Operation {
             Operation::Idle => false,
             Operation::Backup { checking_cloud, .. } => *checking_cloud,
             Operation::Restore { checking_cloud, .. } => *checking_cloud,
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -492,7 +469,6 @@ impl Operation {
             Operation::Idle => false,
             Operation::Backup { syncing_cloud, .. } => *syncing_cloud,
             Operation::Restore { .. } => false,
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -506,7 +482,6 @@ impl Operation {
                 ..
             } => *should_sync_cloud_after,
             Operation::Restore { .. } => false,
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -516,7 +491,6 @@ impl Operation {
             Operation::Idle => 0,
             Operation::Backup { cloud_changes, .. } => *cloud_changes,
             Operation::Restore { cloud_changes, .. } => *cloud_changes,
-            Operation::ValidateBackups { .. } => 0,
             Operation::Cloud { cloud_changes, .. } => *cloud_changes,
         }
     }
@@ -526,7 +500,6 @@ impl Operation {
             Operation::Idle => (),
             Operation::Backup { cloud_changes, .. } => *cloud_changes += 1,
             Operation::Restore { cloud_changes, .. } => *cloud_changes += 1,
-            Operation::ValidateBackups { .. } => (),
             Operation::Cloud { cloud_changes, .. } => *cloud_changes += 1,
         }
     }
@@ -538,7 +511,6 @@ impl Operation {
                 force_new_full_backup, ..
             } => *force_new_full_backup,
             Operation::Restore { .. } => false,
-            Operation::ValidateBackups { .. } => false,
             Operation::Cloud { .. } => false,
         }
     }
@@ -550,7 +522,6 @@ impl Operation {
                 force_new_full_backup, ..
             } => *force_new_full_backup = value,
             Operation::Restore { .. } => (),
-            Operation::ValidateBackups { .. } => (),
             Operation::Cloud { .. } => (),
         }
     }
@@ -561,7 +532,6 @@ impl Operation {
             Operation::Idle => None,
             Operation::Backup { syncable_games, .. } => Some(syncable_games),
             Operation::Restore { .. } => None,
-            Operation::ValidateBackups { .. } => None,
             Operation::Cloud { .. } => None,
         }
     }
@@ -573,7 +543,6 @@ impl Operation {
                 syncable_games.insert(title);
             }
             Operation::Restore { .. } => {}
-            Operation::ValidateBackups { .. } => {}
             Operation::Cloud { .. } => {}
         }
     }
@@ -583,7 +552,6 @@ impl Operation {
             Operation::Idle => None,
             Operation::Backup { active_games, .. } => Some(active_games),
             Operation::Restore { active_games, .. } => Some(active_games),
-            Operation::ValidateBackups { .. } => None,
             Operation::Cloud { .. } => None,
         }
     }
@@ -593,7 +561,6 @@ impl Operation {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
             | Operation::Restore { active_games, .. }
-            | Operation::ValidateBackups { active_games, .. } => {
                 active_games.insert(title, chrono::Utc::now());
             }
         }
@@ -604,7 +571,6 @@ impl Operation {
             Operation::Idle | Operation::Cloud { .. } => {}
             Operation::Backup { active_games, .. }
             | Operation::Restore { active_games, .. }
-            | Operation::ValidateBackups { active_games, .. } => {
                 active_games.remove(title);
             }
         }
