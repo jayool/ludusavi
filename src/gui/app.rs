@@ -2422,7 +2422,6 @@ impl App {
             Message::Backup(phase) => self.handle_backup(phase),
             Message::Restore(phase) => self.handle_restore(phase),
             Message::ValidateBackups(phase) => self.handle_validation(phase),
-            Message::CancelOperation => self.cancel_operation(),
             Message::RequestSyncBackup(game_name) => {
                 // Si el modo es CLOUD/SYNC requiere daemon. LOCAL no.
                 let mode = self.sync_games_config.get_mode(&game_name);
