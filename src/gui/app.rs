@@ -36,7 +36,7 @@ use crate::{
     },
     scan::{
         game_filter, layout::BackupLayout, prepare_backup_target, registry::RegistryItem, scan_game_for_backup,
-        BackupId, Launchers, ScanKind, SteamShortcuts, TitleFinder,
+        Launchers, ScanKind, SteamShortcuts, TitleFinder,
     },
 };
 
@@ -252,7 +252,6 @@ impl App {
         if let Some((name, screen)) = self.notify_on_single_game_scanned.as_ref() {
             let log = match self.operation {
                 Operation::Backup { .. } => &self.backup_screen.log,
-                Operation::Restore { .. } => &self.restore_screen.log,
                 _ => return false,
             };
             let found = log.entries.iter().any(|x| &x.scan_info.game_name == name);
@@ -718,14 +717,13 @@ impl App {
 
             match self.operation {
                 Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Load)),
-                Operation::Idle | Operation::Restore { .. } | Operation::Cloud { .. } => None,
+                Operation::Idle | Operation::Cloud { .. } => None,
             }
         } else if self.operation.integrated_syncing_cloud() {
             self.operation.transition_from_cloud_step(synced);
             match self.operation {
                 Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Done)),
                 Operation::Idle
-                | Operation::Restore { .. }
                 | Operation::Cloud { .. } => None,
             }
         } else {
