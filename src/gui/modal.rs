@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use iced::{
     padding,
     widget::{mouse_area, opaque},
@@ -271,13 +269,6 @@ impl Modal {
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. } => ModalVariant::Confirm,
-            Self::BackupValidation { games } => {
-                if games.is_empty() {
-                    ModalVariant::Info
-                } else {
-                    ModalVariant::Confirm
-                }
-            }
             Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
             | Self::ConfirmForceUpload { .. }
@@ -306,13 +297,6 @@ impl Modal {
             Self::NoMissingRoots => TRANSLATOR.no_missing_roots(),
             Self::ConfirmAddMissingRoots(missing) => TRANSLATOR.confirm_add_missing_roots(missing),
             Self::UpdatingManifest => TRANSLATOR.updating_manifest(),
-            Self::BackupValidation { games } => {
-                if games.is_empty() {
-                    TRANSLATOR.backups_are_valid()
-                } else {
-                    TRANSLATOR.backups_are_invalid()
-                }
-            }
             Self::ConfirmCloudSync {
                 local,
                 cloud,
@@ -376,7 +360,6 @@ impl Modal {
             Self::Error { .. }
             | Self::Errors { .. }
             | Self::NoMissingRoots
-            | Self::BackupValidation { .. }
             | Self::ActiveScanGames => Some(Message::CloseModal),
             Self::ConfirmSyncBackup { game } => Some(Message::SyncBackupGame(game.clone())),
             Self::ConfirmRestoreSafetyBackup { game } => Some(Message::RestoreSafetyBackup(game.clone())),
@@ -476,21 +459,6 @@ impl Modal {
                             direction: *direction,
                             finality: Finality::Preview,
                         }),
-                    )]
-                }
-            }
-            Self::BackupValidation { games } => {
-                if games.is_empty() {
-                    vec![]
-                } else {
-                    vec![button::primary(
-                        TRANSLATOR.backup_button(),
-                        Some(Message::Backup(BackupPhase::Start {
-                            preview: false,
-                            repair: true,
-                            jump: false,
-                            games: Some(GameSelection::group(games.iter().cloned().collect())),
-                        })),
                     )]
                 }
             }
@@ -621,11 +589,6 @@ impl Modal {
                 }
                 col = col.push(form);
             }
-            Self::BackupValidation { games } => {
-                for game in games.iter().sorted() {
-                    col = col.push(text(game))
-                }
-            }
             Self::ConfirmCloudSync {
                 changes, page, state, ..
             } => {
@@ -739,7 +702,7 @@ impl Modal {
                             ModalVariant::Loading => Row::new(),
                             ModalVariant::Info => Row::with_children(self.extra_controls()).push(positive_button),
                             ModalVariant::Confirm => Row::with_children(self.extra_controls())
-                                .push_if(!matches!(self, Modal::BackupValidation { .. }), || positive_button)
+                                .push(positive_button)
                                 .push(negative_button),
                         }
                         .padding([20, 0])
@@ -766,7 +729,6 @@ impl Modal {
             | Self::Exiting
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
-            | Self::BackupValidation { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -811,7 +773,6 @@ impl Modal {
             | Self::Exiting
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
-            | Self::BackupValidation { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -840,7 +801,6 @@ impl Modal {
             | Self::Exiting
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
-            | Self::BackupValidation { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -867,7 +827,6 @@ impl Modal {
             | Self::Exiting
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
-            | Self::BackupValidation { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
@@ -894,7 +853,6 @@ impl Modal {
             | Self::Errors { .. }
             | Self::Exiting
             | Self::ConfirmAddMissingRoots(_)
-            | Self::BackupValidation { .. }
             | Self::UpdatingManifest
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
