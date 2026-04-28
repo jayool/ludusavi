@@ -116,7 +116,6 @@ pub struct App {
     operation_steps: Vec<OperationStep>,
     operation_steps_active: usize,
     progress: Progress,
-    backups_to_restore: HashMap<String, BackupId>,
     updating_manifest: bool,
     notify_on_single_game_scanned: Option<(String, Screen)>,
     manifest_notification: Option<Notification>,
@@ -2019,12 +2018,6 @@ impl App {
                     return Task::none();
                 }
                 self.show_modal(Modal::ConfirmSyncRestore { game: game_name })
-            }
-            Message::RequestForceUpload(game_name) => {
-                self.show_modal(Modal::ConfirmForceUpload { game: game_name })
-            }
-            Message::RequestForceDownload(game_name) => {
-                self.show_modal(Modal::ConfirmForceDownload { game: game_name })
             }
             Message::ConfirmSyncModeChange { game, previous_mode } => {
                 if let (Some(name), Some(pending)) = (self.pending_game_detail_name.take(), self.pending_game_detail.take()) {
