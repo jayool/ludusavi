@@ -2420,7 +2420,6 @@ impl App {
                 Task::batch(tasks)
             }
             Message::Backup(phase) => self.handle_backup(phase),
-            Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::RequestSyncBackup(game_name) => {
                 // Si el modo es CLOUD/SYNC requiere daemon. LOCAL no.
                 let mode = self.sync_games_config.get_mode(&game_name);
