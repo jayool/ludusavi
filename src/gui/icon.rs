@@ -1,4 +1,4 @@
-use iced::{alignment, Length};
+use iced::alignment;
 
 use crate::gui::{
     font,
