@@ -10,7 +10,7 @@ use crate::{
     gui::{
         badge::Badge,
         button,
-        common::{BackupPhase, GameSelection, Message, Operation, ScrollSubject, UndoSubject},
+        common::{Message, Operation, ScrollSubject, UndoSubject},
         shortcuts::TextHistories,
         style,
         widget::{pick_list, text, Column, Container, Element, IcedParentExt, Row, Space},
@@ -123,7 +123,6 @@ pub enum Kind {
     Exiting,
     NoMissingRoots,
     ConfirmAddMissingRoots,
-    BackupValidation,
     UpdatingManifest,
     ConfirmCloudSync,
     ConfigureFtpRemote,
@@ -132,8 +131,6 @@ pub enum Kind {
     ActiveScanGames,
     ConfirmSyncBackup,
     ConfirmSyncRestore,
-    ConfirmForceUpload,
-    ConfirmForceDownload,
     ConfirmSyncModeChange,
     AddGame,
     ConfirmRemoveCustomGame,
@@ -183,12 +180,6 @@ pub enum Modal {
     ConfirmResolveConflictKeepBoth {
         game: String,
     },
-    ConfirmForceUpload {
-        game: String,
-    },
-    ConfirmForceDownload {
-        game: String,
-    },
     ConfirmSyncModeChange {
         game: String,
         warning: String,
@@ -220,8 +211,6 @@ impl Modal {
             Modal::ActiveScanGames => Kind::ActiveScanGames,
             Modal::ConfirmSyncBackup { .. } => Kind::ConfirmSyncBackup,
             Modal::ConfirmSyncRestore { .. } => Kind::ConfirmSyncRestore,
-            Modal::ConfirmForceUpload { .. } => Kind::ConfirmForceUpload,
-            Modal::ConfirmForceDownload { .. } => Kind::ConfirmForceDownload,
             Modal::ConfirmSyncModeChange { .. } => Kind::ConfirmSyncModeChange,
             Modal::AddGame { .. } => Kind::AddGame,
             Modal::ConfirmRemoveCustomGame { .. } => Kind::ConfirmRemoveCustomGame,
@@ -247,8 +236,6 @@ impl Modal {
             Modal::ActiveScanGames => false,
             Modal::ConfirmSyncBackup { .. } => false,
             Modal::ConfirmSyncRestore { .. } => false,
-            Modal::ConfirmForceUpload { .. } => false,
-            Modal::ConfirmForceDownload { .. } => false,
             Modal::ConfirmSyncModeChange { .. } => false,
             Modal::AddGame { .. } => false,
             Modal::ConfirmRemoveCustomGame { .. } => false,
@@ -271,8 +258,6 @@ impl Modal {
             | Self::ConfigureWebDavRemote { .. } => ModalVariant::Confirm,
             Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -323,12 +308,6 @@ impl Modal {
             Self::ConfirmSyncRestore { game } => {
                 format!("Restore saves for \"{}\"?\n\nThis will overwrite your current save files with the backup. This cannot be undone.", game)
             }
-            Self::ConfirmForceUpload { game } => {
-                format!("Force upload saves for \"{}\"?\n\nThis will overwrite the cloud backup with your local save files, regardless of which is newer.", game)
-            }
-            Self::ConfirmForceDownload { game } => {
-                format!("Force download saves for \"{}\"?\n\nThis will overwrite your local save files with the cloud backup, regardless of which is newer.", game)
-            }
             Self::ConfirmSyncModeChange { warning, .. } => warning.clone(),
             Self::AddGame { .. } => "Add game".to_string(),
             Self::ConfirmRemoveCustomGame { game } => {
@@ -366,8 +345,6 @@ impl Modal {
             Self::ConfirmDeleteSafetyBackup { game } => Some(Message::DeleteSafetyBackup(game.clone())),
             Self::ConfirmResolveConflictKeepBoth { game } => Some(Message::ResolveConflictKeepBoth(game.clone())),
             Self::ConfirmSyncRestore { game } => Some(Message::SyncRestoreGame(game.clone())),
-            Self::ConfirmForceUpload { game } => Some(Message::ForceUploadGame(game.clone())),
-            Self::ConfirmForceDownload { game } => Some(Message::ForceDownloadGame(game.clone())),
             Self::ConfirmSyncModeChange { game, previous_mode, .. } => {
                 Some(Message::ConfirmSyncModeChange {
                     game: game.clone(),
@@ -486,8 +463,6 @@ impl Modal {
             | Self::ActiveScanGames
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -502,8 +477,6 @@ impl Modal {
         let is_sync_modal = matches!(self,
             Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
@@ -541,8 +514,6 @@ impl Modal {
             | Self::UpdatingManifest
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
@@ -736,8 +707,6 @@ impl Modal {
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -780,8 +749,6 @@ impl Modal {
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -808,8 +775,6 @@ impl Modal {
             | Self::ActiveScanGames => (),
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -834,8 +799,6 @@ impl Modal {
             | Self::ActiveScanGames
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -860,8 +823,6 @@ impl Modal {
             | Self::ActiveScanGames => 2,
             | Self::ConfirmSyncBackup { .. }
             | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmForceUpload { .. }
-            | Self::ConfirmForceDownload { .. }
             | Self::ConfirmSyncModeChange { .. }
             | Self::AddGame { .. }
             | Self::ConfirmRemoveCustomGame { .. }
@@ -898,8 +859,6 @@ impl Modal {
                                 .height(match self {
                                     Self::ConfirmSyncBackup { .. }
                                     | Self::ConfirmSyncRestore { .. }
-                                    | Self::ConfirmForceUpload { .. }
-                                    | Self::ConfirmForceDownload { .. }
                                     | Self::ConfirmSyncModeChange { .. }
                                     | Self::AddGame { .. }
                                     | Self::ConfirmRemoveCustomGame { .. }
