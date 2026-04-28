@@ -2420,7 +2420,6 @@ impl App {
                 Task::batch(tasks)
             }
             Message::Backup(phase) => self.handle_backup(phase),
-            Message::Restore(phase) => self.handle_restore(phase),
             Message::ValidateBackups(phase) => self.handle_validation(phase),
             Message::RequestSyncBackup(game_name) => {
                 // Si el modo es CLOUD/SYNC requiere daemon. LOCAL no.
