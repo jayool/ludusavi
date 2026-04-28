@@ -314,7 +314,6 @@ impl App {
         const SCAN_KIND: ScanKind = ScanKind::Backup;
 
         match phase {
-            BackupPhase::Confirm { games } => self.show_modal(Modal::ConfirmBackup { games }),
             BackupPhase::Start {
                 preview,
                 repair,
@@ -716,7 +715,6 @@ impl App {
         const SCAN_KIND: ScanKind = ScanKind::Restore;
 
         match phase {
-            RestorePhase::Confirm { games } => self.show_modal(Modal::ConfirmRestore { games }),
             RestorePhase::Start { preview, mut games } => {
                 if !self.operation.idle() {
                     return Task::none();
