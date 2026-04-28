@@ -13,17 +13,13 @@ use crate::{
         badge::Badge,
         button,
         common::{BackupPhase, GameSelection, Message, Operation, RestorePhase, ScrollSubject, UndoSubject},
-        icon::Icon,
         shortcuts::TextHistories,
         style,
         widget::{pick_list, text, Column, Container, Element, IcedParentExt, Row, Space},
     },
     lang::TRANSLATOR,
     prelude::{Error, Finality, SyncDirection},
-    resource::{
-        config::{Config, Root},
-        manifest,
-    },
+    resource::config::{Config, Root},
 };
 
 const CHANGES_PER_PAGE: usize = 500;
@@ -137,7 +133,6 @@ pub enum Kind {
     ConfigureFtpRemote,
     ConfigureSmbRemote,
     ConfigureWebDavRemote,
-    GameNotes,
     ActiveScanGames,
     ConfirmSyncBackup,
     ConfirmSyncRestore,
