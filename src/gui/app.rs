@@ -2785,7 +2785,6 @@ impl App {
             }
             Message::ForceUploadGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Uploading...".to_string());
-                self.close_specific_modal_alt(modal::Kind::ConfirmForceUpload);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let _game_list = self.game_list.clone();
@@ -2822,7 +2821,6 @@ impl App {
             }
             Message::ForceDownloadGame(game_name) => {
                 self.sync_in_progress = Some("⏳ Downloading...".to_string());
-                self.close_specific_modal_alt(modal::Kind::ConfirmForceDownload);
                 let config = self.config.clone();
                 let app_dir = crate::prelude::app_dir();
                 let game_list = self.game_list.clone();
