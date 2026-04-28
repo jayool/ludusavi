@@ -103,7 +103,6 @@ pub enum CloudModalState {
 impl CloudModalState {
     pub fn idle(&self) -> bool {
         match self {
-            Self::Initial => true,
             Self::Previewing => false,
             Self::Previewed => true,
             Self::Syncing => false,
@@ -114,7 +113,6 @@ impl CloudModalState {
 
     pub fn done(&self) -> bool {
         match self {
-            Self::Initial => false,
             Self::Previewing => false,
             Self::Previewed => false,
             Self::Syncing => false,
