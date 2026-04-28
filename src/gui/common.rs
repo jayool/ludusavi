@@ -14,7 +14,7 @@ use crate::{
     },
     scan::{
         game_filter,
-        layout::{BackupLayout, GameLayout},
+        layout::BackupLayout,
         registry::RegistryItem,
         BackupInfo, Launchers, ScanInfo, SteamShortcuts,
     },
