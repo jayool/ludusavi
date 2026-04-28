@@ -12,7 +12,7 @@ use crate::{
     gui::{
         badge::Badge,
         button,
-        common::{BackupPhase, GameSelection, Message, Operation, RestorePhase, ScrollSubject, UndoSubject},
+        common::{GameSelection, Message, Operation, ScrollSubject, UndoSubject},
         shortcuts::TextHistories,
         style,
         widget::{pick_list, text, Column, Container, Element, IcedParentExt, Row, Space},
@@ -844,8 +844,6 @@ impl Modal {
             Self::Error { .. }
             | Self::Errors { .. }
             | Self::Exiting
-            | Self::ConfirmBackup { .. }
-            | Self::ConfirmRestore { .. }
             | Self::NoMissingRoots
             | Self::ConfirmAddMissingRoots(_)
             | Self::BackupValidation { .. }
