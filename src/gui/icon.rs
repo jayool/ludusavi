@@ -14,7 +14,6 @@ pub enum Icon {
     ArrowUpward,
     Error,
     FolderOpen,
-    Info,
     KeyboardArrowDown,
     KeyboardArrowRight,
     MoreVert,
@@ -37,7 +36,6 @@ impl Icon {
             Self::ArrowUpward => '\u{E5D8}',
             Self::Error => '\u{e001}',
             Self::FolderOpen => '\u{E2C8}',
-            Self::Info => '\u{e88f}',
             Self::KeyboardArrowDown => '\u{E313}',
             Self::KeyboardArrowRight => '\u{E315}',
             Self::MoreVert => '\u{E5D4}',
@@ -58,10 +56,6 @@ impl Icon {
             .align_x(alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center)
             .line_height(1.0)
-    }
-
-    pub fn text_narrow(self) -> Text<'static> {
-        self.text().width(Length::Shrink)
     }
 
     pub fn text_small(self) -> Text<'static> {
