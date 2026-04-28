@@ -12,7 +12,7 @@ use crate::{
     gui::{
         common::{
             BackupPhase, BrowseFileSubject, BrowseSubject, Flags, GameSelection, Message, Operation,
-            RestorePhase, Screen, ScrollSubject, UndoSubject, ValidatePhase,
+            Screen, ScrollSubject, UndoSubject,
         },
         modal::{self, CloudModalState, Modal, ModalField, ModalInputKind},
         notification::Notification,
@@ -719,15 +719,12 @@ impl App {
 
             match self.operation {
                 Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Load)),
-                Operation::Restore { .. } => Some(self.handle_restore(RestorePhase::Load)),
-                Operation::Idle | Operation::ValidateBackups { .. } | Operation::Cloud { .. } => None,
             }
         } else if self.operation.integrated_syncing_cloud() {
             self.operation.transition_from_cloud_step(synced);
             match self.operation {
                 Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Done)),
                 Operation::Idle
-                | Operation::ValidateBackups { .. }
                 | Operation::Restore { .. }
                 | Operation::Cloud { .. } => None,
             }
