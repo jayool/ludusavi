@@ -56,19 +56,6 @@ pub enum BackupPhase {
 #[derive(Debug, Clone)]
 
 #[derive(Debug, Clone)]
-pub enum ValidatePhase {
-    Start,
-    Load,
-    RegisterCommands {
-        subjects: Vec<String>,
-        layout: BackupLayout,
-    },
-    GameScanned {
-        game: String,
-        valid: bool,
-    },
-    Done,
-}
 
 #[derive(Debug, Clone)]
 pub enum Message {
