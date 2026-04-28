@@ -66,7 +66,6 @@ pub mod id {
     use std::sync::LazyLock;
 
     pub static BACKUP_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
-    pub static RESTORE_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static CUSTOM_GAMES_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static OTHER_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
     pub static MODAL_SCROLL: LazyLock<Id> = LazyLock::new(Id::unique);
@@ -77,10 +76,6 @@ pub mod id {
 
     pub fn backup_scroll() -> Id {
         (*BACKUP_SCROLL).clone()
-    }
-
-    pub fn restore_scroll() -> Id {
-        (*RESTORE_SCROLL).clone()
     }
 
     pub fn custom_games_scroll() -> Id {
