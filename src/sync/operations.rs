@@ -9,7 +9,9 @@ use crate::{
     },
 };
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::{LazyLock, Mutex};
 
 #[derive(Debug)]
 pub enum SyncError {
@@ -667,6 +669,11 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
     // --- Windows: rutas nativas ---
     #[cfg(target_os = "windows")]
     {
+        let data_local_low = CommonPath::DataLocalLow.get().unwrap_or(home);
+        let data_roaming = CommonPath::Data.get().unwrap_or(home);
+        let data_local = CommonPath::DataLocal.get().unwrap_or(home);
+        let documents = CommonPath::Document.get().unwrap_or(home);
+
         for raw_path in game.files.keys() {
             if raw_path.trim().is_empty() {
                 continue;
@@ -681,38 +688,18 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                 continue;
             }
 
-            let data_local_low = CommonPath::DataLocalLow.get().unwrap_or(home);
-            let data_roaming = CommonPath::Data.get().unwrap_or(home);
-            let data_local = CommonPath::DataLocal.get().unwrap_or(home);
-            let documents = CommonPath::Document.get().unwrap_or(home);
-
-            let resolved = raw_path
+            let pattern = raw_path
                 .replace(p::WIN_LOCAL_APP_DATA_LOW, data_local_low)
                 .replace(p::WIN_APP_DATA, data_roaming)
                 .replace(p::WIN_LOCAL_APP_DATA, data_local)
                 .replace(p::WIN_DOCUMENTS, documents)
                 .replace(p::HOME, home)
-                .replace(&format!("/{}", p::STORE_USER_ID), "")
-                .replace(&format!("\\{}", p::STORE_USER_ID), "")
-                .replace(&format!("/{}", p::OS_USER_NAME), "")
-                .replace(&format!("\\{}", p::OS_USER_NAME), "")
-                .replace('*', "");
+                .replace(p::STORE_USER_ID, "*")
+                .replace(p::OS_USER_NAME, "*");
 
-            let resolved = resolved.replace('/', "\\");
-
-            if std::path::Path::new(&resolved).is_dir() {
-                log::debug!("resolve_expected_save_path: found existing Windows dir: {}", resolved);
-                return Some(resolved);
-            }
-
-            if let Some(parent) = std::path::Path::new(&resolved).parent() {
-                if parent.is_dir() {
-                    log::debug!(
-                        "resolve_expected_save_path: parent exists, returning Windows candidate: {}",
-                        resolved
-                    );
-                    return Some(resolved);
-                }
+            if let Some(found) = resolve_dir_pattern(&pattern) {
+                log::debug!("resolve_expected_save_path: resolved Windows dir: {}", found);
+                return Some(found);
             }
         }
     }
@@ -733,6 +720,10 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                     root_path, steam_id
                 );
 
+                if !std::path::Path::new(&prefix).is_dir() {
+                    continue;
+                }
+
                 for raw_path in game.files.keys() {
                     if raw_path.trim().is_empty() {
                         continue;
@@ -747,34 +738,18 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                         continue;
                     }
 
-                    let resolved = raw_path
+                    let pattern = raw_path
                         .replace(p::WIN_LOCAL_APP_DATA_LOW, &format!("{}/AppData/LocalLow", prefix))
                         .replace(p::WIN_APP_DATA, &format!("{}/AppData/Roaming", prefix))
                         .replace(p::WIN_LOCAL_APP_DATA, &format!("{}/AppData/Local", prefix))
                         .replace(p::WIN_DOCUMENTS, &format!("{}/Documents", prefix))
                         .replace(p::HOME, &prefix)
-                        .replace(&format!("/{}", p::STORE_USER_ID), "")
-                        .replace(&format!("/{}", p::OS_USER_NAME), "")
-                        .replace('*', "");
+                        .replace(p::STORE_USER_ID, "*")
+                        .replace(p::OS_USER_NAME, "*");
 
-                    let resolved = resolved
-                        .split('/')
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join("/");
-                    let resolved = format!("/{}", resolved);
-
-                    if std::path::Path::new(&resolved).is_dir() {
-                        log::debug!("resolve_expected_save_path: found existing Proton dir: {}", resolved);
-                        return Some(resolved);
-                    }
-
-                    if std::path::Path::new(&prefix).is_dir() {
-                        log::debug!(
-                            "resolve_expected_save_path: prefix exists, returning Proton candidate: {}",
-                            resolved
-                        );
-                        return Some(resolved);
+                    if let Some(found) = resolve_dir_pattern(&pattern) {
+                        log::debug!("resolve_expected_save_path: resolved Proton dir: {}", found);
+                        return Some(found);
                     }
                 }
             }
@@ -784,6 +759,9 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
     // --- Linux: rutas nativas XDG ---
     #[cfg(target_os = "linux")]
     {
+        let data_dir = CommonPath::Data.get().unwrap_or(home);
+        let config_dir = CommonPath::Config.get().unwrap_or(home);
+
         for raw_path in game.files.keys() {
             if raw_path.trim().is_empty() {
                 continue;
@@ -793,31 +771,116 @@ pub fn resolve_expected_save_path(_config: &Config, game: &Game) -> Option<Strin
                 continue;
             }
 
-            let data_dir = CommonPath::Data.get().unwrap_or(home);
-            let config_dir = CommonPath::Config.get().unwrap_or(home);
-
-            let resolved = raw_path
+            let pattern = raw_path
                 .replace(p::XDG_DATA, data_dir)
                 .replace(p::XDG_CONFIG, config_dir)
-                .replace(&format!("/{}", p::STORE_USER_ID), "")
-                .replace(&format!("/{}", p::OS_USER_NAME), "")
-                .replace('*', "");
+                .replace(p::STORE_USER_ID, "*")
+                .replace(p::OS_USER_NAME, "*");
 
-            let resolved = resolved
-                .split('/')
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join("/");
-            let resolved = format!("/{}", resolved);
-
-            if std::path::Path::new(&resolved).is_dir() {
-                log::debug!("resolve_expected_save_path: found existing XDG dir: {}", resolved);
-                return Some(resolved);
+            if let Some(found) = resolve_dir_pattern(&pattern) {
+                log::debug!("resolve_expected_save_path: resolved XDG dir: {}", found);
+                return Some(found);
             }
         }
     }
 
     None
+}
+
+/// Toma un patron de path con posibles wildcards (`*`) y devuelve la primera
+/// carpeta del filesystem que encaja. Si el ultimo segmento parece un fichero
+/// (extension o glob), se elimina antes de buscar — el resolver siempre devuelve
+/// la carpeta padre, no el fichero.
+fn resolve_dir_pattern(pattern: &str) -> Option<String> {
+    let sep = if cfg!(target_os = "windows") { '\\' } else { '/' };
+    let pattern = if cfg!(target_os = "windows") {
+        pattern.replace('/', "\\")
+    } else {
+        pattern.replace('\\', "/")
+    };
+
+    // Quitar el ultimo segmento si parece un fichero (extension o glob) o esta
+    // vacio. La parte que nos interesa es la carpeta contenedora.
+    let pattern = match pattern.rfind(sep) {
+        Some(idx) => {
+            let last = &pattern[idx + 1..];
+            if last.is_empty() || last.contains('*') || last.contains('.') {
+                pattern[..idx].to_string()
+            } else {
+                pattern
+            }
+        }
+        None => pattern,
+    };
+
+    if !pattern.contains('*') {
+        if std::path::Path::new(&pattern).is_dir() {
+            return Some(pattern);
+        }
+        if let Some(parent) = std::path::Path::new(&pattern).parent() {
+            if parent.is_dir() {
+                return Some(parent.to_string_lossy().to_string());
+            }
+        }
+        return None;
+    }
+
+    glob_first_existing_dir(&pattern, sep)
+}
+
+/// Camina el filesystem segmento a segmento, expandiendo cada `*` con
+/// `read_dir`. Devuelve la primera ruta existente tras consumir todos los
+/// segmentos. Toleramos separadores duplicados (`//`) que pueden quedar tras
+/// borrar placeholders huerfanos.
+fn glob_first_existing_dir(pattern: &str, sep: char) -> Option<String> {
+    use std::path::PathBuf;
+
+    let segments: Vec<&str> = pattern.split(sep).collect();
+    if segments.is_empty() {
+        return None;
+    }
+
+    let mut candidates: Vec<PathBuf> = {
+        let first = segments[0];
+        if cfg!(target_os = "windows") && first.len() == 2 && first.ends_with(':') {
+            // "C:" sin separador trailing no es un path valido en Windows.
+            vec![PathBuf::from(format!("{first}\\"))]
+        } else if first.is_empty() {
+            // Path absoluto Unix que empieza con `/`.
+            vec![PathBuf::from("/")]
+        } else {
+            vec![PathBuf::from(first)]
+        }
+    };
+
+    for seg in &segments[1..] {
+        if seg.is_empty() {
+            continue;
+        }
+        let mut next: Vec<PathBuf> = vec![];
+        for cand in &candidates {
+            if seg.contains('*') {
+                if let Ok(entries) = std::fs::read_dir(cand) {
+                    for entry in entries.flatten() {
+                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                            next.push(entry.path());
+                        }
+                    }
+                }
+            } else {
+                next.push(cand.join(seg));
+            }
+        }
+        candidates = next;
+        if candidates.is_empty() {
+            return None;
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|p| p.is_dir())
+        .map(|p| p.to_string_lossy().to_string())
 }
 /// Resuelve la ruta de saves de un juego usando el manifiesto de Ludusavi.
 /// Primero intenta encontrar saves existentes, luego la ruta esperada.
@@ -882,16 +945,39 @@ pub fn delete_game_zip_from_cloud(config: &Config, game_name: &str) -> Result<()
     log::info!("[{}] Cloud ZIP deleted", game_name);
     Ok(())
 }
-/// Versión ligera de resolve_game_path_from_manifest.
-/// Solo consulta el manifiesto y resuelve placeholders. No escanea el sistema.
-/// Útil para mostrar la ruta esperada en la UI sin coste alto.
+/// Cache en memoria del resolver lite. Se popula la primera vez que un juego
+/// se resuelve correctamente y persiste hasta el final de la sesion. Solo se
+/// cachean Some, asi un None se reintenta — util cuando la carpeta de saves
+/// aun no existe (el usuario no ha lanzado el juego).
+static SAVE_PATH_CACHE: LazyLock<Mutex<HashMap<String, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Version ligera de resolve_game_path_from_manifest.
+/// Resuelve placeholders del manifiesto y hace un read_dir minimo por wildcard
+/// para encontrar la carpeta real (storeUserId, **). El resultado se cachea
+/// para que llamadas posteriores (suscripcion de 5s, view de GameDetail) no
+/// vuelvan a tocar disco.
 pub fn resolve_game_path_lite(
     config: &Config,
     manifest: &crate::resource::manifest::Manifest,
     game_name: &str,
 ) -> Option<String> {
+    if let Ok(cache) = SAVE_PATH_CACHE.lock() {
+        if let Some(cached) = cache.get(game_name) {
+            return Some(cached.clone());
+        }
+    }
+
     let game_entry = manifest.0.get(game_name)?;
-    resolve_expected_save_path(config, game_entry)
+    let result = resolve_expected_save_path(config, game_entry);
+
+    if let Some(ref path) = result {
+        if let Ok(mut cache) = SAVE_PATH_CACHE.lock() {
+            cache.insert(game_name.to_string(), path.clone());
+        }
+    }
+
+    result
 }
 
 /// Comprueba si rclone está disponible ejecutando `rclone --version`.
