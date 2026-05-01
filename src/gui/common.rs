@@ -3,11 +3,11 @@ use std::collections::{HashMap, HashSet};
 use iced::Length;
 
 use crate::{
-    cloud::{rclone_monitor, Remote, RemoteChoice},
+    cloud::{Remote, RemoteChoice},
     gui::{
         modal::{ModalField, ModalInputKind},
     },
-    prelude::{CommandError, EditAction, Error, Finality, StrictPath, SyncDirection},
+    prelude::{CommandError, EditAction, Error, Finality, StrictPath},
     resource::{
         config::{self, Root},
         manifest::{Manifest, ManifestUpdate},
@@ -114,14 +114,8 @@ pub enum Message {
     EditedCloudRemote(RemoteChoice),
     ConfigureCloudSuccess(Remote),
     ConfigureCloudFailure(CommandError),
-    SynchronizeCloud {
-        direction: SyncDirection,
-        finality: Finality,
-    },
-    RcloneMonitor(rclone_monitor::Event),
     FinalizeRemote(Remote),
     EditedModalField(ModalField),
-    ModalChangePage(usize),
     ShowScanActiveGames,
     CopyText(String),
     OpenRegistry(RegistryItem),
@@ -255,22 +249,11 @@ pub enum Operation {
     Backup {
         finality: Finality,
         cancelling: bool,
-        checking_cloud: bool,
-        syncing_cloud: bool,
-        should_sync_cloud_after: bool,
         games: Option<GameSelection>,
         errors: Vec<Error>,
-        cloud_changes: i64,
         force_new_full_backup: bool,
         syncable_games: HashSet<String>,
         active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
-    },
-    Cloud {
-        direction: SyncDirection,
-        finality: Finality,
-        cancelling: bool,
-        errors: Vec<Error>,
-        cloud_changes: i64,
     },
 }
 
@@ -283,25 +266,11 @@ impl Operation {
         Self::Backup {
             finality,
             cancelling: false,
-            checking_cloud: false,
-            syncing_cloud: false,
-            should_sync_cloud_after: false,
             games,
             errors: vec![],
-            cloud_changes: 0,
             force_new_full_backup: false,
             syncable_games: HashSet::new(),
             active_games: HashMap::new(),
-        }
-    }
-
-    pub fn new_cloud(direction: SyncDirection, finality: Finality) -> Self {
-        Self::Cloud {
-            direction,
-            finality,
-            cancelling: false,
-            errors: vec![],
-            cloud_changes: 0,
         }
     }
 
@@ -309,7 +278,6 @@ impl Operation {
         match self {
             Operation::Idle => true,
             Operation::Backup { finality, .. } => finality.preview(),
-            Operation::Cloud { finality, .. } => finality.preview(),
         }
     }
 
@@ -317,7 +285,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.is_none(),
-            Operation::Cloud { .. } => true,
         }
     }
 
@@ -325,7 +292,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { games, .. } => games.as_ref(),
-            Operation::Cloud { .. } => None,
         }
     }
 
@@ -333,7 +299,6 @@ impl Operation {
         match self {
             Operation::Idle => false,
             Operation::Backup { games, .. } => games.as_ref().is_some_and(|xs| !xs.is_empty()),
-            Operation::Cloud { .. } => false,
         }
     }
 
@@ -341,7 +306,6 @@ impl Operation {
         match self {
             Operation::Idle => (),
             Operation::Backup { cancelling, .. } => *cancelling = true,
-            Operation::Cloud { cancelling, .. } => *cancelling = true,
         }
     }
 
@@ -349,7 +313,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { errors, .. } => Some(errors),
-            Operation::Cloud { errors, .. } => Some(errors),
         }
     }
 
@@ -357,103 +320,6 @@ impl Operation {
         match self {
             Operation::Idle => (),
             Operation::Backup { errors, .. } => errors.push(error),
-            Operation::Cloud { errors, .. } => errors.push(error),
-        }
-    }
-
-    pub fn update_integrated_cloud(&mut self, finality: Finality) {
-        match self {
-            Operation::Idle => (),
-            Operation::Backup {
-                checking_cloud,
-                syncing_cloud,
-                ..
-            } => match finality {
-                Finality::Preview => *checking_cloud = true,
-                Finality::Final => *syncing_cloud = true,
-            },
-            Operation::Cloud { .. } => (),
-        }
-    }
-
-    pub fn transition_from_cloud_step(&mut self, synced: bool) {
-        let preview = self.preview();
-
-        match self {
-            Operation::Idle => (),
-            Operation::Backup {
-                checking_cloud,
-                syncing_cloud,
-                should_sync_cloud_after,
-                ..
-            } => {
-                if *checking_cloud {
-                    *checking_cloud = false;
-                    *should_sync_cloud_after = synced && !preview;
-                    if !synced {
-                        self.push_error(Error::CloudConflict);
-                    }
-                } else if *syncing_cloud {
-                    *syncing_cloud = false;
-                }
-            }
-            Operation::Cloud { .. } => (),
-        }
-    }
-
-    pub fn is_cloud_active(&self) -> bool {
-        match self {
-            Operation::Idle => false,
-            Operation::Backup {
-                checking_cloud,
-                syncing_cloud,
-                ..
-            } => *checking_cloud || *syncing_cloud,
-            Operation::Cloud { .. } => true,
-        }
-    }
-
-    pub fn integrated_checking_cloud(&self) -> bool {
-        match self {
-            Operation::Idle => false,
-            Operation::Backup { checking_cloud, .. } => *checking_cloud,
-            Operation::Cloud { .. } => false,
-        }
-    }
-
-    pub fn integrated_syncing_cloud(&self) -> bool {
-        match self {
-            Operation::Idle => false,
-            Operation::Backup { syncing_cloud, .. } => *syncing_cloud,
-            Operation::Cloud { .. } => false,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn should_sync_cloud_after(&self) -> bool {
-        match self {
-            Operation::Idle => false,
-            Operation::Backup {
-                should_sync_cloud_after,
-                ..
-            } => *should_sync_cloud_after,
-            Operation::Cloud { .. } => false,
-        }
-    }
-
-    pub fn cloud_changes(&self) -> i64 {
-        match self {
-            Operation::Idle => 0,
-            Operation::Backup { cloud_changes, .. } => *cloud_changes,
-            Operation::Cloud { cloud_changes, .. } => *cloud_changes,
-        }
-    }
-
-    pub fn add_cloud_change(&mut self) {
-        match self {
-            Operation::Idle => (),
-            Operation::Backup { cloud_changes, .. } => *cloud_changes += 1,
-            Operation::Cloud { cloud_changes, .. } => *cloud_changes += 1,
         }
     }
 
@@ -463,7 +329,6 @@ impl Operation {
             Operation::Backup {
                 force_new_full_backup, ..
             } => *force_new_full_backup,
-            Operation::Cloud { .. } => false,
         }
     }
 
@@ -473,7 +338,6 @@ impl Operation {
             Operation::Backup {
                 force_new_full_backup, ..
             } => *force_new_full_backup = value,
-            Operation::Cloud { .. } => (),
         }
     }
 
@@ -482,7 +346,6 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { syncable_games, .. } => Some(syncable_games),
-            Operation::Cloud { .. } => None,
         }
     }
 
@@ -492,7 +355,6 @@ impl Operation {
             Operation::Backup { syncable_games, .. } => {
                 syncable_games.insert(title);
             }
-            Operation::Cloud { .. } => {}
         }
     }
 
@@ -500,13 +362,12 @@ impl Operation {
         match self {
             Operation::Idle => None,
             Operation::Backup { active_games, .. } => Some(active_games),
-            Operation::Cloud { .. } => None,
         }
     }
 
     pub fn add_active_game(&mut self, title: String) {
         match self {
-            Operation::Idle | Operation::Cloud { .. } => {}
+            Operation::Idle => {}
             Operation::Backup { active_games, .. } => {
                 active_games.insert(title, chrono::Utc::now());
             }
@@ -514,7 +375,7 @@ impl Operation {
     }
     pub fn remove_active_game(&mut self, title: &str) {
         match self {
-            Operation::Idle | Operation::Cloud { .. } => {}
+            Operation::Idle => {}
             Operation::Backup { active_games, .. } => {
                 active_games.remove(title);
             }

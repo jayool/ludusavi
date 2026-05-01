@@ -8,13 +8,13 @@ use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
 use ludusavi::sync::bridge::register_game_after_backup;
 
 use crate::{
-    cloud::{rclone_monitor, Rclone, Remote},
+    cloud::{Rclone, Remote},
     gui::{
         common::{
             BackupPhase, BrowseFileSubject, BrowseSubject, Flags, GameSelection, Message, Operation,
             Screen, ScrollSubject, UndoSubject,
         },
-        modal::{self, CloudModalState, Modal, ModalField, ModalInputKind},
+        modal::{self, Modal, ModalField, ModalInputKind},
         notification::Notification,
         screen,
         shortcuts::{RootHistory, Shortcut, TextHistories, TextHistory},
@@ -26,7 +26,7 @@ use crate::{
     lang::TRANSLATOR,
     prelude::{
         app_dir, get_threads_from_env, initialize_rayon, EditAction, Error, Finality, RedirectEditActionField,
-        Security, StrictPath, SyncDirection,
+        Security, StrictPath,
     },
     resource::{
         cache::{self, Cache},
@@ -122,7 +122,6 @@ pub struct App {
     timed_notification: Option<Notification>,
     scroll_offsets: HashMap<ScrollSubject, scrollable::AbsoluteOffset>,
     text_histories: TextHistories,
-    rclone_monitor_sender: Option<iced::futures::channel::mpsc::Sender<rclone_monitor::Input>>,
     exiting: bool,
     pending_save: HashMap<SaveKind, Instant>,
     modifiers: keyboard::Modifiers,
@@ -174,17 +173,9 @@ impl App {
     }
 
     fn close_modal(&mut self) -> Task<Message> {
-        if let Some(modal) = self.modals.pop() {
+        if self.modals.pop().is_some() {
             self.reset_scroll_position(ScrollSubject::Modal);
-            let need_cancel_cloud = modal.is_cloud_active();
-            Task::batch([
-                self.refresh_scroll_position(),
-                if need_cancel_cloud {
-                    self.cancel_operation()
-                } else {
-                    Task::none()
-                },
-            ])
+            self.refresh_scroll_position()
         } else {
             Task::none()
         }
@@ -266,46 +257,6 @@ impl App {
         }
 
         false
-    }
-
-    fn start_sync_cloud(
-        &mut self,
-        local: &StrictPath,
-        direction: SyncDirection,
-        finality: Finality,
-        games: Option<GameSelection>,
-        standalone: bool,
-    ) -> Result<(), Error> {
-        let remote = crate::cloud::validate_cloud_config(&self.config, &self.config.cloud.path)?;
-
-        let games = match games {
-            Some(games) => {
-                let layout = BackupLayout::new(local.clone());
-                let games: Vec<_> = games.iter().filter_map(|x| layout.game_folder(x).leaf()).collect();
-                games
-            }
-            None => vec![],
-        };
-
-        let rclone = Rclone::new(self.config.apps.rclone.clone(), remote);
-        match rclone.sync(local, &self.config.cloud.path, direction, finality, &games) {
-            Ok(process) => {
-                if let Some(sender) = self.rclone_monitor_sender.as_mut() {
-                    if standalone {
-                        self.operation = Operation::new_cloud(direction, finality);
-                    } else {
-                        self.operation.update_integrated_cloud(finality);
-                    }
-                    self.progress.start();
-                    let _ = sender.try_send(rclone_monitor::Input::Process(process));
-                }
-            }
-            Err(e) => {
-                return Err(Error::UnableToSynchronizeCloud(e));
-            }
-        }
-
-        Ok(())
     }
 
     fn handle_backup(&mut self, phase: BackupPhase) -> Task<Message> {
@@ -709,38 +660,11 @@ impl App {
         }
     }
 
-    fn transition_from_cloud_step(&mut self) -> Option<Task<Message>> {
-        let synced = self.operation.cloud_changes() == 0;
-
-        if self.operation.integrated_checking_cloud() {
-            self.operation.transition_from_cloud_step(synced);
-
-            match self.operation {
-                Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Load)),
-                Operation::Idle | Operation::Cloud { .. } => None,
-            }
-        } else if self.operation.integrated_syncing_cloud() {
-            self.operation.transition_from_cloud_step(synced);
-            match self.operation {
-                Operation::Backup { .. } => Some(self.handle_backup(BackupPhase::Done)),
-                Operation::Idle
-                | Operation::Cloud { .. } => None,
-            }
-        } else {
-            None
-        }
-    }
-
     fn cancel_operation(&mut self) -> Task<Message> {
         self.operation_should_cancel
             .swap(true, std::sync::atomic::Ordering::Relaxed);
         self.operation_steps.clear();
         self.operation.flag_cancel();
-        if self.operation.is_cloud_active() {
-            if let Some(sender) = self.rclone_monitor_sender.as_mut() {
-                let _ = sender.try_send(rclone_monitor::Input::Cancel);
-            }
-        }
         Task::none()
     }
 
@@ -3213,77 +3137,6 @@ impl App {
                 self.save_config();
                 self.show_error(Error::UnableToConfigureCloud(error))
             }
-            Message::SynchronizeCloud { direction, finality } => {
-                let local = self.config.backup.path.clone();
-
-                if let Err(e) = self.start_sync_cloud(&local, direction, finality, None, true) {
-                    return self.show_error(e);
-                }
-
-                self.show_modal(Modal::ConfirmCloudSync {
-                    local: local.render(),
-                    cloud: self.config.cloud.path.clone(),
-                    direction,
-                    changes: vec![],
-                    page: 0,
-                    state: match finality {
-                        Finality::Preview => CloudModalState::Previewing,
-                        Finality::Final => CloudModalState::Syncing,
-                    },
-                })
-            }
-            Message::RcloneMonitor(event) => {
-                match event {
-                    rclone_monitor::Event::Ready(sender) => {
-                        self.rclone_monitor_sender = Some(sender);
-                    }
-                    rclone_monitor::Event::Data(events) => {
-                        for event in events {
-                            match event {
-                                crate::cloud::RcloneProcessEvent::Progress { current, max } => {
-                                    self.progress.set(current, max);
-                                }
-                                crate::cloud::RcloneProcessEvent::Change(change) => {
-                                    self.operation.add_cloud_change();
-                                    if let Some(modal) = self.modals.last_mut() {
-                                        modal.add_cloud_change(change);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    rclone_monitor::Event::Succeeded => {
-                        if let Some(cmd) = self.transition_from_cloud_step() {
-                            return cmd;
-                        }
-
-                        if let Some(modal) = self.modals.last_mut() {
-                            self.operation = Operation::Idle;
-                            self.progress.reset();
-                            modal.finish_cloud_scan();
-                        } else {
-                            self.go_idle();
-                        }
-                    }
-                    rclone_monitor::Event::Failed(e) => {
-                        self.operation.push_error(Error::UnableToSynchronizeCloud(e.clone()));
-                        if let Some(cmd) = self.transition_from_cloud_step() {
-                            return cmd;
-                        }
-
-                        self.go_idle();
-                        return Task::batch([
-                            self.close_specific_modal(modal::Kind::ConfirmCloudSync),
-                            self.show_error(Error::UnableToSynchronizeCloud(e)),
-                        ]);
-                    }
-                    rclone_monitor::Event::Cancelled => {
-                        self.go_idle();
-                        return self.close_specific_modal(modal::Kind::ConfirmCloudSync);
-                    }
-                }
-                Task::none()
-            }
             Message::EditedModalField(field) => {
                 match field {
                     ModalField::Url(new) => {
@@ -3310,12 +3163,6 @@ impl App {
                 Task::none()
             }
             Message::FinalizeRemote(remote) => self.configure_remote(remote),
-            Message::ModalChangePage(page) => {
-                if let Some(modal) = self.modals.last_mut() {
-                    modal.set_page(page);
-                }
-                Task::none()
-            }
             Message::ShowScanActiveGames => self.show_modal(Modal::ActiveScanGames),
             Message::CopyText(text) => iced::clipboard::write(text),
             #[cfg_attr(not(windows), allow(unused))]
@@ -3390,7 +3237,6 @@ impl App {
                 iced::Event::Window(iced::window::Event::CloseRequested) => Some(Message::Exit { user: true }),
                 _ => None,
             }),
-            rclone_monitor::run().map(Message::RcloneMonitor),
         ];
 
         if self.timed_notification.is_some() {

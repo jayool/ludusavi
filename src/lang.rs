@@ -415,13 +415,6 @@ impl Translator {
                     self.handle_command_error(error)
                 )
             }
-            Error::UnableToSynchronizeCloud(error) => {
-                format!(
-                    "{}\n\n{}",
-                    self.prefix_error(&self.unable_to_synchronize_with_cloud()),
-                    self.handle_command_error(error)
-                )
-            }
             Error::CloudConflict => TRANSLATOR.prefix_error(&TRANSLATOR.cloud_synchronize_conflict()),
             Error::GameDidNotLaunch { why } => format!("{}\n\n{}", self.game_did_not_launch(), self.prefix_error(why)),
         }
@@ -872,10 +865,6 @@ impl Translator {
 
     pub fn unable_to_configure_cloud(&self) -> String {
         translate("unable-to-configure-cloud")
-    }
-
-    pub fn unable_to_synchronize_with_cloud(&self) -> String {
-        translate("unable-to-synchronize-with-cloud")
     }
 
     pub fn cloud_synchronize_conflict(&self) -> String {

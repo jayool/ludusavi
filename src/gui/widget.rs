@@ -135,12 +135,6 @@ impl Progress {
         self.current += 1.0;
     }
 
-    pub fn set(&mut self, current: f32, max: f32) {
-        self.current = current;
-        self.max = max;
-        self.prepared = true;
-    }
-
     pub fn set_max(&mut self, max: f32) {
         self.max = max;
         self.prepared = true;
@@ -154,23 +148,10 @@ impl Progress {
         format!("{}: {} / {}", TRANSLATOR.total_games(), self.current, self.max)
     }
 
-    fn cloud_count(&self) -> String {
-        TRANSLATOR.cloud_progress(self.current as u64, self.max as u64)
-    }
-
     pub fn view(&self, operation: &Operation) -> Element {
         let label = match operation {
             Operation::Idle => None,
-            Operation::Backup {
-                checking_cloud,
-                syncing_cloud,
-                ..
-            } => Some(if *checking_cloud || *syncing_cloud {
-                TRANSLATOR.cloud_label()
-            } else {
-                TRANSLATOR.scan_label()
-            }),
-            Operation::Cloud { .. } => Some(TRANSLATOR.cloud_label()),
+            Operation::Backup { .. } => Some(TRANSLATOR.scan_label()),
         };
 
         let elapsed = self.start_time.as_ref().map(|start| {
@@ -189,16 +170,7 @@ impl Progress {
         } else {
             match operation {
                 Operation::Idle => None,
-                Operation::Backup {
-                    checking_cloud,
-                    syncing_cloud,
-                    ..
-                } => Some(if *checking_cloud || *syncing_cloud {
-                    self.cloud_count()
-                } else {
-                    self.game_count()
-                }),
-                Operation::Cloud { .. } => Some(self.cloud_count()),
+                Operation::Backup { .. } => Some(self.game_count()),
             }
         };
 
@@ -217,7 +189,7 @@ impl Progress {
                     .push(count.map(|x| text(x).size(text_size))),
             )
             .on_press_maybe(match operation {
-                Operation::Idle | Operation::Cloud { .. } => None,
+                Operation::Idle => None,
                 Operation::Backup { .. } => {
                     Some(Message::ShowScanActiveGames)
                 }

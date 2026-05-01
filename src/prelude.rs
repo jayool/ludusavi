@@ -111,7 +111,6 @@ pub enum Error {
     CloudNotConfigured,
     CloudPathInvalid,
     UnableToConfigureCloud(CommandError),
-    UnableToSynchronizeCloud(CommandError),
     CloudConflict,
     GameDidNotLaunch {
         why: String,

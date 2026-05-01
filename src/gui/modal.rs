@@ -6,21 +6,18 @@ use iced::{
 use itertools::Itertools;
 
 use crate::{
-    cloud::{CloudChange, Remote, RemoteChoice, WebDavProvider},
+    cloud::{Remote, RemoteChoice, WebDavProvider},
     gui::{
-        badge::Badge,
         button,
         common::{Message, Operation, ScrollSubject, UndoSubject},
         shortcuts::TextHistories,
         style,
-        widget::{pick_list, text, Column, Container, Element, IcedParentExt, Row, Space},
+        widget::{pick_list, text, Column, Container, Element, Row, Space},
     },
     lang::TRANSLATOR,
-    prelude::{Error, Finality, SyncDirection},
+    prelude::Error,
     resource::config::{Config, Root},
 };
-
-const CHANGES_PER_PAGE: usize = 500;
 
 pub enum ModalVariant {
     Loading,
@@ -86,37 +83,6 @@ impl ModalField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloudModalState {
-    Previewing,
-    Previewed,
-    Syncing,
-    Synced,
-    NoChanges,
-}
-
-impl CloudModalState {
-    pub fn idle(&self) -> bool {
-        match self {
-            Self::Previewing => false,
-            Self::Previewed => true,
-            Self::Syncing => false,
-            Self::Synced => true,
-            Self::NoChanges => true,
-        }
-    }
-
-    pub fn done(&self) -> bool {
-        match self {
-            Self::Previewing => false,
-            Self::Previewed => false,
-            Self::Syncing => false,
-            Self::Synced => true,
-            Self::NoChanges => true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Error,
     Errors,
@@ -124,7 +90,6 @@ pub enum Kind {
     NoMissingRoots,
     ConfirmAddMissingRoots,
     UpdatingManifest,
-    ConfirmCloudSync,
     ConfigureFtpRemote,
     ConfigureSmbRemote,
     ConfigureWebDavRemote,
@@ -151,14 +116,6 @@ pub enum Modal {
     NoMissingRoots,
     ConfirmAddMissingRoots(Vec<Root>),
     UpdatingManifest,
-    ConfirmCloudSync {
-        local: String,
-        cloud: String,
-        direction: SyncDirection,
-        changes: Vec<CloudChange>,
-        page: usize,
-        state: CloudModalState,
-    },
     ConfigureFtpRemote,
     ConfigureSmbRemote,
     ConfigureWebDavRemote {
@@ -204,7 +161,6 @@ impl Modal {
             Modal::NoMissingRoots => Kind::NoMissingRoots,
             Modal::ConfirmAddMissingRoots(..) => Kind::ConfirmAddMissingRoots,
             Modal::UpdatingManifest => Kind::UpdatingManifest,
-            Modal::ConfirmCloudSync { .. } => Kind::ConfirmCloudSync,
             Modal::ConfigureFtpRemote => Kind::ConfigureFtpRemote,
             Modal::ConfigureSmbRemote => Kind::ConfigureSmbRemote,
             Modal::ConfigureWebDavRemote { .. } => Kind::ConfigureWebDavRemote,
@@ -229,7 +185,6 @@ impl Modal {
             Modal::NoMissingRoots => false,
             Modal::ConfirmAddMissingRoots(..) => false,
             Modal::UpdatingManifest => false,
-            Modal::ConfirmCloudSync { .. } => false,
             Modal::ConfigureFtpRemote => false,
             Modal::ConfigureSmbRemote => false,
             Modal::ConfigureWebDavRemote { .. } => false,
@@ -264,13 +219,6 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. } => ModalVariant::Confirm,
-            Self::ConfirmCloudSync { state, .. } => {
-                if state.done() {
-                    ModalVariant::Info
-                } else {
-                    ModalVariant::Confirm
-                }
-            }
         }
     }
 
@@ -282,22 +230,6 @@ impl Modal {
             Self::NoMissingRoots => TRANSLATOR.no_missing_roots(),
             Self::ConfirmAddMissingRoots(missing) => TRANSLATOR.confirm_add_missing_roots(missing),
             Self::UpdatingManifest => TRANSLATOR.updating_manifest(),
-            Self::ConfirmCloudSync {
-                local,
-                cloud,
-                direction,
-                state,
-                ..
-            } => {
-                if *state == CloudModalState::NoChanges {
-                    TRANSLATOR.no_cloud_changes()
-                } else {
-                    match direction {
-                        SyncDirection::Upload => TRANSLATOR.confirm_cloud_upload(local, cloud),
-                        SyncDirection::Download => TRANSLATOR.confirm_cloud_download(local, cloud),
-                    }
-                }
-            }
             Self::ConfigureFtpRemote { .. } => RemoteChoice::Ftp.to_string(),
             Self::ConfigureSmbRemote { .. } => RemoteChoice::Smb.to_string(),
             Self::ConfigureWebDavRemote { .. } => RemoteChoice::WebDav.to_string(),
@@ -356,16 +288,6 @@ impl Modal {
             Self::Exiting => None,
             Self::ConfirmAddMissingRoots(missing) => Some(Message::ConfirmAddMissingRoots(missing.clone())),
             Self::UpdatingManifest => None,
-            Self::ConfirmCloudSync { direction, state, .. } => {
-                if state.done() {
-                    Some(Message::CloseModal)
-                } else {
-                    state.idle().then_some(Message::SynchronizeCloud {
-                        direction: *direction,
-                        finality: Finality::Final,
-                    })
-                }
-            }
             Self::ConfigureFtpRemote => {
                 let host = histories.modal.host.current();
                 let port = histories.modal.port.current();
@@ -426,19 +348,6 @@ impl Modal {
 
     fn extra_controls(&self) -> Vec<Element> {
         match self {
-            Self::ConfirmCloudSync { direction, state, .. } => {
-                if state.done() {
-                    vec![]
-                } else {
-                    vec![button::primary(
-                        TRANSLATOR.preview_button(),
-                        state.idle().then_some(Message::SynchronizeCloud {
-                            direction: *direction,
-                            finality: Finality::Preview,
-                        }),
-                    )]
-                }
-            }
             Self::Errors { errors } => {
                 let has_manifest_error = errors.iter().any(|e| {
                     matches!(e, crate::prelude::Error::ManifestCannotBeUpdated { .. })
@@ -560,45 +469,6 @@ impl Modal {
                 }
                 col = col.push(form);
             }
-            Self::ConfirmCloudSync {
-                changes, page, state, ..
-            } => {
-                if !changes.is_empty() || !state.idle() {
-                    col = col
-                        .push_if(!state.idle(), || {
-                            Row::new()
-                                .spacing(20)
-                                .align_y(Alignment::Center)
-                                .push(text(TRANSLATOR.change_count_label(changes.len())))
-                                .push_if(changes.is_empty(), || text(TRANSLATOR.loading()))
-                                .push(Space::new().width(Length::Fill))
-                                .push(button::previous_page(Message::ModalChangePage, *page))
-                                .push(button::next_page(
-                                    Message::ModalChangePage,
-                                    *page,
-                                    changes.len() / CHANGES_PER_PAGE,
-                                ))
-                        })
-                        .push(
-                            changes
-                                .iter()
-                                .skip(page * CHANGES_PER_PAGE)
-                                .take(CHANGES_PER_PAGE)
-                                .fold(
-                                    Column::new().width(Length::Fill).align_x(Alignment::Start),
-                                    |parent, CloudChange { change, path }| {
-                                        parent.push(
-                                            Row::new()
-                                                .spacing(20)
-                                                .align_y(Alignment::Start)
-                                                .push(Badge::scan_change(*change).view())
-                                                .push(text(path)),
-                                        )
-                                    },
-                                ),
-                        );
-                }
-            }
             Self::ConfigureFtpRemote { .. } | Self::ConfigureSmbRemote { .. } => {
                 col = col
                     .width(500)
@@ -689,128 +559,8 @@ impl Modal {
         .height(Length::Fill)
     }
 
-    pub fn add_cloud_change(&mut self, change: CloudChange) {
-        match self {
-            Self::ConfirmCloudSync { changes, .. } => {
-                changes.push(change);
-                changes.sort();
-            }
-            Self::Error { .. }
-            | Self::Errors { .. }
-            | Self::Exiting
-            | Self::NoMissingRoots
-            | Self::ConfirmAddMissingRoots(_)
-            | Self::UpdatingManifest
-            | Self::ConfigureFtpRemote { .. }
-            | Self::ConfigureSmbRemote { .. }
-            | Self::ConfigureWebDavRemote { .. }
-            | Self::ActiveScanGames => (),
-            | Self::ConfirmSyncBackup { .. }
-            | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. }
-            | Self::ConfirmRestoreSafetyBackup { .. }
-            | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => (),
-        }
-    }
-
-    pub fn finish_cloud_scan(&mut self) {
-        match self {
-            Self::ConfirmCloudSync { state, changes, .. } => {
-                *state = match *state {
-                    CloudModalState::Previewing => {
-                        if changes.is_empty() {
-                            CloudModalState::NoChanges
-                        } else {
-                            CloudModalState::Previewed
-                        }
-                    }
-                    CloudModalState::Syncing => {
-                        if changes.is_empty() {
-                            CloudModalState::NoChanges
-                        } else {
-                            CloudModalState::Synced
-                        }
-                    }
-                    x => x,
-                };
-            }
-            Self::Error { .. }
-            | Self::Errors { .. }
-            | Self::Exiting
-            | Self::NoMissingRoots
-            | Self::ConfirmAddMissingRoots(_)
-            | Self::UpdatingManifest
-            | Self::ConfigureFtpRemote { .. }
-            | Self::ConfigureSmbRemote { .. }
-            | Self::ConfigureWebDavRemote { .. }
-            | Self::ActiveScanGames => (),
-            | Self::ConfirmSyncBackup { .. }
-            | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. }
-            | Self::ConfirmRestoreSafetyBackup { .. }
-            | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => (),
-        }
-    }
-
-    pub fn set_page(&mut self, new_page: usize) {
-        match self {
-            Self::ConfirmCloudSync { page, .. } => {
-                *page = new_page;
-            }
-            Self::Error { .. }
-            | Self::Errors { .. }
-            | Self::Exiting
-            | Self::NoMissingRoots
-            | Self::ConfirmAddMissingRoots(_)
-            | Self::UpdatingManifest
-            | Self::ConfigureFtpRemote { .. }
-            | Self::ConfigureSmbRemote { .. }
-            | Self::ConfigureWebDavRemote { .. }
-            | Self::ActiveScanGames => (),
-            | Self::ConfirmSyncBackup { .. }
-            | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. }
-            | Self::ConfirmRestoreSafetyBackup { .. }
-            | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => (),
-        }
-    }
-
-    pub fn is_cloud_active(&self) -> bool {
-        match self {
-            Self::ConfirmCloudSync { state, .. } => !state.idle(),
-            Self::Error { .. }
-            | Self::Errors { .. }
-            | Self::Exiting
-            | Self::NoMissingRoots
-            | Self::ConfirmAddMissingRoots(_)
-            | Self::UpdatingManifest
-            | Self::ConfigureFtpRemote { .. }
-            | Self::ConfigureSmbRemote { .. }
-            | Self::ConfigureWebDavRemote { .. }
-            | Self::ActiveScanGames
-            | Self::ConfirmSyncBackup { .. }
-            | Self::ConfirmSyncRestore { .. }
-            | Self::ConfirmSyncModeChange { .. }
-            | Self::AddGame { .. }
-            | Self::ConfirmRemoveCustomGame { .. }
-            | Self::ConfirmRestoreSafetyBackup { .. }
-            | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => false,
-        }
-    }
-
     pub fn body_height_portion(&self) -> u16 {
         match self {
-            Self::ConfirmCloudSync { .. } => 4,
             Self::NoMissingRoots => 1,
             Self::Error { .. }
             | Self::Errors { .. }

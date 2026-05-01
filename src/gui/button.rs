@@ -13,14 +13,6 @@ use crate::{
 
 const WIDTH: u32 = 125;
 
-fn template(content: Text, action: Option<Message>, style: Option<style::Button>) -> Element {
-    Button::new(content.align_x(alignment::Horizontal::Center))
-        .on_press_maybe(action)
-        .class(style.unwrap_or(style::Button::Primary))
-        .padding(5)
-        .into()
-}
-
 fn template_small(content: Text, action: Option<Message>, style: Option<style::Button>) -> Element {
     Button::new(content.align_x(alignment::Horizontal::Center))
         .on_press_maybe(action)
@@ -47,18 +39,6 @@ pub fn negative<'a>(content: String, action: Option<Message>) -> Element<'a> {
         .width(WIDTH)
         .padding(5)
         .into()
-}
-
-pub fn next_page<'a>(action: impl Fn(usize) -> Message, page: usize, pages: usize) -> Element<'a> {
-    template(
-        Icon::ArrowForward.text(),
-        (page < pages).then(|| action(page + 1)),
-        None,
-    )
-}
-
-pub fn previous_page<'a>(action: impl Fn(usize) -> Message, page: usize) -> Element<'a> {
-    template(Icon::ArrowBack.text(), (page > 0).then(|| action(page - 1)), None)
 }
 
 #[allow(dead_code)]

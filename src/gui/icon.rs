@@ -8,9 +8,7 @@ use crate::gui::{
 pub enum Icon {
     AddCircle,
     Copy,
-    ArrowBack,
     ArrowDownward,
-    ArrowForward,
     ArrowUpward,
     Error,
     FolderOpen,
@@ -30,9 +28,7 @@ impl Icon {
         match self {
             Self::AddCircle => '\u{E147}',
             Self::Copy => '\u{e14d}',
-            Self::ArrowBack => '\u{e5c4}',
             Self::ArrowDownward => '\u{E5DB}',
-            Self::ArrowForward => '\u{e5c8}',
             Self::ArrowUpward => '\u{E5D8}',
             Self::Error => '\u{e001}',
             Self::FolderOpen => '\u{E2C8}',
