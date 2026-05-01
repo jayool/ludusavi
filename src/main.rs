@@ -1,17 +1,35 @@
-mod cli;
 mod gui;
 
-#[cfg(test)]
-mod testing;
+use std::path::PathBuf;
+
+use clap::Parser;
 
 use self::gui::Flags;
 use ludusavi::{
     cloud,
     lang::{self, TRANSLATOR},
     path,
-    prelude::{self, app_dir, CONFIG_DIR, VERSION},
-    report, resource, scan, wrap,
+    prelude::{self, app_dir, ENV_DEBUG, CONFIG_DIR, VERSION},
+    resource, scan,
 };
+
+#[derive(clap::Parser, Debug)]
+#[clap(name = "ludusavi", version)]
+struct Cli {
+    /// Use configuration found in a specific directory.
+    /// It will be created if it does not exist.
+    #[clap(long, value_name = "DIRECTORY")]
+    config: Option<PathBuf>,
+
+    /// Disable automatic/implicit manifest update checks.
+    #[clap(long)]
+    no_manifest_update: bool,
+
+    /// Use max log level and open log folder after running.
+    /// Be mindful that the file size may increase rapidly during a full scan.
+    #[clap(long)]
+    debug: bool,
+}
 
 /// The logger handle must be retained until the application closes.
 /// https://docs.rs/flexi_logger/0.23.1/flexi_logger/error_info/index.html#write
@@ -112,7 +130,6 @@ fn prepare_winit() {
 ///   * None (double click in Windows Explorer)
 ///   * None (from console)
 ///   * `--help` (has output, but before this function is called)
-///   * `backup --preview` (has output, after this function is called)
 /// * Consoles:
 ///   * Command Prompt
 ///   * PowerShell
@@ -181,8 +198,7 @@ unsafe fn detach_console(debug: bool) {
 }
 
 fn main() {
-    let mut failed = false;
-    let args = cli::parse();
+    let args = Cli::try_parse();
 
     if let Some(config_dir) = args.as_ref().ok().and_then(|args| args.config.as_ref()) {
         *CONFIG_DIR.lock().unwrap() = Some(config_dir.clone());
@@ -217,52 +233,21 @@ fn main() {
         }
     };
 
-    match args.sub {
-        None => {
-            #[cfg(target_os = "windows")]
-            if std::env::var(crate::prelude::ENV_DEBUG).is_err() {
-                unsafe {
-                    detach_console(debug);
-                }
-            }
-
-            let flags = Flags {
-                update_manifest: !args.no_manifest_update,
-                custom_game: None,
-            };
-            gui::run(flags);
+    #[cfg(target_os = "windows")]
+    if std::env::var(ENV_DEBUG).is_err() {
+        unsafe {
+            detach_console(debug);
         }
-        Some(cli::parse::Subcommand::Gui { custom_game }) => {
-            #[cfg(target_os = "windows")]
-            if std::env::var(crate::prelude::ENV_DEBUG).is_err() {
-                unsafe {
-                    detach_console(debug);
-                }
-            }
+    }
 
-            let flags = Flags {
-                update_manifest: !args.no_manifest_update,
-                custom_game,
-            };
-            gui::run(flags);
-        }
-        Some(sub) => {
-            let gui = sub.gui();
-            let force = sub.force();
-
-            if let Err(e) = cli::run(sub, args.no_manifest_update, args.try_manifest_update) {
-                failed = true;
-                cli::show_error(&[], &e, gui, force);
-            }
-        }
+    let flags = Flags {
+        update_manifest: !args.no_manifest_update,
+        custom_game: None,
     };
+    gui::run(flags);
 
     flush_logger();
     debug_on_exit(debug);
-
-    if failed {
-        std::process::exit(1);
-    }
 }
 
 fn debug_on_exit(debug: bool) {

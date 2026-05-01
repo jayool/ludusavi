@@ -5,7 +5,6 @@
 //! In time, this will be refactored and improved,
 //! so please understand that the API will be unstable.
 
-pub mod api;
 pub mod cloud;
 pub mod lang;
 pub mod path;

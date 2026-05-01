@@ -21,11 +21,8 @@ default = ["app"]
 # GUI and CLI
 app = [
     "dep:clap",
-    "dep:clap_complete",
-    "dep:dialoguer",
     "dep:iced",
     "dep:image",
-    "dep:indicatif",
     "dep:rfd",
     "dep:signal-hook",
 ]
@@ -35,9 +32,7 @@ base64 = "0.22.1"
 byte-unit = "5.1.4"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5.17", features = ["derive", "wrap_help"], optional = true }
-clap_complete = { version = "4.5.28", optional = true }
 ctrlc = "3.4"
-dialoguer = { version = "0.11.0", optional = true }
 dirs = "5.0.1"
 env_logger = "0.11"
 filetime = "0.2.25"
@@ -48,7 +43,6 @@ globetter = "0.2.0"
 globset = "0.4.15"
 iced = { version = "0.14.0", features = ["advanced", "advanced-shaping", "crisp", "image", "lazy", "svg", "tiny-skia", "tokio", "wayland", "wgpu", "x11"], default-features = false, optional = true }
 image = { version = "0.25.2", features = ["ico"], default-features = false, optional = true }
-indicatif = { version = "0.17.8", features = ["rayon"], optional = true }
 intl-memoizer = "0.5.2"
 itertools = "0.13.0"
 log = "0.4.22"
