@@ -860,6 +860,11 @@ fn glob_first_existing_dir(pattern: &str, sep: char) -> Option<String> {
         let mut next: Vec<PathBuf> = vec![];
         for cand in &candidates {
             if seg.contains('*') {
+                // `**` matches zero or more directory levels — incluir el
+                // candidato actual como "cero niveles" antes de descender.
+                if *seg == "**" {
+                    next.push(cand.clone());
+                }
                 if let Ok(entries) = std::fs::read_dir(cand) {
                     for entry in entries.flatten() {
                         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
