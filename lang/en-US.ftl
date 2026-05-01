@@ -8,11 +8,6 @@ file-location = Location
 overall = Overall
 status = Status
 
-cli-unrecognized-games = No info for these games:
-cli-unable-to-request-confirmation = Unable to request confirmation.
-    .winpty-workaround = If you are using a Bash emulator (like Git Bash), try running winpty.
-cli-backup-id-with-multiple-games = Cannot specify backup ID when restoring multiple games.
-cli-invalid-backup-id = Invalid backup ID.
 
 badge-failed = FAILED
 badge-duplicates = DUPLICATES
@@ -27,7 +22,6 @@ cli-game-line-item-redirected = Redirected from: {$path}
 cli-game-line-item-redirecting = Redirecting to: {$path}
 
 button-backup = Back up
-button-preview = Preview
 button-restore = Restore
 button-nav-backup = BACKUP MODE
 button-nav-restore = RESTORE MODE
@@ -69,7 +63,6 @@ unable-to-browse-file-system = Error: Unable to browse on your system.
 unable-to-open-directory = Error: Unable to open directory:
 unable-to-open-url = Error: Unable to open URL:
 unable-to-configure-cloud = Unable to configure cloud.
-unable-to-synchronize-with-cloud = Unable to synchronize with cloud.
 cloud-synchronize-conflict = Your local and cloud backups are in conflict. Perform an upload or download to resolve this.
 
 command-unlaunched = Command did not launch: {$command}
@@ -128,7 +121,6 @@ label-enabled = Enabled
 label-disabled = Disabled
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Threads
-label-cloud = Cloud
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Remote name
@@ -149,7 +141,6 @@ label-password = Password
 label-provider = Provider
 label-custom = Custom
 label-none = None
-label-change-count = Changes: {$total}
 label-unscanned = Unscanned
 # This refers to a local file on the computer
 label-file = File
@@ -236,22 +227,12 @@ confirm-restore =
     Are you sure you want to proceed with the restoration?
     This will overwrite any current files with the backups from here:
 
-confirm-cloud-upload =
-    Do you want to replace your cloud files with your local files?
-    Your cloud files ({$cloud-path}) will become an exact copy of your local files ({$local-path}).
-    Files in the cloud will be updated or deleted as necessary.
 
-confirm-cloud-download =
-    Do you want to replace your local files with your cloud files?
-    Your local files ({$local-path}) will become an exact copy of your cloud files ({$cloud-path}).
-    Local files will be updated or deleted as necessary.
 
 confirm-add-missing-roots = Add these roots?
 no-missing-roots = No additional roots found.
-loading = Loading...
 preparing-backup-target = Preparing backup directory...
 updating-manifest = Updating manifest...
-no-cloud-changes = No changes to synchronize
 backups-are-valid =
     Your backups are valid.
 backups-are-invalid =

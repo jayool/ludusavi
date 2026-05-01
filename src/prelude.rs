@@ -76,12 +76,6 @@ impl Privacy {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncDirection {
-    Upload,
-    Download,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     ManifestInvalid {

@@ -15,12 +15,9 @@ use crate::{
 };
 
 const PATH: &str = "path";
-const LOCAL_PATH: &str = "local-path";
-const CLOUD_PATH: &str = "cloud-path";
 const PATH_ACTION: &str = "path-action";
 const PROCESSED_GAMES: &str = "processed-games";
 const PROCESSED_SIZE: &str = "processed-size";
-const TOTAL: &str = "total";
 const TOTAL_GAMES: &str = "total-games";
 const TOTAL_SIZE: &str = "total-size";
 const COMMAND: &str = "command";
@@ -653,14 +650,6 @@ impl Translator {
         format!("{} ({})", self.backup_button(), self.suffix_no_confirmation())
     }
 
-    pub fn preview_button(&self) -> String {
-        translate("button-preview")
-    }
-
-    pub fn preview_button_in_custom_mode(&self) -> String {
-        format!("{} ({})", self.preview_button(), self.backup_button().to_lowercase())
-    }
-
     pub fn restore_button(&self) -> String {
         translate("button-restore")
     }
@@ -695,10 +684,6 @@ impl Translator {
 
     pub fn no_missing_roots(&self) -> String {
         translate("no-missing-roots")
-    }
-
-    pub fn loading(&self) -> String {
-        translate("loading")
     }
 
     pub fn updating_manifest(&self) -> String {
@@ -1186,14 +1171,6 @@ impl Translator {
         self.field(&translate("label-threads"))
     }
 
-    pub fn cloud_label(&self) -> String {
-        translate("label-cloud")
-    }
-
-    pub fn cloud_field(&self) -> String {
-        self.field(&self.cloud_label())
-    }
-
     pub fn rclone_label(&self) -> String {
         self.field("Rclone")
     }
@@ -1258,11 +1235,6 @@ impl Translator {
         translate("label-custom")
     }
 
-    pub fn change_count_label(&self, total: usize) -> String {
-        let mut args = FluentArgs::new();
-        args.set(TOTAL, total);
-        translate_args("label-change-count", &args)
-    }
 
     pub fn synchronize_automatically(&self) -> String {
         translate("synchronize-automatically")
@@ -1328,24 +1300,6 @@ impl Translator {
         }
     }
 
-    pub fn confirm_cloud_upload(&self, local: &str, cloud: &str) -> String {
-        let mut args = FluentArgs::new();
-        args.set(LOCAL_PATH, local);
-        args.set(CLOUD_PATH, cloud);
-        translate_args("confirm-cloud-upload", &args)
-    }
-
-    pub fn confirm_cloud_download(&self, local: &str, cloud: &str) -> String {
-        let mut args = FluentArgs::new();
-        args.set(LOCAL_PATH, local);
-        args.set(CLOUD_PATH, cloud);
-        translate_args("confirm-cloud-download", &args)
-    }
-
-    pub fn no_cloud_changes(&self) -> String {
-        translate("no-cloud-changes")
-    }
-
     pub fn notify_single_game_status(&self, found: bool) -> String {
         if found {
             translate("saves-found")
@@ -1378,14 +1332,6 @@ impl Translator {
         let mut args = FluentArgs::new();
         args.set(APP, "Rclone");
         translate_args("cloud-app-unavailable", &args)
-    }
-
-    pub fn cloud_progress(&self, processed_bytes: u64, total_bytes: u64) -> String {
-        format!(
-            "{} / {}",
-            self.adjusted_size(processed_bytes),
-            self.adjusted_size(total_bytes)
-        )
     }
 
     pub fn game_is_unrecognized(&self) -> String {

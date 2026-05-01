@@ -6,11 +6,6 @@ file-size = Grootte
 file-location = Locatie
 overall = Totaal
 status = Status
-cli-unrecognized-games = Geen informatie voor deze games:
-cli-unable-to-request-confirmation = Er kan niet om bevestiging worden gevraagd.
-    .winpty-workaround = Als je een Bash-emulator, zoals Git Bash, gebruikt, probeer dan winpty uit te voeren.
-cli-backup-id-with-multiple-games = De back-up-id kan niet worden opgegeven bij het herstellen van meerdere games.
-cli-invalid-backup-id = Ongeldige back-up-id.
 badge-failed = MISLUKT
 badge-duplicates = DUPLICATEN
 badge-duplicated = GEDUPLICEERD
@@ -21,7 +16,6 @@ some-entries-failed = Sommige items konden niet worden verwerkt - zoek naar { ba
 cli-game-line-item-redirected = Doorverwezen van: { $path }
 cli-game-line-item-redirecting = Doorverwijzen naar: { $path }
 button-backup = Back-up
-button-preview = Voorvertoning
 button-restore = Herstellen
 button-nav-backup = BACK-UPMODUS
 button-nav-restore = HERSTELMODUS
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Foutmelding: Systeem kon niet worden doorzocht.
 unable-to-open-directory = Foutmelding: Map kon niet geopend worden:
 unable-to-open-url = Foutmelding: URL kon niet geopend worden:
 unable-to-configure-cloud = Cloud kon niet ingesteld worden.
-unable-to-synchronize-with-cloud = Cloud kon niet gesynchroniseerd worden.
 cloud-synchronize-conflict = Je lokale back-ups en cloudback-ups zijn met elkaar in conflict. Voer een upload of download uit om dit op te lossen.
 command-unlaunched = Opdracht is niet gestart: { $command }
 command-terminated = Opdracht plotseling beëindigd: { $command }
@@ -118,7 +111,6 @@ label-enabled = Ingeschakeld
 label-disabled = Uitgeschakeld
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Threads
-label-cloud = Cloud
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Externe server
 label-remote-name = Externe-servernaam
@@ -139,7 +131,6 @@ label-password = Wachtwoord
 label-provider = Aanbieder
 label-custom = Aangepast
 label-none = Geen
-label-change-count = Veranderingen: { $total }
 label-unscanned = Ongescand
 # This refers to a local file on the computer
 label-file = Bestand
@@ -210,20 +201,10 @@ confirm-backup =
 confirm-restore =
     Weet je zeker dat je verder wil gaan met het herstel?
     Bestaande bestanden zullen worden overschreven door de volgende back-ups:
-confirm-cloud-upload =
-    Wil je je cloudbestanden vervangen met je lokale bestanden?
-    Je cloudbestanden ({ $cloud-path }) worden dan een exacte kopie van je lokale bestanden ({ $local-path }).
-    Cloudbestanden worden bijgewerkt of verwijderd waar nodig.
-confirm-cloud-download =
-    Wil je je lokale bestanden vervangen met je cloudbestanden?
-    Je lokale bestanden ({ $local-path }) worden dan een exacte kopie van je cloudbestanden ({ $cloud-path }).
-    Lokale bestanden worden bijgewerkt of verwijderd waar nodig.
 confirm-add-missing-roots = Voeg deze roots toe?
 no-missing-roots = Geen extra roots gevonden.
-loading = Bezig met laden...
 preparing-backup-target = Back-upmap wordt voorbereid...
 updating-manifest = Manifest wordt bijgewerkt...
-no-cloud-changes = Geen veranderingen om te synchroniseren
 backups-are-valid = Je back-ups zijn ongeldig.
 backups-are-invalid =
     De back-ups van deze spellen lijken ongeldig.

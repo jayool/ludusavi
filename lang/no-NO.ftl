@@ -6,11 +6,6 @@ file-size = Størrelse
 file-location = Plassering
 overall = Generelt
 status = Status
-cli-unrecognized-games = Ingen informasjon for disse spillene:
-cli-unable-to-request-confirmation = Kunne ikke be om bekreftelse.
-    .winpty-workaround = Hvis du bruker en Bash-emulator (som f.eks. Git Bash), kan du prøve å kjøre winpty.
-cli-backup-id-with-multiple-games = Kan ikke spesifisere sikkerhetskopi-ID når man gjenoppretter flere spill.
-cli-invalid-backup-id = Ugyldig sikkerhetskopi-ID.
 badge-failed = FEILET
 badge-duplicates = DUPLIKATER
 badge-duplicated = DUPLISERTE
@@ -21,7 +16,6 @@ some-entries-failed = Noen oppføringer feilet med å prosessere; se etter { bad
 cli-game-line-item-redirected = Omdirigert fra: { $path }
 cli-game-line-item-redirecting = Omdirigerer til: { $path }
 button-backup = Sikkerhetskopier
-button-preview = Forhåndsvisning
 button-restore = Gjenopprett
 button-nav-backup = SIKKERHETSKOPI-MODUS
 button-nav-restore = GJENOPPRETTINGS-MODUS
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Feil: Kunne ikke søke i systemet ditt.
 unable-to-open-directory = Feil: Kunne ikke åpne filsti:
 unable-to-open-url = Feil: Kunne ikke åpne URL:
 unable-to-configure-cloud = Kunne ikke konfigurere sky.
-unable-to-synchronize-with-cloud = Kunne ikke synkronisere med sky.
 cloud-synchronize-conflict = Dine lokale og sky -sikkerhetskopier har konflikter. Gjør en opplastning eller nedlastning for å løse dette problemet.
 command-unlaunched = Kommando ble ikke startet: { $command }
 command-terminated = Kommando ble plutselig avbrutt: { $command }
@@ -114,7 +107,6 @@ label-enabled = Aktivert
 label-disabled = Deaktivert
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Tråder
-label-cloud = Sky
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Remote name
@@ -135,7 +127,6 @@ label-password = Passord
 label-provider = Provider
 label-custom = Custom
 label-none = Ingen
-label-change-count = Endringer: { $total }
 label-unscanned = Uskannet
 # This refers to a local file on the computer
 label-file = Fil
@@ -208,20 +199,10 @@ confirm-backup =
 confirm-restore =
     Are you sure you want to proceed with the restoration?
     This will overwrite any current files with the backups from here:
-confirm-cloud-upload =
-    Do you want to replace your cloud files with your local files?
-    Your cloud files ({ $cloud-path }) will become an exact copy of your local files ({ $local-path }).
-    Files in the cloud will be updated or deleted as necessary.
-confirm-cloud-download =
-    Do you want to replace your local files with your cloud files?
-    Your local files ({ $local-path }) will become an exact copy of your cloud files ({ $cloud-path }).
-    Local files will be updated or deleted as necessary.
 confirm-add-missing-roots = Add these roots?
 no-missing-roots = No additional roots found.
-loading = Loading...
 preparing-backup-target = Preparing backup directory...
 updating-manifest = Updating manifest...
-no-cloud-changes = No changes to synchronize
 backups-are-valid = Your backups are valid.
 backups-are-invalid =
     These games' backups appear to be invalid.

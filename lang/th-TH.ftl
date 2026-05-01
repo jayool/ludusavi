@@ -6,11 +6,6 @@ file-size = ขนาด
 file-location = ที่ตั้งไฟล์
 overall = ภาพรวม
 status = สถานะ
-cli-unrecognized-games = ไม่มีข้อมูลสำหรับเกมนี้
-cli-unable-to-request-confirmation = ไม่สามารถร้องขอการยืนยันได้
-    .winpty-workaround = ถ้าคุณกำลังใช้ Bash emulator (เหมือน Git Bash), ลองรัน winpty
-cli-backup-id-with-multiple-games = ไม่สามารถระบุ backup ID เมื่อกำลังคืนค่าหลายเกมได้
-cli-invalid-backup-id = Backup ID ไม่ถูกต้อง
 badge-failed = ล้มเหลว
 badge-duplicates = ซ้ำกัน
 badge-duplicated = DUPLICATED
@@ -21,7 +16,6 @@ some-entries-failed = Some entries failed to process; look for { badge-failed } 
 cli-game-line-item-redirected = เปลี่ยนเส้นทางจาก: { $path }
 cli-game-line-item-redirecting = เปลี่ยนเส้นทางไปยัง: { $path }
 button-backup = สำรองข้อมูล
-button-preview = แสดงตัวอย่าง
 button-restore = คืนค่า
 button-nav-backup = โหมดสำรองข้อมูล
 button-nav-restore = โหมดคืนค่าข้อมูล
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Error: Unable to browse on your system.
 unable-to-open-directory = Error: Unable to open directory:
 unable-to-open-url = Error: Unable to open URL:
 unable-to-configure-cloud = Unable to configure cloud.
-unable-to-synchronize-with-cloud = Unable to synchronize with cloud.
 cloud-synchronize-conflict = Your local and cloud backups are in conflict. Perform an upload or download to resolve this.
 command-unlaunched = Command did not launch: { $command }
 command-terminated = Command terminated abruptly: { $command }
@@ -118,7 +111,6 @@ label-enabled = เปิดใช้งาน
 label-disabled = ปิดใช้งาน
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Threads
-label-cloud = Cloud
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Remote name
@@ -139,7 +131,6 @@ label-password = รหัสผ่าน
 label-provider = Provider
 label-custom = Custom
 label-none = ไม่มี
-label-change-count = Changes: { $total }
 label-unscanned = Unscanned
 # This refers to a local file on the computer
 label-file = File
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Are you sure you want to proceed with the restoration?
     This will overwrite any current files with the backups from here:
-confirm-cloud-upload =
-    Do you want to replace your cloud files with your local files?
-    Your cloud files ({ $cloud-path }) will become an exact copy of your local files ({ $local-path }).
-    Files in the cloud will be updated or deleted as necessary.
-confirm-cloud-download =
-    Do you want to replace your local files with your cloud files?
-    Your local files ({ $local-path }) will become an exact copy of your cloud files ({ $cloud-path }).
-    Local files will be updated or deleted as necessary.
 confirm-add-missing-roots = Add these roots?
 no-missing-roots = No additional roots found.
-loading = กำลังโหลด...
 preparing-backup-target = กำลังเตรียมการสำรอง directory...
 updating-manifest = กำลังอัพเดต Manifest
-no-cloud-changes = ไม่มีการเปลี่ยนแปลงที่จะซิงค์
 backups-are-valid = Your backups are valid.
 backups-are-invalid =
     These games' backups appear to be invalid.

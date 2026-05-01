@@ -6,11 +6,6 @@ file-size = Boyut
 file-location = Konum
 overall = Genel
 status = Durum
-cli-unrecognized-games = Bu oyunlar hakkında bilgi bulunamadı:
-cli-unable-to-request-confirmation = Unable to request confirmation.
-    .winpty-workaround = Eğer bash emulator kullanıyorsan (Git Bash gibi), winpty'i çalıştırmayı dene.
-cli-backup-id-with-multiple-games = Oyunların yedeği geri yüklenirken backup ID belirlenemiyor.
-cli-invalid-backup-id = Geçersiz backup ID.
 badge-failed = BAŞARISIZ
 badge-duplicates = KOPYALAR
 badge-duplicated = KOPYALANMIŞ
@@ -21,7 +16,6 @@ some-entries-failed = Bazı girdilerin işlenmesi başarısız; detay için çı
 cli-game-line-item-redirected = Şuradan yönlendirildi: { $path }
 cli-game-line-item-redirecting = Şuraya yönlendiriliyor: { $path }
 button-backup = Yedekle
-button-preview = Önizle
 button-restore = Geri Yükle
 button-nav-backup = YEDEKLEME MODU
 button-nav-restore = GERİ YÜKLEME MODU
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Hata: Sisteminizde göz atılamıyor.
 unable-to-open-directory = Hata: Dizin açılamıyor:
 unable-to-open-url = Hata: URL açılamıyor:
 unable-to-configure-cloud = Bulut yapılandırılamıyor.
-unable-to-synchronize-with-cloud = Bulut eşitlemesi yapılamıyor.
 cloud-synchronize-conflict = Yerel ve bulut yedeklemeleriniz çakışıyor. Bir yükleme ya da indirme yaparak çözüm sağlayın.
 command-unlaunched = Komut yürütülemedi: { $command }
 command-terminated = Komut ani şekilde sonlandı: { $command }
@@ -118,7 +111,6 @@ label-enabled = Etkin
 label-disabled = Devre dışı
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = İş Parçacıkları
-label-cloud = Bulut
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Bulut yedekleme
 label-remote-name = Bulut yedekleme ismi
@@ -139,7 +131,6 @@ label-password = Şifre
 label-provider = Sağlayıcı
 label-custom = Özel
 label-none = Hiçbiri
-label-change-count = Değişiklikler: { $total }
 label-unscanned = Taranmamış
 # This refers to a local file on the computer
 label-file = Dosya
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Restorasyona devam etmek istediğinizden emin misiniz?
     Bu, buradaki yedekleri içeren mevcut dosyaların üzerine yazacaktır:
-confirm-cloud-upload =
-    Bulut dosyalarınızı yerel dosyalarınızla değiştirmek ister misiniz?
-    Bulut dosyalarınız ({ $cloud-path }) yerel dosyalarınızın ({ $local-path }) tam bir kopyası haline gelecektir.
-    Buluttaki dosyalar gerektiği şekilde güncellenecek veya silinecektir.
-confirm-cloud-download =
-    Yerel dosyalarınızı bulut dosyalarınızla değiştirmek ister misiniz?
-    Yerel dosyalarınız ({ $local-path }), bulut dosyalarınızın ({ $cloud-path }) tam bir kopyası haline gelecektir.
-    Yerel dosyalar gerektiği şekilde güncellenecek veya silinecektir.
 confirm-add-missing-roots = Bu kök dizinler eklensin mi?
 no-missing-roots = Başka kök dizin bulunamadı.
-loading = Yükleniyor...
 preparing-backup-target = Yedekleme dizini hazırlanıyor...
 updating-manifest = Bildiri güncelleniyor...
-no-cloud-changes = Senkronize edilecek değişiklik yok
 backups-are-valid = Yedeklemeleriniz geçerlidir.
 backups-are-invalid =
     Bu oyunların yedeklemeleri geçersiz görünüyor.

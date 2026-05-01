@@ -6,11 +6,6 @@ file-size = 尺寸
 file-location = 位置
 overall = 總覽
 status = 狀態
-cli-unrecognized-games = 沒有這些遊戲的資訊：
-cli-unable-to-request-confirmation = 無法請求確認。
-    .winpty-workaround = 如果您使用的是 Bash 模擬器（例如 Git Bash），請嘗試執行 winpty。
-cli-backup-id-with-multiple-games = 恢復多個遊戲時無法指定備份ID。
-cli-invalid-backup-id = 無效的備份ID。
 badge-failed = 已失敗
 badge-duplicates = 重複項目
 badge-duplicated = 已重複
@@ -21,7 +16,6 @@ some-entries-failed = 某些條目處理失敗；在輸出中查找 { badge-fail
 cli-game-line-item-redirected = 重新導向從: { $path }
 cli-game-line-item-redirecting = 重新導向到：{ $path }
 button-backup = 備份
-button-preview = 預覽
 button-restore = 復原
 button-nav-backup = 備份模式
 button-nav-restore = 還原模式
@@ -61,7 +55,6 @@ unable-to-browse-file-system = 錯誤：無法在您的系統上瀏覽。
 unable-to-open-directory = 錯誤：無法打開資料夾：
 unable-to-open-url = 錯誤：無法打開網址：
 unable-to-configure-cloud = 無法設定雲端。
-unable-to-synchronize-with-cloud = 無法同步至雲端。
 cloud-synchronize-conflict = 您的本地備份和雲端備份有衝突。請進行上傳或下載以解決此問題。
 command-unlaunched = 命令未啟動：{ $command }
 command-terminated = 命令已中斷：{ $command }
@@ -118,7 +111,6 @@ label-enabled = 已啟用
 label-disabled = 已停用
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = 執行緒
-label-cloud = 雲端備份
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = 遠端
 label-remote-name = 遠端名稱
@@ -139,7 +131,6 @@ label-password = 密碼
 label-provider = 供應商
 label-custom = 自定義
 label-none = 無
-label-change-count = 變更：{ $total }
 label-unscanned = 未掃描
 # This refers to a local file on the computer
 label-file = 檔案
@@ -210,20 +201,10 @@ confirm-backup =
 confirm-restore =
     您確定要繼續還原嗎？
     這將會用來自以下位置的備份覆蓋當前的檔案：
-confirm-cloud-upload =
-    您是否要用本地文件替換雲端存檔？
-    您的雲端存檔（{ $cloud-path }）將成為本地存檔（{ $local-path }）的副本。
-    雲端中的檔案將會在需要的時候進行更新或刪除。
-confirm-cloud-download =
-    您是否要用雲端存檔替換本地存檔？
-    您的本地存檔（{ $local-path }）將成為雲端存檔（{ $cloud-path }）的副本。
-    本地檔案將會在需要的時候進行更新或刪除。
 confirm-add-missing-roots = 增加這些根目錄嗎？
 no-missing-roots = 未找到其他根目錄。
-loading = 讀取中...
 preparing-backup-target = 正在準備備份資料夾...
 updating-manifest = 正在更新 manifest 清單檔...
-no-cloud-changes = 沒有需要同步的修改
 backups-are-valid = 您的備份是有效的。
 backups-are-invalid =
     這些遊戲的備份似乎無效。

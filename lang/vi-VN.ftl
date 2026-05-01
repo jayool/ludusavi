@@ -6,11 +6,6 @@ file-size = Kích thước
 file-location = Vị trí
 overall = Tổng thể
 status = Trạng thái
-cli-unrecognized-games = No info for these games:
-cli-unable-to-request-confirmation = Unable to request confirmation.
-    .winpty-workaround = If you are using a Bash emulator (like Git Bash), try running winpty.
-cli-backup-id-with-multiple-games = Cannot specify backup ID when restoring multiple games.
-cli-invalid-backup-id = Invalid backup ID.
 badge-failed = THẤT BẠI
 badge-duplicates = DUPLICATES
 badge-duplicated = DUPLICATED
@@ -21,7 +16,6 @@ some-entries-failed = Some entries failed to process; look for { badge-failed } 
 cli-game-line-item-redirected = Redirected from: { $path }
 cli-game-line-item-redirecting = Redirecting to: { $path }
 button-backup = Sao lưu
-button-preview = Xem trước
 button-restore = Khôi phục
 button-nav-backup = BACKUP MODE
 button-nav-restore = RESTORE MODE
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Error: Unable to browse on your system.
 unable-to-open-directory = Error: Unable to open directory:
 unable-to-open-url = Error: Unable to open URL:
 unable-to-configure-cloud = Unable to configure cloud.
-unable-to-synchronize-with-cloud = Unable to synchronize with cloud.
 cloud-synchronize-conflict = Your local and cloud backups are in conflict. Perform an upload or download to resolve this.
 command-unlaunched = Command did not launch: { $command }
 command-terminated = Command terminated abruptly: { $command }
@@ -118,7 +111,6 @@ label-enabled = Kích hoạt
 label-disabled = Vô hiệu hóa
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Chủ đề
-label-cloud = Đám mây
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Điều khiên
 label-remote-name = Tên máy chủ
@@ -139,7 +131,6 @@ label-password = Mật khẩu
 label-provider = Bên cung cấp
 label-custom = Tuỳ chỉnh
 label-none = Trống
-label-change-count = Changes: { $total }
 label-unscanned = Không quét
 # This refers to a local file on the computer
 label-file = Tệp
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Are you sure you want to proceed with the restoration?
     This will overwrite any current files with the backups from here:
-confirm-cloud-upload =
-    Do you want to replace your cloud files with your local files?
-    Your cloud files ({ $cloud-path }) will become an exact copy of your local files ({ $local-path }).
-    Files in the cloud will be updated or deleted as necessary.
-confirm-cloud-download =
-    Do you want to replace your local files with your cloud files?
-    Your local files ({ $local-path }) will become an exact copy of your cloud files ({ $cloud-path }).
-    Local files will be updated or deleted as necessary.
 confirm-add-missing-roots = Add these roots?
 no-missing-roots = No additional roots found.
-loading = Loading...
 preparing-backup-target = Preparing backup directory...
 updating-manifest = Updating manifest...
-no-cloud-changes = No changes to synchronize
 backups-are-valid = Your backups are valid.
 backups-are-invalid =
     These games' backups appear to be invalid.

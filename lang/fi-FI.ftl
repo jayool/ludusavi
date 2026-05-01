@@ -6,11 +6,6 @@ file-size = Koko
 file-location = Sijainti
 overall = Yhteenveto
 status = Tila
-cli-unrecognized-games = Ei tietoja näistä peleistä:
-cli-unable-to-request-confirmation = Vahvistusta ei voitu pyytää.
-    .winpty-workaround = Jos käytät Bash-emulaattoria (kuten Git Bash), kokeile suorittaa winpty.
-cli-backup-id-with-multiple-games = Cannot specify backup ID when restoring multiple games.
-cli-invalid-backup-id = Virheellinen varmuuskopion ID.
 badge-failed = EPÄONNISTUI
 badge-duplicates = DUPLICATES
 badge-duplicated = DUPLICATED
@@ -21,7 +16,6 @@ some-entries-failed = Some entries failed to process; look for { badge-failed } 
 cli-game-line-item-redirected = Ohjattu lähteestä: { $path }
 cli-game-line-item-redirecting = Ohjattu kohteeseen: { $path }
 button-backup = Varmuuskopioi
-button-preview = Esikatsele
 button-restore = Palauta
 button-nav-backup = VARMUUSKOPIOINTITILA
 button-nav-restore = PALAUTUSTILA
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Virhe: Järjestelmää ei voi selata.
 unable-to-open-directory = Virhe: Kansiota ei voitu avata:
 unable-to-open-url = Virhe: URL-osoitetta ei voitu avata:
 unable-to-configure-cloud = Pilveä ei voi määrittää.
-unable-to-synchronize-with-cloud = Ei voitu synkronoida pilven kanssa.
 cloud-synchronize-conflict = Paikalliset ja pilvipalvelun varmuuskopiot ovat ristiriidassa. Lähetä tai lataa ratkaistaksesi tämän.
 command-unlaunched = Komento ei käynnistynyt: { $command }
 command-terminated = Komento keskeytyi yllättäen: { $command }
@@ -118,7 +111,6 @@ label-enabled = Käytössä
 label-disabled = Pois käytöstä
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Säikeet
-label-cloud = Pilvi
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Etäpalvelu
 label-remote-name = Etäpalvelun nimi
@@ -139,7 +131,6 @@ label-password = Salasana
 label-provider = Palveluntarjoaja
 label-custom = Mukautettu
 label-none = Ei mitään
-label-change-count = Muutokset: { $total }
 label-unscanned = Skannamaton
 # This refers to a local file on the computer
 label-file = Tiedosto
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Haluatko varmasti jatkaa palauttamista?
     Tämä korvaa kaikki nykyiset tiedostot varmuuskopioiden avulla täältä:
-confirm-cloud-upload =
-    Haluatko korvata pilvessä olevat tiedostot paikallisilla tiedostoillasi?
-    Pilvitiedostoistasi ({ $cloud-path }) tulee tarkka kopio paikallisista tiedostoistasi ({ $local-path }).
-    Pilvessä olevat tiedostot päivitetään tai poistetaan tarpeen mukaan.
-confirm-cloud-download =
-    Haluatko korvata paikalliset tiedostot pilvessä olevilla tiedostoillasi?
-    Paikallisista tiedostoistasi ({ $local-path }) tulee tarkka kopio pilvitiedostoistasi ({ $cloud-path }).
-    Paikalliset tiedostot päivitetään tai poistetaan tarpeen mukaan.
 confirm-add-missing-roots = Lisätäänkö nämä juuret?
 no-missing-roots = Muita juuria ei löytynyt.
-loading = Ladataan...
 preparing-backup-target = Valmistellaan varmuuskopiokansiota...
 updating-manifest = Päivitetään manifestia...
-no-cloud-changes = Ei muutoksia synkronoitavaksi
 backups-are-valid = Varmuuskopiot ovat kelvollisia.
 backups-are-invalid =
     Näiden pelien varmuuskopiot näyttävät olevan virheellisiä.

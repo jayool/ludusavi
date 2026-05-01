@@ -6,11 +6,6 @@ file-size = Dimensione
 file-location = Posizione
 overall = Nel complesso
 status = Stato
-cli-unrecognized-games = Nessuna informazione per questi giochi:
-cli-unable-to-request-confirmation = Impossibile richiedere conferma.
-    .winpty-workaround = Se stai usando un emulatore Bash (come Git Bash), prova ad eseguire winpty.
-cli-backup-id-with-multiple-games = Impossibile specificare l'ID di backup quando si ripristinano più giochi.
-cli-invalid-backup-id = ID Backup invalido.
 badge-failed = FALLITO
 badge-duplicates = DUPLICATI
 badge-duplicated = DUPLICATO
@@ -21,7 +16,6 @@ some-entries-failed = Alcune voci non sono riuscite a elaborare; cerca { badge-f
 cli-game-line-item-redirected = Reindirizzato da: { $path }
 cli-game-line-item-redirecting = Reindirizzamento a: { $path }
 button-backup = Backup
-button-preview = Anteprima
 button-restore = Ripristina
 button-nav-backup = MODALITÀ BACKUP
 button-nav-restore = MODALITÀ RIPRISTINO
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Errore: Impossibile navigare sul tuo sistema.
 unable-to-open-directory = Errore: impossibile aprire la directory:
 unable-to-open-url = Errore: Impossibile aprire l'URL:
 unable-to-configure-cloud = Impossibile configurare cloud.
-unable-to-synchronize-with-cloud = Impossibile sincronizzare con il cloud.
 cloud-synchronize-conflict = I backup locali e del cloud sono in conflitto. Apri Ludusavi ed esegui un caricamento o un download per risolvere il problema.
 command-unlaunched = Comando non avviato: { $command }
 command-terminated = Comando terminato improvvisamente: { $command }
@@ -118,7 +111,6 @@ label-enabled = Abilitato
 label-disabled = Disabilitato
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Threads
-label-cloud = Cloud
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Nome remote
@@ -139,7 +131,6 @@ label-password = Password
 label-provider = Fornitore
 label-custom = Personalizzato
 label-none = Nessuno
-label-change-count = Modifiche: { $total }
 label-unscanned = Non scansionato
 # This refers to a local file on the computer
 label-file = File
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Sei sicuro di voler procedere con il ripristino?
     Questo sovrascriverà tutti i file attuali con i backup da qui:
-confirm-cloud-upload =
-    Vuoi sostituire i tuoi file cloud con quelli locali?
-    I tuoi file cloud ({ $cloud-path }) diventeranno una copia esatta dei tuoi file locali ({ $local-path }).
-    I file nel cloud verranno aggiornati o cancellati se necessario.
-confirm-cloud-download =
-    Vuoi sostituire i tuoi file locali con quelli cloud?
-    I tuoi file locali ({ $local-path }) diventeranno una copia esatta dei file cloud ({ $cloud-path }).
-    I file locali saranno aggiornati o cancellati se necessario.
 confirm-add-missing-roots = Aggiungere queste radici?
 no-missing-roots = Nessuna radice aggiuntiva trovata.
-loading = Caricamento in corso...
 preparing-backup-target = Preparazione directory di backup...
 updating-manifest = Aggiornamento manifest...
-no-cloud-changes = Nessuna modifica da sincronizzare
 backups-are-valid = I tuoi backup sono validi.
 backups-are-invalid =
     I backup di questi giochi sembrano non essere validi.

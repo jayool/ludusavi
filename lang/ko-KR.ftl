@@ -6,11 +6,6 @@ file-size = 크기
 file-location = 위치
 overall = 전체
 status = 상태
-cli-unrecognized-games = 다음 게임에 대한 정보가 없습니다:
-cli-unable-to-request-confirmation = 확인을 요청할 수 없습니다.
-    .winpty-workaround = Git Bash와 같은 Bash 에뮬레이터를 사용 중이라면, winpty를 사용해보세요.
-cli-backup-id-with-multiple-games = 복수 게임 복원 시 백업 ID를 지정할 수 없습니다.
-cli-invalid-backup-id = 잘못된 백업 ID
 badge-failed = 실패
 badge-duplicates = 중복됨
 badge-duplicated = 복사됨
@@ -21,7 +16,6 @@ some-entries-failed = 일부 항목을 처리하지 못했습니다. { badge-fai
 cli-game-line-item-redirected = 다음에서 리다이렉트되었습니다: { $path }
 cli-game-line-item-redirecting = 다음으로 디다이렉트: { $path }
 button-backup = 백업
-button-preview = 미리보기
 button-restore = 복원
 button-nav-backup = 백업 모드
 button-nav-restore = 복원 모드
@@ -61,7 +55,6 @@ unable-to-browse-file-system = 오류: 시스템 탐색을 할 수 없습니다.
 unable-to-open-directory = 오류: 다음 디렉토리를 열 수 없습니다:
 unable-to-open-url = 오류: 다음 URL을 열 수 없습니다:
 unable-to-configure-cloud = 클라우드를 구성할 수 없습니다.
-unable-to-synchronize-with-cloud = 클라우드와 동기화 할 수 없습니다.
 cloud-synchronize-conflict = 로컬 백업과 클라우드 백업이 충돌합니다. 이 문제를 해결하려면 업로드 또는 다운로드를 수행하세요.
 command-unlaunched = Command did not launch: { $command }
 command-terminated = Command terminated abruptly: { $command }
@@ -118,7 +111,6 @@ label-enabled = 활성화됨
 label-disabled = 비활성화됨
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = 스레드
-label-cloud = 클라우드
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Remote name
@@ -139,7 +131,6 @@ label-password = 비밀번호
 label-provider = 공급자
 label-custom = 사용자 정의
 label-none = 없음
-label-change-count = Changes: { $total }
 label-unscanned = Unscanned
 # This refers to a local file on the computer
 label-file = 파일
@@ -210,20 +201,10 @@ confirm-backup =
 confirm-restore =
     복원을 진행하시겠습니까?
     현재 파일을 여기에서 백업한 파일로 덮어씁니다:
-confirm-cloud-upload =
-    클라우드 파일을 로컬 파일로 교체하시겠습니까?
-    클라우드 파일 ({ $cloud-path }) 이 로컬 파일 ({ $local-path }) 의 정확한 복사본이 됩니다.
-    클라우드의 파일은 필요에 따라 업데이트되거나 삭제됩니다.
-confirm-cloud-download =
-    로컬 파일을 클라우드 파일로 교체하시겠습니까?
-    로컬 파일 ({ $local-path }) 이 클라우드 파일 ({ $cloud-path }) 의 정확한 복사본이 됩니다.
-    로컬 파일은 필요에 따라 업데이트되거나 삭제됩니다.
 confirm-add-missing-roots = 이 경로를 추가하시겠습니까?
 no-missing-roots = 추가할 경로를 찾을 수 없습니다.
-loading = 로드 중...
 preparing-backup-target = 백업 파일 준비 중...
 updating-manifest = 목록 업데이트 중...
-no-cloud-changes = 동기화할 변경 사항 없음
 backups-are-valid = 백업이 유효합니다.
 backups-are-invalid =
     이 게임들의 백업이 유효하지 않은 것 같습니다.

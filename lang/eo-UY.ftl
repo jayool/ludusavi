@@ -6,11 +6,6 @@ file-size = Grandeco
 file-location = Loko
 overall = Entute
 status = Stato
-cli-unrecognized-games = Neniuj informoj pri ĉi tiuj ludoj:
-cli-unable-to-request-confirmation = Ne eblas peti konfirmon.
-    .winpty-workaround = Se vi uzas Bash-emulilon (kiel Git Bash), provu ruli winpty.
-cli-backup-id-with-multiple-games = Cannot specify backup ID when restoring multiple games.
-cli-invalid-backup-id = Invalid backup ID.
 badge-failed = MALSUKCESIS
 badge-duplicates = DUPLIKAĴOJ
 badge-duplicated = DUPLIKITA
@@ -21,7 +16,6 @@ some-entries-failed = Kelkaj enskriboj malsukcesis procesi; serĉu { badge-faile
 cli-game-line-item-redirected = Alidirektita de: { $path }
 cli-game-line-item-redirecting = Alidirektante al: { $path }
 button-backup = Rezervo
-button-preview = Antaŭrigardo
 button-restore = Restaŭri
 button-nav-backup = BACKUP MODE
 button-nav-restore = RESTORE MODE
@@ -61,7 +55,6 @@ unable-to-browse-file-system = Error: Unable to browse on your system.
 unable-to-open-directory = Error: Unable to open directory:
 unable-to-open-url = Error: Unable to open URL:
 unable-to-configure-cloud = Unable to configure cloud.
-unable-to-synchronize-with-cloud = Unable to synchronize with cloud.
 cloud-synchronize-conflict = Your local and cloud backups are in conflict. Perform an upload or download to resolve this.
 command-unlaunched = Command did not launch: { $command }
 command-terminated = Command terminated abruptly: { $command }
@@ -118,7 +111,6 @@ label-enabled = Enabled
 label-disabled = Disabled
 # https://en.wikipedia.org/wiki/Thread_(computing)
 label-threads = Threads
-label-cloud = Cloud
 # A "remote" is what Rclone calls cloud systems like Google Drive.
 label-remote = Remote
 label-remote-name = Remote name
@@ -139,7 +131,6 @@ label-password = Password
 label-provider = Provider
 label-custom = Custom
 label-none = None
-label-change-count = Changes: { $total }
 label-unscanned = Unscanned
 # This refers to a local file on the computer
 label-file = File
@@ -212,20 +203,10 @@ confirm-backup =
 confirm-restore =
     Are you sure you want to proceed with the restoration?
     This will overwrite any current files with the backups from here:
-confirm-cloud-upload =
-    Do you want to replace your cloud files with your local files?
-    Your cloud files ({ $cloud-path }) will become an exact copy of your local files ({ $local-path }).
-    Files in the cloud will be updated or deleted as necessary.
-confirm-cloud-download =
-    Do you want to replace your local files with your cloud files?
-    Your local files ({ $local-path }) will become an exact copy of your cloud files ({ $cloud-path }).
-    Local files will be updated or deleted as necessary.
 confirm-add-missing-roots = Add these roots?
 no-missing-roots = No additional roots found.
-loading = Loading...
 preparing-backup-target = Preparing backup directory...
 updating-manifest = Updating manifest...
-no-cloud-changes = No changes to synchronize
 backups-are-valid = Your backups are valid.
 backups-are-invalid =
     These games' backups appear to be invalid.
