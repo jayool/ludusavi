@@ -7,7 +7,7 @@ use chrono::{Datelike, Timelike};
 
 use crate::{
     path::StrictPath,
-    prelude::{AnyError, Error, INVALID_FILE_CHARS},
+    prelude::{AnyError, INVALID_FILE_CHARS},
     resource::{
         config::{
             BackupFormat, BackupFormats, RedirectConfig, Retention, ToggledPaths, ToggledRegistry, ZipCompression,
@@ -551,16 +551,6 @@ impl GameLayout {
                 }
                 BackupId::Latest
             }
-        }
-    }
-
-    pub fn validate_id(&self, id: &BackupId) -> Result<(), Error> {
-        match self.find_by_id(id) {
-            Some(_) => Ok(()),
-            None => match id {
-                BackupId::Latest => Err(Error::NoSaveDataFound),
-                BackupId::Named(_) => Err(Error::CliInvalidBackupId),
-            },
         }
     }
 

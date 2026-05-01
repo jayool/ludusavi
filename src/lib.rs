@@ -9,7 +9,6 @@ pub mod cloud;
 pub mod lang;
 pub mod path;
 pub mod prelude;
-pub mod report;
 pub mod resource;
 pub mod scan;
 pub mod serialization;

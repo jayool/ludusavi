@@ -94,12 +94,6 @@ pub enum Error {
     ConfigInvalid {
         why: String,
     },
-    CliUnrecognizedGames {
-        games: Vec<String>,
-    },
-    CliUnableToRequestConfirmation,
-    CliBackupIdWithMultipleGames,
-    CliInvalidBackupId,
     NoSaveDataFound,
     GameIsUnrecognized,
     SomeEntriesFailed,

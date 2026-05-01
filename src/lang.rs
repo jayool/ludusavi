@@ -2,7 +2,6 @@ use std::sync::{LazyLock, Mutex};
 
 use fluent::{bundle::FluentBundle, FluentArgs, FluentResource};
 use intl_memoizer::concurrent::IntlLangMemoizer;
-use itertools::Itertools;
 use regex::Regex;
 use unic_langid::LanguageIdentifier;
 
@@ -398,10 +397,6 @@ impl Translator {
             Error::ConfigInvalid { why } => self.config_is_invalid(why),
             Error::ManifestInvalid { why, identifier } => self.manifest_is_invalid(why, identifier.as_deref()),
             Error::ManifestCannotBeUpdated { identifier } => self.manifest_cannot_be_updated(identifier.as_deref()),
-            Error::CliUnrecognizedGames { games } => self.cli_unrecognized_games(games),
-            Error::CliUnableToRequestConfirmation => self.cli_unable_to_request_confirmation(),
-            Error::CliBackupIdWithMultipleGames => self.cli_backup_id_with_multiple_games(),
-            Error::CliInvalidBackupId => self.cli_invalid_backup_id(),
             Error::NoSaveDataFound => self.notify_single_game_status(false),
             Error::GameIsUnrecognized => self.game_is_unrecognized(),
             Error::SomeEntriesFailed => self.some_entries_failed(),
@@ -459,30 +454,6 @@ impl Translator {
                 out
             }
         }
-    }
-
-    pub fn cli_unrecognized_games(&self, games: &[String]) -> String {
-        let prefix = translate("cli-unrecognized-games");
-        let lines = games.iter().map(|x| format!("  - {x}")).join("\n");
-        format!("{prefix}\n{lines}")
-    }
-
-    pub fn cli_unable_to_request_confirmation(&self) -> String {
-        #[cfg(target_os = "windows")]
-        let extra_note = translate("cli-unable-to-request-confirmation.winpty-workaround");
-
-        #[cfg(not(target_os = "windows"))]
-        let extra_note = "";
-
-        format!("{} {}", translate("cli-unable-to-request-confirmation"), extra_note)
-    }
-
-    pub fn cli_backup_id_with_multiple_games(&self) -> String {
-        translate("cli-backup-id-with-multiple-games")
-    }
-
-    pub fn cli_invalid_backup_id(&self) -> String {
-        translate("cli-invalid-backup-id")
     }
 
     pub fn cloud_not_configured(&self) -> String {
