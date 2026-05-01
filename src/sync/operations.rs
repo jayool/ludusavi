@@ -85,6 +85,7 @@ pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Resul
 
     let mut files_processed = 0u32;
     let mut bytes_processed = 0u64;
+    let mut latest_mtime: Option<std::time::SystemTime> = None;
 
     for entry in walkdir::WalkDir::new(folder)
         .follow_links(true)
@@ -132,9 +133,21 @@ pub fn create_zip_from_folder(folder_path: &str, zip_path: &StrictPath) -> Resul
         }
 
         files_processed += 1;
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                latest_mtime = Some(latest_mtime.map_or(mtime, |existing| existing.max(mtime)));
+            }
+        }
     }
 
     zip.finish().map_err(|e| SyncError::ZipError(format!("zip.finish() failed: {e}")))?;
+
+    // El mtime del ZIP se fija al del save mas reciente para que la comparacion
+    // de status en LOCAL (mtime ZIP vs mtime saves) muestre "synced" tras un
+    // backup, en lugar de "pending_restore" por el ZIP recien creado.
+    if let Some(mtime) = latest_mtime {
+        let _ = filetime::set_file_mtime(&zip_std, filetime::FileTime::from_system_time(mtime));
+    }
 
     log::debug!(
         "[zip] Created {:?} ({} files, {} bytes)",

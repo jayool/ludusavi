@@ -6,7 +6,7 @@ use iced::{
 use itertools::Itertools;
 
 use crate::{
-    cloud::{Remote, RemoteChoice, WebDavProvider},
+    cloud::{Remote, WebDavProvider},
     gui::{
         button,
         common::{Message, Operation, ScrollSubject, UndoSubject},
@@ -230,9 +230,9 @@ impl Modal {
             Self::NoMissingRoots => TRANSLATOR.no_missing_roots(),
             Self::ConfirmAddMissingRoots(missing) => TRANSLATOR.confirm_add_missing_roots(missing),
             Self::UpdatingManifest => TRANSLATOR.updating_manifest(),
-            Self::ConfigureFtpRemote { .. } => RemoteChoice::Ftp.to_string(),
-            Self::ConfigureSmbRemote { .. } => RemoteChoice::Smb.to_string(),
-            Self::ConfigureWebDavRemote { .. } => RemoteChoice::WebDav.to_string(),
+            Self::ConfigureFtpRemote { .. } => "FTP\n\nEnter the host, port, and credentials to connect to the server.".to_string(),
+            Self::ConfigureSmbRemote { .. } => "SMB\n\nEnter the host, port, and credentials to connect to the share.".to_string(),
+            Self::ConfigureWebDavRemote { .. } => "WebDAV\n\nEnter the server URL and credentials.".to_string(),
             Self::ActiveScanGames => "".to_string(),
             Self::ConfirmSyncBackup { game } => {
                 format!("Back up saves for \"{}\"?\n\nThis will overwrite the existing backup with the current save files.", game)
@@ -391,6 +391,9 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfigureFtpRemote { .. }
+            | Self::ConfigureSmbRemote { .. }
+            | Self::ConfigureWebDavRemote { .. }
         );
 
         let mut col = if is_sync_modal {
@@ -435,7 +438,7 @@ impl Modal {
                     .push(
                         Row::new()
                             .align_y(Alignment::Center)
-                            .spacing(12)
+                            .spacing(8)
                             .push(text("Name").size(12).class(style::Text::Muted).width(110))
                             .push(
                                 iced::widget::text_input("e.g. Hades", name)
@@ -470,15 +473,18 @@ impl Modal {
                 col = col.push(form);
             }
             Self::ConfigureFtpRemote { .. } | Self::ConfigureSmbRemote { .. } => {
-                col = col
+                let form = Column::new()
+                    .spacing(12)
                     .width(500)
                     .push(ModalField::view(ModalInputKind::Host, histories))
                     .push(ModalField::view(ModalInputKind::Port, histories))
                     .push(ModalField::view(ModalInputKind::Username, histories))
                     .push(ModalField::view(ModalInputKind::Password, histories));
+                col = col.push(form);
             }
             Self::ConfigureWebDavRemote { provider, .. } => {
-                col = col
+                let form = Column::new()
+                    .spacing(12)
                     .width(500)
                     .push(ModalField::view(ModalInputKind::Url, histories))
                     .push(ModalField::view(ModalInputKind::Username, histories))
@@ -489,6 +495,7 @@ impl Modal {
                         WebDavProvider::ALL,
                         ModalField::WebDavProvider,
                     ));
+                col = col.push(form);
             }
             Self::ActiveScanGames => {
                 if let Some(games) = operation.active_games() {
