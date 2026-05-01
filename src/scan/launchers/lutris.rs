@@ -4,7 +4,6 @@ use crate::{
     prelude::StrictPath,
     resource::{config::root, manifest::Os},
     scan::{LauncherGame, TitleFinder, TitleQuery},
-    wrap,
 };
 
 #[derive(Debug)]
@@ -174,21 +173,6 @@ pub fn scan(root: &root::Lutris, title_finder: &TitleFinder) -> HashMap<String, 
         } else {
             log::trace!("Unable to determine game");
         }
-    }
-
-    if let Some(metadata) = wrap::lutris::infer_metadata() {
-        let install_dir = metadata
-            .base
-            .as_ref()
-            .zip(metadata.prefix.as_ref())
-            .and_then(|(install, prefix)| normalize_install_dir(install, prefix))
-            .or(metadata.base);
-
-        games.entry(metadata.title).or_default().insert(LauncherGame {
-            platform: metadata.prefix.is_some().then_some(Os::Windows),
-            install_dir,
-            prefix: metadata.prefix,
-        });
     }
 
     log::trace!("Finished scanning Lutris root for games: {:?}", &root.path);
