@@ -945,7 +945,6 @@ impl GameLayout {
             return None;
         }
 
-        // Retention upstream eliminada: el fork mantiene siempre 1 full y 0 diffs.
         let backup = Backup::Full(self.plan_full_backup(scan, now, format));
 
         backup.needed().then_some(backup)
@@ -1286,7 +1285,6 @@ impl GameLayout {
     }
 
     fn forget_excess_backups(&mut self) {
-        // Retention upstream eliminada: siempre conservamos 1 full y 0 diffs.
         let max_full: usize = 1;
         let max_diff: usize = 0;
         // We need to track by index rather than by ID.

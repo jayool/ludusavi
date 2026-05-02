@@ -7,10 +7,6 @@ You normally do not need to edit this file: the GUI updates it whenever
 you change a setting. It is documented here mostly for reference and
 troubleshooting.
 
-## Schema
-
-[docs/schema/config.yaml](../schema/config.yaml)
-
 ## Example
 
 ```yaml
