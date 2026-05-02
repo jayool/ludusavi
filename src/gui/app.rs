@@ -427,10 +427,6 @@ impl App {
                 let filter = std::sync::Arc::new(self.config.backup.filter.clone());
                 let steam_shortcuts = std::sync::Arc::new(steam);
                 let games_specified = self.operation.games_specified();
-                let retention = config
-                    .backup
-                    .retention
-                    .with_force_new_full(self.operation.should_force_new_full_backups());
 
                 for key in subjects {
                     let game = manifest.0[&key].clone();
@@ -491,7 +487,6 @@ impl App {
                                         &scan_info,
                                         &chrono::Utc::now(),
                                         &config.backup.format,
-                                        retention,
                                         config.backup.only_constructive,
                                     )
                                 } else {
@@ -1786,12 +1781,6 @@ impl App {
                         }
                         _ => {}
                     },
-                    config::Event::FullRetention(value) => {
-                        self.config.backup.retention.full = value;
-                    }
-                    config::Event::DiffRetention(value) => {
-                        self.config.backup.retention.differential = value;
-                    }
                     config::Event::BackupFormat(format) => {
                         self.config.backup.format.chosen = format;
                     }

@@ -323,15 +323,6 @@ impl Operation {
         }
     }
 
-    pub fn should_force_new_full_backups(&mut self) -> bool {
-        match self {
-            Operation::Idle => false,
-            Operation::Backup {
-                force_new_full_backup, ..
-            } => *force_new_full_backup,
-        }
-    }
-
     pub fn set_force_new_full_backups(&mut self, value: bool) {
         match self {
             Operation::Idle => (),

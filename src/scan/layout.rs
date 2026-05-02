@@ -10,7 +10,7 @@ use crate::{
     prelude::{AnyError, INVALID_FILE_CHARS},
     resource::{
         config::{
-            BackupFormat, BackupFormats, RedirectConfig, Retention, ToggledPaths, ToggledRegistry, ZipCompression,
+            BackupFormat, BackupFormats, RedirectConfig, ToggledPaths, ToggledRegistry, ZipCompression,
         },
         manifest::Os,
     },
@@ -942,10 +942,8 @@ impl GameLayout {
         kind: &BackupKind,
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
-        retention: Retention,
     ) -> String {
         if *kind == BackupKind::Full
-            && retention.full == 1
             && format.chosen == BackupFormat::Simple
             && self.mapping.backups.iter().all(|x| !x.locked)
         {
@@ -968,42 +966,15 @@ impl GameLayout {
         scan: &ScanInfo,
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
-        retention: Retention,
     ) -> Option<Backup> {
-        if !scan.found_anything_processable() && !retention.force_new_full {
+        if !scan.found_anything_processable() {
             return None;
         }
 
-        let kind = self.plan_backup_kind(retention);
-
-        let backup = match kind {
-            BackupKind::Full => Backup::Full(self.plan_full_backup(scan, now, format, retention)),
-            BackupKind::Differential => {
-                Backup::Differential(self.plan_differential_backup(scan, now, format, retention))
-            }
-        };
+        // Retention upstream eliminada: el fork mantiene siempre 1 full y 0 diffs.
+        let backup = Backup::Full(self.plan_full_backup(scan, now, format));
 
         backup.needed().then_some(backup)
-    }
-
-    fn plan_backup_kind(&self, retention: Retention) -> BackupKind {
-        if retention.force_new_full {
-            return BackupKind::Full;
-        }
-
-        let fulls = self.mapping.backups.iter().filter(|full| !full.locked).count() as u8;
-        let diffs = self
-            .mapping
-            .backups
-            .back()
-            .map(|x| x.children.iter().filter(|diff| !diff.locked).count())
-            .unwrap_or(0) as u8;
-
-        if fulls > 0 && (diffs < retention.differential || (retention.full == 1 && retention.differential > 0)) {
-            BackupKind::Differential
-        } else {
-            BackupKind::Full
-        }
     }
 
     fn plan_full_backup(
@@ -1011,7 +982,6 @@ impl GameLayout {
         scan: &ScanInfo,
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
-        retention: Retention,
     ) -> FullBackup {
         let mut files = BTreeMap::new();
         #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
@@ -1041,7 +1011,7 @@ impl GameLayout {
         }
 
         FullBackup {
-            name: self.generate_backup_name(&BackupKind::Full, now, format, retention),
+            name: self.generate_backup_name(&BackupKind::Full, now, format),
             when: *now,
             os: Some(Os::HOST),
             comment: None,
@@ -1052,12 +1022,12 @@ impl GameLayout {
         }
     }
 
+    #[allow(dead_code)]
     fn plan_differential_backup(
         &self,
         scan: &ScanInfo,
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
-        retention: Retention,
     ) -> DifferentialBackup {
         let mut files = BTreeMap::new();
         #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
@@ -1114,7 +1084,7 @@ impl GameLayout {
         }
 
         DifferentialBackup {
-            name: self.generate_backup_name(&BackupKind::Differential, now, format, retention),
+            name: self.generate_backup_name(&BackupKind::Differential, now, format),
             when: *now,
             os: Some(Os::HOST),
             comment: None,
@@ -1341,7 +1311,10 @@ impl GameLayout {
         }
     }
 
-    fn forget_excess_backups(&mut self, retention: Retention) {
+    fn forget_excess_backups(&mut self) {
+        // Retention upstream eliminada: siempre conservamos 1 full y 0 diffs.
+        let max_full: usize = 1;
+        let max_diff: usize = 0;
         // We need to track by index rather than by ID.
         // If we're merging into a single existing backup (like the special ID `.`),
         // then we may have two of them before pruning the older one.
@@ -1353,7 +1326,7 @@ impl GameLayout {
             .iter()
             .filter(|full| !full.locked && full.children.iter().all(|diff| !diff.locked))
             .count();
-        let mut excess_fulls = unlocked_fulls.saturating_sub(retention.full as usize);
+        let mut excess_fulls = unlocked_fulls.saturating_sub(max_full);
 
         for (i, full) in self.mapping.backups.iter_mut().enumerate() {
             let locked = full.locked || full.children.iter().any(|diff| diff.locked);
@@ -1363,7 +1336,7 @@ impl GameLayout {
             }
 
             let unlocked_diffs = full.children.iter().filter(|diff| !diff.locked).count();
-            let mut excess_diffs = unlocked_diffs.saturating_sub(retention.differential as usize);
+            let mut excess_diffs = unlocked_diffs.saturating_sub(max_diff);
 
             for (j, diff) in full.children.iter_mut().enumerate() {
                 let locked = diff.locked;
@@ -1508,7 +1481,6 @@ impl GameLayout {
         scan: &ScanInfo,
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
-        retention: Retention,
         only_constructive: bool,
     ) -> Option<BackupInfo> {
         if !scan.found_anything() {
@@ -1532,7 +1504,7 @@ impl GameLayout {
         }
 
         self.migrate_backups(true);
-        match self.plan_backup(scan, now, format, retention) {
+        match self.plan_backup(scan, now, format) {
             None => {
                 log::info!("[{}] no need for new backup", &scan.game_name);
                 None
@@ -1548,7 +1520,7 @@ impl GameLayout {
                 backup.prune_failures(&backup_info);
                 if backup.needed() {
                     self.insert_backup(backup.clone());
-                    self.forget_excess_backups(retention);
+                    self.forget_excess_backups();
                     self.save();
                 }
                 self.prune_irrelevant_parents();
@@ -2417,152 +2389,8 @@ mod tests {
             };
             assert_eq!(
                 None,
-                layout.plan_backup(&scan, &now(), &BackupFormats::default(), Retention::default())
+                layout.plan_backup(&scan, &now(), &BackupFormats::default())
             );
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_first_time() {
-            let layout = GameLayout::default();
-            assert_eq!(BackupKind::Full, layout.plan_backup_kind(Retention::default()));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_merged_single_full() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup::default()]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Full, layout.plan_backup_kind(Retention::new(1, 0)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_locked_single_full() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup {
-                        locked: true,
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Full, layout.plan_backup_kind(Retention::new(1, 0)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_multiple_full() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup::default()]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Full, layout.plan_backup_kind(Retention::new(2, 0)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_single_full_with_differential() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup::default()]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Differential, layout.plan_backup_kind(Retention::new(1, 1)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_single_full_with_differential_rollover() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup {
-                        children: VecDeque::from(vec![DifferentialBackup::default()]),
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Differential, layout.plan_backup_kind(Retention::new(1, 1)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_multiple_full_with_differential_room_remaining() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![
-                        FullBackup {
-                            children: VecDeque::from(vec![
-                                DifferentialBackup::default(),
-                                DifferentialBackup::default(),
-                            ]),
-                            ..Default::default()
-                        },
-                        FullBackup {
-                            children: VecDeque::from(vec![DifferentialBackup::default()]),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Differential, layout.plan_backup_kind(Retention::new(2, 2)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_multiple_full_with_differential_at_limit() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![
-                        FullBackup {
-                            children: VecDeque::from(vec![
-                                DifferentialBackup::default(),
-                                DifferentialBackup::default(),
-                            ]),
-                            ..Default::default()
-                        },
-                        FullBackup {
-                            children: VecDeque::from(vec![
-                                DifferentialBackup::default(),
-                                DifferentialBackup::default(),
-                            ]),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Full, layout.plan_backup_kind(Retention::new(2, 2)));
-        }
-
-        #[test]
-        fn can_plan_backup_kind_when_single_full_with_differential_at_limit_but_locked() {
-            let layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![FullBackup {
-                        children: VecDeque::from(vec![
-                            DifferentialBackup::default(),
-                            DifferentialBackup {
-                                locked: true,
-                                ..Default::default()
-                            },
-                        ]),
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            assert_eq!(BackupKind::Differential, layout.plan_backup_kind(Retention::new(1, 2)));
         }
 
         #[test]
@@ -2590,7 +2418,7 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                layout.plan_full_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_full_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2638,7 +2466,7 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                layout.plan_full_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_full_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2684,7 +2512,7 @@ mod tests {
                     registry: None,
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2742,7 +2570,7 @@ mod tests {
                     registry: None,
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2784,7 +2612,7 @@ mod tests {
                     }),
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2831,7 +2659,7 @@ mod tests {
                     }),
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2873,7 +2701,7 @@ mod tests {
                     registry: None,
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2908,7 +2736,7 @@ mod tests {
                     registry: Some(IndividualMappingRegistry { hash: None }),
                     ..Default::default()
                 },
-                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default(), Retention::default()),
+                layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
             );
         }
 
@@ -2945,7 +2773,7 @@ mod tests {
                 ..Default::default()
             };
 
-            layout.forget_excess_backups(Retention::new(1, 1));
+            layout.forget_excess_backups();
             assert_eq!(
                 VecDeque::from_iter(vec![FullBackup {
                     name: "2".to_string(),
@@ -2980,7 +2808,7 @@ mod tests {
                 ..Default::default()
             };
 
-            layout.forget_excess_backups(Retention::new(1, 0));
+            layout.forget_excess_backups();
             assert_eq!(
                 VecDeque::from_iter(vec![FullBackup {
                     name: SOLO.to_string(),
@@ -3044,7 +2872,7 @@ mod tests {
                 ..Default::default()
             };
 
-            layout.forget_excess_backups(Retention::new(1, 1));
+            layout.forget_excess_backups();
             assert_eq!(
                 VecDeque::from_iter(vec![
                     FullBackup {

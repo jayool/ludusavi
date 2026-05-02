@@ -81,8 +81,6 @@ pub enum Event {
     },
     SortKey(SortKey),
     SortReversed(bool),
-    FullRetention(u8),
-    DiffRetention(u8),
     BackupFormat(BackupFormat),
     BackupCompression(ZipCompression),
     CompressionLevel(i32),
@@ -839,53 +837,6 @@ pub struct Sort {
     pub reversed: bool,
 }
 
-#[derive(Clone, Debug, Copy, Eq, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(default, rename_all = "camelCase")]
-pub struct Retention {
-    /// Full backups to keep. Range: 1-255.
-    pub full: u8,
-    /// Differential backups to keep. Range: 0-255.
-    pub differential: u8,
-    #[serde(skip)]
-    pub force_new_full: bool,
-}
-
-impl Retention {
-    #[cfg(test)]
-    pub fn new(full: u8, differential: u8) -> Self {
-        Self {
-            full,
-            differential,
-            ..Default::default()
-        }
-    }
-
-    pub fn with_limits(self, full: Option<u8>, differential: Option<u8>) -> Self {
-        Self {
-            full: full.unwrap_or(self.full),
-            differential: differential.unwrap_or(self.differential),
-            ..self
-        }
-    }
-
-    pub fn with_force_new_full(self, force: bool) -> Self {
-        Self {
-            force_new_full: force,
-            ..self
-        }
-    }
-}
-
-impl Default for Retention {
-    fn default() -> Self {
-        Self {
-            full: 1,
-            differential: 0,
-            force_new_full: false,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum BackupFormat {
@@ -1105,7 +1056,6 @@ pub struct BackupConfig {
     pub toggled_paths: ToggledPaths,
     pub toggled_registry: ToggledRegistry,
     pub sort: Sort,
-    pub retention: Retention,
     pub format: BackupFormats,
     /// Don't create a new backup if there are only removed saves and no new/edited ones.
     pub only_constructive: bool,
@@ -1343,7 +1293,6 @@ impl Default for BackupConfig {
             toggled_paths: Default::default(),
             toggled_registry: Default::default(),
             sort: Default::default(),
-            retention: Retention::default(),
             format: Default::default(),
             only_constructive: Default::default(),
         }
@@ -2104,7 +2053,6 @@ mod tests {
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    retention: Retention::default(),
                     format: Default::default(),
                     only_constructive: false,
                 },
@@ -2232,7 +2180,6 @@ mod tests {
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    retention: Retention::default(),
                     format: Default::default(),
                     only_constructive: true,
                 },
@@ -2344,9 +2291,6 @@ backup:
   sort:
     key: status
     reversed: false
-  retention:
-    full: 1
-    differential: 0
   format:
     chosen: simple
     zip:
@@ -2448,7 +2392,6 @@ customGames:
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    retention: Retention::default(),
                     format: Default::default(),
                     only_constructive: false,
                 },
