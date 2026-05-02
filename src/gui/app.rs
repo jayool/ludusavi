@@ -25,7 +25,7 @@ use crate::{
     },
     lang::TRANSLATOR,
     prelude::{
-        app_dir, get_threads_from_env, initialize_rayon, EditAction, Error, Finality, RedirectEditActionField,
+        app_dir, get_threads_from_env, initialize_rayon, EditAction, Error, Finality,
         Security, StrictPath,
     },
     resource::{
@@ -223,10 +223,6 @@ impl App {
     fn invalidate_path_caches(&self) {
         for x in &self.config.roots {
             x.path().invalidate_cache();
-        }
-        for x in &self.config.redirects {
-            x.source.invalidate_cache();
-            x.target.invalidate_cache();
         }
         self.config.backup.path.invalidate_cache();
         self.config.restore.path.invalidate_cache();
@@ -451,8 +447,6 @@ impl App {
                                 let previous = layout.latest_backup(
                                     &key,
                                     SCAN_KIND,
-                                    &config.redirects,
-                                    config.restore.reverse_redirects,
                                     &config.restore.toggled_paths,
                                     config.backup.only_constructive,
                                 );
@@ -473,8 +467,6 @@ impl App {
                                     &config.backup.toggled_paths,
                                     &config.backup.toggled_registry,
                                     previous.as_ref(),
-                                    &config.redirects,
-                                    config.restore.reverse_redirects,
                                     &steam_shortcuts,
                                     config.backup.only_constructive,
                                 );
@@ -1444,9 +1436,6 @@ impl App {
                         self.text_histories.roots[index].clear_secondary();
                         self.config.roots[index].set_store(store);
                     }
-                    config::Event::RedirectKind(index, kind) => {
-                        self.config.redirects[index].kind = kind;
-                    }
                     config::Event::SecondaryManifestKind(index, kind) => {
                         self.config.manifest.secondary[index].convert(kind);
                     }
@@ -1461,38 +1450,6 @@ impl App {
                     }
                     config::Event::CustomGameIntegration(index, integration) => {
                         self.config.custom_games[index].integration = integration;
-                    }
-                    config::Event::Redirect(action, field) => {
-                        // TODO: Automatically refresh redirected paths in the game list.
-                        match action {
-                            EditAction::Add => {
-                                self.text_histories.redirects.push(Default::default());
-                                self.config.add_redirect(&StrictPath::default(), &StrictPath::default());
-                            }
-                            EditAction::Change(index, value) => match field {
-                                Some(RedirectEditActionField::Source) => {
-                                    self.text_histories.redirects[index].source.push(&value);
-                                    self.config.redirects[index].source.reset(value);
-                                }
-                                Some(RedirectEditActionField::Target) => {
-                                    self.text_histories.redirects[index].target.push(&value);
-                                    self.config.redirects[index].target.reset(value);
-                                }
-                                _ => {}
-                            },
-                            EditAction::Remove(index) => {
-                                self.text_histories.redirects.remove(index);
-                                self.config.redirects.remove(index);
-                            }
-                            EditAction::Move(index, direction) => {
-                                let offset = direction.shift(index);
-                                self.text_histories.redirects.swap(index, offset);
-                                self.config.redirects.swap(index, offset);
-                            }
-                        }
-                    }
-                    config::Event::ReverseRedirectsOnRestore(enabled) => {
-                        self.config.restore.reverse_redirects = enabled;
                     }
                     config::Event::CustomGame(action) => {
                         let mut snap = false;

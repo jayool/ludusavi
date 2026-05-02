@@ -8,7 +8,7 @@ use unic_langid::LanguageIdentifier;
 use crate::{
     prelude::{CommandError, Error, StrictPath, VARIANT},
     resource::{
-        config::{BackupFormat, CustomGameKind, RedirectKind, Root, SortKey, Theme, ZipCompression},
+        config::{BackupFormat, CustomGameKind, Root, SortKey, Theme, ZipCompression},
         manifest::Store,
     },
     scan::{game_filter, OperationStatus},
@@ -881,17 +881,6 @@ impl Translator {
         })
     }
 
-    pub fn redirect_kind(&self, redirect: &RedirectKind) -> String {
-        match redirect {
-            RedirectKind::Backup => self.backup_button(),
-            RedirectKind::Restore => self.restore_button(),
-            RedirectKind::Bidirectional => translate("redirect-bidirectional"),
-        }
-    }
-
-    pub fn reverse_redirects_when_restoring(&self) -> String {
-        translate("reverse-redirects-when-restoring")
-    }
 
     pub fn game_label(&self) -> String {
         translate("label-game")

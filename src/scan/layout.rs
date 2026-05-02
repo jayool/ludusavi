@@ -10,12 +10,12 @@ use crate::{
     prelude::{AnyError, INVALID_FILE_CHARS},
     resource::{
         config::{
-            BackupFormat, BackupFormats, RedirectConfig, ToggledPaths, ToggledRegistry, ZipCompression,
+            BackupFormat, BackupFormats, ToggledPaths, ToggledRegistry, ZipCompression,
         },
         manifest::Os,
     },
     scan::{
-        game_file_target, prepare_backup_target, registry, BackupError, BackupId, BackupInfo, ScanChange, ScanInfo,
+        prepare_backup_target, registry, BackupError, BackupId, BackupInfo, ScanChange, ScanInfo,
         ScanKind, ScannedFile,
     },
 };
@@ -597,8 +597,6 @@ impl GameLayout {
     pub fn latest_backup(
         &self,
         scan_kind: ScanKind,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
         only_constructive_backups: bool,
     ) -> Option<ScanInfo> {
@@ -610,8 +608,6 @@ impl GameLayout {
                 found_files: self.restorable_files(
                     &BackupId::Latest,
                     scan_kind,
-                    redirects,
-                    reverse_redirects_on_restore,
                     toggled_paths,
                 ),
                 // Registry is handled separately.
@@ -643,8 +639,6 @@ impl GameLayout {
         &self,
         id: &BackupId,
         scan_kind: ScanKind,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
     ) -> HashMap<StrictPath, ScannedFile> {
         let mut files = HashMap::new();
@@ -655,8 +649,6 @@ impl GameLayout {
                 files.extend(self.restorable_files_from_full_backup(
                     full,
                     scan_kind,
-                    redirects,
-                    reverse_redirects_on_restore,
                     toggled_paths,
                 ));
             }
@@ -664,16 +656,12 @@ impl GameLayout {
                 files.extend(self.restorable_files_from_diff_backup(
                     diff,
                     scan_kind,
-                    redirects,
-                    reverse_redirects_on_restore,
                     toggled_paths,
                 ));
 
                 for (scan_key, full_file) in self.restorable_files_from_full_backup(
                     full,
                     scan_kind,
-                    redirects,
-                    reverse_redirects_on_restore,
                     toggled_paths,
                 ) {
                     let original_path = full_file.original_path.as_ref().unwrap().render();
@@ -691,20 +679,13 @@ impl GameLayout {
         &self,
         backup: &FullBackup,
         scan_kind: ScanKind,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
     ) -> HashMap<StrictPath, ScannedFile> {
         let mut restorables = HashMap::new();
 
         for (mapping_key, v) in &backup.files {
             let original_path = StrictPath::new(mapping_key.to_string());
-            let redirected = game_file_target(
-                &original_path,
-                redirects,
-                reverse_redirects_on_restore,
-                ScanKind::Restore,
-            );
+            let redirected: Option<StrictPath> = None;
             let ignorable_path = redirected.as_ref().unwrap_or(&original_path);
             match backup.format() {
                 BackupFormat::Simple => {
@@ -761,8 +742,6 @@ impl GameLayout {
         &self,
         backup: &DifferentialBackup,
         scan_kind: ScanKind,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
     ) -> HashMap<StrictPath, ScannedFile> {
         let mut restorables = HashMap::new();
@@ -770,12 +749,7 @@ impl GameLayout {
         for (mapping_key, v) in &backup.files {
             let v = some_or_continue!(v);
             let original_path = StrictPath::new(mapping_key.to_string());
-            let redirected = game_file_target(
-                &original_path,
-                redirects,
-                reverse_redirects_on_restore,
-                ScanKind::Restore,
-            );
+            let redirected: Option<StrictPath> = None;
             let ignorable_path = redirected.as_ref().unwrap_or(&original_path);
             match backup.format() {
                 BackupFormat::Simple => {
@@ -1548,8 +1522,6 @@ impl GameLayout {
         &mut self,
         name: &str,
         id: &BackupId,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
         #[cfg_attr(not(target_os = "windows"), allow(unused))] toggled_registry: &ToggledRegistry,
     ) -> ScanInfo {
@@ -1570,8 +1542,6 @@ impl GameLayout {
             found_files = self.restorable_files(
                 &id,
                 ScanKind::Restore,
-                redirects,
-                reverse_redirects_on_restore,
                 toggled_paths,
             );
             available_backups = self.restorable_backups_flattened();
@@ -2182,8 +2152,6 @@ impl BackupLayout {
         &self,
         name: &str,
         scan_kind: ScanKind,
-        redirects: &[RedirectConfig],
-        reverse_redirects_on_restore: bool,
         toggled_paths: &ToggledPaths,
         only_constructive: bool,
     ) -> Option<LatestBackup> {
@@ -2192,8 +2160,6 @@ impl BackupLayout {
             let latest_timestamp = *game_layout.find_by_id_flattened(&BackupId::Latest)?.when();
             let scan = game_layout.latest_backup(
                 scan_kind,
-                redirects,
-                reverse_redirects_on_restore,
                 toggled_paths,
                 only_constructive,
             );
@@ -2968,7 +2934,7 @@ mod tests {
                         redirected: None,
                     },
                 },
-                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &[], false, &Default::default()),
+                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
             );
         }
 
@@ -3011,7 +2977,7 @@ mod tests {
                         redirected: None,
                     },
                 },
-                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &[], false, &Default::default()),
+                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
             );
         }
 
@@ -3074,7 +3040,7 @@ mod tests {
                         redirected: None,
                     },
                 },
-                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &[], false, &Default::default()),
+                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
             );
         }
 
@@ -3137,7 +3103,7 @@ mod tests {
                         redirected: None,
                     },
                 },
-                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &[], false, &Default::default()),
+                layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
             );
         }
     }
@@ -3235,8 +3201,6 @@ mod tests {
                 layout.scan_for_restoration(
                     "game1",
                     &BackupId::Latest,
-                    &[],
-                    false,
                     &Default::default(),
                     &Default::default()
                 ),
@@ -3295,8 +3259,6 @@ mod tests {
                     layout.scan_for_restoration(
                         "game3",
                         &BackupId::Latest,
-                        &[],
-                        false,
                         &Default::default(),
                         &Default::default()
                     ),
@@ -3330,8 +3292,6 @@ mod tests {
                     layout.scan_for_restoration(
                         "game3",
                         &BackupId::Latest,
-                        &[],
-                        false,
                         &Default::default(),
                         &Default::default()
                     ),

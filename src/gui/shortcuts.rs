@@ -180,12 +180,6 @@ impl RootHistory {
 }
 
 #[derive(Default)]
-pub struct RedirectHistory {
-    pub source: TextHistory,
-    pub target: TextHistory,
-}
-
-#[derive(Default)]
 pub struct CustomGameHistory {
     pub name: TextHistory,
     pub alias: TextHistory,
@@ -212,7 +206,6 @@ pub struct TextHistories {
     pub custom_games_search_game_name: TextHistory,
     pub roots: Vec<RootHistory>,
     pub secondary_manifests: Vec<TextHistory>,
-    pub redirects: Vec<RedirectHistory>,
     pub custom_games: Vec<CustomGameHistory>,
     pub backup_filter_ignored_paths: Vec<TextHistory>,
     pub backup_filter_ignored_registry: Vec<TextHistory>,
@@ -244,13 +237,6 @@ impl TextHistories {
 
         for x in &config.manifest.secondary {
             histories.secondary_manifests.push(TextHistory::raw(&x.value()));
-        }
-
-        for x in &config.redirects {
-            histories.redirects.push(RedirectHistory {
-                source: TextHistory::path(&x.source),
-                target: TextHistory::path(&x.target),
-            });
         }
 
         for x in &config.custom_games {

@@ -917,8 +917,6 @@ pub fn resolve_game_path_from_manifest(config: &Config, game_name: &str) -> Opti
         &ToggledPaths::default(),
         &ToggledRegistry::default(),
         None,
-        &config.redirects,
-        config.restore.reverse_redirects,
         &steam_shortcuts,
         false,
     );

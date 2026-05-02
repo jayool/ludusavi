@@ -648,8 +648,6 @@ fn auto_register_paths(
             &ToggledPaths::default(),
             &ToggledRegistry::default(),
             None,
-            &config.redirects,
-            config.restore.reverse_redirects,
             &steam_shortcuts,
             false,
         );

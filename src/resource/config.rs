@@ -10,7 +10,7 @@ use crate::{
     cloud::Remote,
     lang::{Language, TRANSLATOR},
     path::CommonPath,
-    prelude::{app_dir, EditAction, Error, RedirectEditActionField, Security, StrictPath, AVAILABLE_PARALELLISM},
+    prelude::{app_dir, EditAction, Error, Security, StrictPath, AVAILABLE_PARALELLISM},
     resource::{
         manifest::{self, CloudMetadata, Manifest, Store},
         ResourceFile, SaveableResourceFile,
@@ -35,12 +35,9 @@ pub enum Event {
     RootLutrisDatabase(usize, String),
     SecondaryManifest(EditAction),
     RootStore(usize, Store),
-    RedirectKind(usize, RedirectKind),
     SecondaryManifestKind(usize, SecondaryManifestConfigKind),
     CustomGameKind(usize, CustomGameKind),
     CustomGameIntegration(usize, Integration),
-    Redirect(EditAction, Option<RedirectEditActionField>),
-    ReverseRedirectsOnRestore(bool),
     CustomGame(EditAction),
     CustomGameAlias(usize, String),
     CustomGaleAliasDisplay(usize, bool),
@@ -107,7 +104,6 @@ pub struct Config {
     pub language: Language,
     pub theme: Theme,
     pub roots: Vec<Root>,
-    pub redirects: Vec<RedirectConfig>,
     pub backup: BackupConfig,
     pub restore: RestoreConfig,
     pub scan: Scan,
@@ -516,35 +512,6 @@ impl Root {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(default, rename_all = "camelCase")]
-pub struct RedirectConfig {
-    /// When and how to apply the redirect.
-    pub kind: RedirectKind,
-    /// The original location when the backup was performed.
-    pub source: StrictPath,
-    /// The new location.
-    pub target: StrictPath,
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum RedirectKind {
-    Backup,
-    #[default]
-    Restore,
-    Bidirectional,
-}
-
-impl RedirectKind {
-    pub const ALL: &'static [Self] = &[Self::Backup, Self::Restore, Self::Bidirectional];
-}
-
-impl ToString for RedirectKind {
-    fn to_string(&self) -> String {
-        TRANSLATOR.redirect_kind(self)
-    }
-}
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(default, rename_all = "camelCase")]
@@ -1071,7 +1038,6 @@ pub struct RestoreConfig {
     pub toggled_paths: ToggledPaths,
     pub toggled_registry: ToggledRegistry,
     pub sort: Sort,
-    pub reverse_redirects: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -1307,7 +1273,6 @@ impl Default for RestoreConfig {
             toggled_paths: Default::default(),
             toggled_registry: Default::default(),
             sort: Default::default(),
-            reverse_redirects: false,
         }
     }
 }
@@ -1324,8 +1289,6 @@ impl ResourceFile for Config {
     fn migrate(mut self) -> Self {
         self.roots.retain(|x| !x.path().raw().trim().is_empty());
         self.manifest.secondary.retain(|x| !x.value().trim().is_empty());
-        self.redirects
-            .retain(|x| !x.source.raw().trim().is_empty() && !x.target.raw().trim().is_empty());
         self.backup.filter.ignored_paths.retain(|x| !x.raw().trim().is_empty());
         self.backup
             .filter
@@ -1616,19 +1579,6 @@ impl Config {
                         .unwrap_or(false)
             }
         }
-    }
-
-    pub fn add_redirect(&mut self, source: &StrictPath, target: &StrictPath) {
-        let redirect = RedirectConfig {
-            kind: Default::default(),
-            source: source.clone(),
-            target: target.clone(),
-        };
-        self.redirects.push(redirect);
-    }
-
-    pub fn get_redirects(&self) -> Vec<RedirectConfig> {
-        self.redirects.to_vec()
     }
 
     pub fn add_custom_game(&mut self) {
@@ -2042,7 +1992,6 @@ mod tests {
                 language: Language::English,
                 theme: Theme::Light,
                 roots: vec![],
-                redirects: vec![],
                 backup: BackupConfig {
                     path: StrictPath::relative(s("~/backup"), Some(StrictPath::cwd().render())),
                     ignored_games: BTreeSet::new(),
@@ -2062,7 +2011,6 @@ mod tests {
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    reverse_redirects: false,
                 },
                 scan: Default::default(),
                 apps: Apps {
@@ -2092,10 +2040,6 @@ mod tests {
                 store: steam
               - path: ~/other
                 store: other
-            redirects:
-              - kind: restore
-                source: ~/old
-                target: ~/new
             backup:
               path: ~/backup
               ignoredGames:
@@ -2162,11 +2106,6 @@ mod tests {
                 language: Language::English,
                 theme: Theme::Light,
                 roots: vec![Root::new("~/steam", Store::Steam), Root::new("~/other", Store::Other),],
-                redirects: vec![RedirectConfig {
-                    kind: RedirectKind::Restore,
-                    source: StrictPath::new(s("~/old")),
-                    target: StrictPath::new(s("~/new")),
-                }],
                 backup: BackupConfig {
                     path: StrictPath::relative(s("~/backup"), Some(StrictPath::cwd().render())),
                     ignored_games: btree_set! {
@@ -2192,7 +2131,6 @@ mod tests {
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    reverse_redirects: false,
                 },
                 scan: Scan {
                     show_deselected_games: false,
@@ -2265,10 +2203,6 @@ roots:
     path: ~/steam
   - store: other
     path: ~/other
-redirects:
-  - kind: restore
-    source: ~/old
-    target: ~/new
 backup:
   path: ~/backup
   ignoredGames:
@@ -2314,7 +2248,6 @@ restore:
   sort:
     key: status
     reversed: false
-  reverseRedirects: false
 scan:
   showDeselectedGames: false
   showUnchangedGames: false
@@ -2373,11 +2306,6 @@ customGames:
                 language: Language::English,
                 theme: Theme::Light,
                 roots: vec![Root::new("~/steam", Store::Steam), Root::new("~/other", Store::Other),],
-                redirects: vec![RedirectConfig {
-                    kind: RedirectKind::Restore,
-                    source: StrictPath::new(s("~/old")),
-                    target: StrictPath::new(s("~/new")),
-                }],
                 backup: BackupConfig {
                     path: StrictPath::new(s("~/backup")),
                     ignored_games: btree_set! {
@@ -2405,7 +2333,6 @@ customGames:
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
-                    reverse_redirects: false,
                 },
                 scan: Scan {
                     show_deselected_games: false,
