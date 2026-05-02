@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=Ludusavi Sync
+Comment=Sync your PC video game save data across devices.
+Exec=ludusavi
+Icon=ludusavi-sync
+Terminal=false
+Categories=Game;
+Keywords=game;games;backup;save;saves;sync;cloud;
