@@ -1,10 +1,9 @@
 [package]
 name = "ludusavi"
-version = "0.30.0"
-authors = ["mtkennerly <mtkennerly@gmail.com>"]
+version = "0.1.0"
+authors = ["jayool"]
 edition = "2021"
-description = "Game save backup tool"
-repository = "https://github.com/mtkennerly/ludusavi"
+description = "Game save sync tool"
 readme = "README.md"
 license = "MIT"
 
@@ -93,24 +92,6 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 strip = true
-
-[package.metadata.binstall]
-bin-dir = "{ bin }{ binary-ext }"
-pkg-fmt = "zip"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-win64{ archive-suffix }"
-
-[package.metadata.binstall.overrides.i686-pc-windows-msvc]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-win32{ archive-suffix }"
-
-[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-linux{ archive-suffix }"
-pkg-fmt = "tgz"
-
-[package.metadata.binstall.overrides.x86_64-apple-darwin]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-mac{ archive-suffix }"
-pkg-fmt = "tgz"
 
 [lints.rust]
 mismatched_lifetime_syntaxes = "allow"
