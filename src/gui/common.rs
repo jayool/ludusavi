@@ -163,6 +163,7 @@ pub enum Message {
     AddGameConfirm,
     RemoveCustomGameRequested(String),
     RemoveCustomGameConfirm(String),
+    Accela(crate::gui::accela::Event),
 }
 
 impl Message {
@@ -383,6 +384,7 @@ pub enum Screen {
     AllDevices,
     Backup,
     CustomGames,
+    Accela,
     Other,
 }
 
@@ -453,7 +455,12 @@ impl From<Screen> for ScrollSubject {
         match value {
             Screen::Backup => Self::Backup,
             Screen::GameDetail(_) => Self::GameDetail,
-            Screen::Other | Screen::Games | Screen::ThisDevice | Screen::AllDevices | Screen::CustomGames => Self::Other,
+            Screen::Other
+            | Screen::Games
+            | Screen::ThisDevice
+            | Screen::AllDevices
+            | Screen::CustomGames
+            | Screen::Accela => Self::Other,
         }
     }
 }

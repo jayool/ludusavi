@@ -1,3 +1,4 @@
+mod accela;
 mod app;
 mod badge;
 mod button;

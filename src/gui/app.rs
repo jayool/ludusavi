@@ -137,6 +137,7 @@ pub struct App {
     sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig,
     sync_in_progress: Option<String>,
     game_detail_files_expanded: bool,
+    accela_screen: crate::gui::accela::AccelaScreen,
 }
 
 impl App {
@@ -900,6 +901,47 @@ impl App {
                 self.sync_games_config.save();
                 self.timed_notification = Some(Notification::new("✓ Sync enabled".to_string()).expires(2));
                 Task::none()
+            }
+            Message::Accela(event) => {
+                use crate::gui::accela::{Event as AE, Status};
+                match event {
+                    AE::AccelaPathChanged(s) => {
+                        self.accela_screen.accela_path = s;
+                        Task::none()
+                    }
+                    AE::PythonPathChanged(s) => {
+                        self.accela_screen.python_path = s;
+                        Task::none()
+                    }
+                    AE::QueryChanged(s) => {
+                        self.accela_screen.query = s;
+                        Task::none()
+                    }
+                    AE::SubmitSearch => {
+                        self.accela_screen.status = Status::Searching;
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        let query = self.accela_screen.query.clone();
+                        Task::perform(
+                            crate::gui::accela::run_search(python, adapter, accela, query),
+                            |result| match result {
+                                Ok(games) => Message::Accela(AE::SearchSucceeded(games)),
+                                Err(e) => Message::Accela(AE::SearchFailed(e)),
+                            },
+                        )
+                    }
+                    AE::SearchSucceeded(games) => {
+                        self.accela_screen.results = games;
+                        self.accela_screen.status = Status::Idle;
+                        Task::none()
+                    }
+                    AE::SearchFailed(e) => {
+                        self.accela_screen.results.clear();
+                        self.accela_screen.status = Status::Error(e);
+                        Task::none()
+                    }
+                }
             }
             Message::AddGameRequested => {
                 self.show_modal(Modal::AddGame {
@@ -2666,14 +2708,14 @@ impl App {
                             self.backup_screen.log.search.show = !self.backup_screen.log.search.show;
                             task = Some(iced::widget::operation::focus(id::backup_search()));
                         }
-                        Screen::Other | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::ToggledFilter { filter, enabled } => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.toggle_filter(filter, enabled);
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedGameName(value) => match self.screen {
                         Screen::Backup => {
@@ -2684,7 +2726,7 @@ impl App {
                             self.text_histories.custom_games_search_game_name.push(&value);
                             self.custom_games_screen.filter.name = value;
                         }
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::Reset => match self.screen {
                         Screen::Backup => {
@@ -2695,42 +2737,42 @@ impl App {
                             self.custom_games_screen.filter.reset();
                             self.text_histories.custom_games_search_game_name.push("");
                         }
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedFilterUniqueness(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.uniqueness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedFilterCompleteness(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.completeness.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedFilterEnablement(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.enablement.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedFilterChange(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.change.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                     game_filter::Event::EditedFilterManifest(value) => match self.screen {
                         Screen::Backup => {
                             self.backup_screen.log.search.manifest.choice = value;
                         }
                         Screen::CustomGames => {}
-                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices => {}
+                        Screen::Other | Screen::Games | Screen::GameDetail(_) | Screen::ThisDevice | Screen::AllDevices | Screen::Accela => {}
                     },
                 }
 
@@ -3357,6 +3399,7 @@ impl App {
                 .push(nav_item("🎮  Games", Screen::Games))
                 .push(nav_item("🖥  This device", Screen::ThisDevice))
                 .push(nav_item("📡  All devices", Screen::AllDevices))
+                .push(nav_item("📦  ACCELA", Screen::Accela))
                 .push(nav_item("⚙  Settings", Screen::Other));
 
             // Daemon status pill
@@ -5353,6 +5396,7 @@ impl App {
                 &self.sync_in_progress,
                 &self.timed_notification,
             ),
+            Screen::Accela => self.accela_screen.view(),
         };
 
         let body = Row::new()
