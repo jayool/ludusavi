@@ -11,7 +11,7 @@ use crate::{
         config::{BackupFormat, CustomGameKind, RedirectKind, Root, SortKey, Theme, ZipCompression},
         manifest::Store,
     },
-    scan::{game_filter, BackupError, OperationStatus, OperationStepDecision, ScanChange},
+    scan::{game_filter, OperationStatus},
 };
 
 const PATH: &str = "path";
@@ -522,125 +522,6 @@ impl Translator {
         translate_args("badge-redirecting-to", &args)
     }
 
-    pub fn cli_game_header(
-        &self,
-        name: &str,
-        bytes: u64,
-        decision: &OperationStepDecision,
-        duplicated: bool,
-        change: ScanChange,
-    ) -> String {
-        let mut labels = vec![];
-        match change {
-            ScanChange::New => {
-                labels.push(format!("[{}]", crate::lang::ADD_SYMBOL));
-            }
-            ScanChange::Different => {
-                labels.push(format!("[{}]", crate::lang::CHANGE_SYMBOL));
-            }
-            ScanChange::Removed | ScanChange::Same | ScanChange::Unknown => (),
-        }
-        if *decision == OperationStepDecision::Ignored {
-            labels.push(self.label_ignored());
-        }
-        if duplicated {
-            labels.push(self.label_duplicates());
-        }
-
-        if labels.is_empty() {
-            format!("{} [{}]:", name, self.adjusted_size(bytes))
-        } else {
-            format!("{} [{}] {}:", name, self.adjusted_size(bytes), labels.join(" "))
-        }
-    }
-
-    pub fn cli_game_line_item(
-        &self,
-        item: &str,
-        successful: bool,
-        ignored: bool,
-        duplicated: bool,
-        change: ScanChange,
-        nested: bool,
-    ) -> String {
-        let mut parts = vec![];
-        match change {
-            ScanChange::Same | ScanChange::Unknown => (),
-            ScanChange::New => parts.push(format!("[{ADD_SYMBOL}]")),
-            ScanChange::Different => parts.push(format!("[{CHANGE_SYMBOL}]")),
-            ScanChange::Removed => parts.push(format!("[{REMOVAL_SYMBOL}]")),
-        }
-        if !successful {
-            parts.push(self.label_failed());
-        }
-        if ignored {
-            parts.push(self.label_ignored());
-        }
-        if duplicated {
-            parts.push(self.label_duplicated());
-        }
-        parts.push(item.to_string());
-
-        if nested {
-            format!("    - {}", parts.join(" "))
-        } else {
-            format!("  - {}", parts.join(" "))
-        }
-    }
-
-    pub fn cli_game_line_item_redirected(&self, item: &str) -> String {
-        let mut args = FluentArgs::new();
-        args.set(PATH, item);
-        format!("    - {}", translate_args("cli-game-line-item-redirected", &args),)
-    }
-
-    pub fn cli_game_line_item_redirecting(&self, item: &str) -> String {
-        let mut args = FluentArgs::new();
-        args.set(PATH, item);
-        format!("    - {}", translate_args("cli-game-line-item-redirecting", &args),)
-    }
-
-    pub fn cli_game_line_item_error(&self, error: &BackupError) -> String {
-        format!("    - {}", error.message())
-    }
-
-    pub fn cli_summary(&self, status: &OperationStatus, location: &StrictPath) -> String {
-        let new_games = if status.changed_games.new > 0 {
-            format!(" [{}{}]", crate::lang::ADD_SYMBOL, status.changed_games.new)
-        } else {
-            "".to_string()
-        };
-        let changed_games = if status.changed_games.different > 0 {
-            format!(" [{}{}]", crate::lang::CHANGE_SYMBOL, status.changed_games.different)
-        } else {
-            "".to_string()
-        };
-
-        format!(
-            "{}:\n  {}: {}{}{}\n  {}: {}\n  {}: {}",
-            translate("overall"),
-            translate("total-games"),
-            if status.processed_all_games() {
-                status.processed_games.to_string()
-            } else {
-                format!("{} / {}", status.processed_games, status.total_games)
-            },
-            new_games,
-            changed_games,
-            translate("file-size"),
-            if status.processed_all_bytes() {
-                self.adjusted_size(status.processed_bytes)
-            } else {
-                format!(
-                    "{} / {}",
-                    self.adjusted_size(status.processed_bytes),
-                    self.adjusted_size(status.total_bytes)
-                )
-            },
-            translate("file-location"),
-            location.render(),
-        )
-    }
 
     pub fn backup_button(&self) -> String {
         translate("button-backup")
