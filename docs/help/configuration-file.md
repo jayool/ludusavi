@@ -1,18 +1,21 @@
-# Configuration
-Ludusavi stores its configuration in the [application folder](/docs/help/application-folder.md),
-in a file named `config.yaml`.
+# Configuration file
 
-If you're using the GUI, then it will automatically update the config file
-as needed, so you don't need to worry about its content. However, if you're
-using the CLI exclusively, then you'll need to edit `config.yaml` yourself.
+Ludusavi Sync stores its configuration in `config.yaml`, inside the
+[application folder](application-folder.md).
+
+You normally do not need to edit this file: the GUI updates it whenever
+you change a setting. It is documented here mostly for reference and
+troubleshooting.
 
 ## Schema
-[docs/schema/config.yaml](/docs/schema/config.yaml)
+
+[docs/schema/config.yaml](../schema/config.yaml)
 
 ## Example
+
 ```yaml
 manifest:
-  url: "https://raw.githubusercontent.com/mtkennerly/ludusavi-manifest/master/data/manifest.yaml"
+  url: ~
 roots:
   - path: "D:/Steam"
     store: steam

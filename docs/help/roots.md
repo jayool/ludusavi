@@ -1,79 +1,59 @@
 # Roots
-Roots are folders that Ludusavi can check for additional game data. When you
-first run Ludusavi, it will try to find some common roots on your system, but
-you may end up without any configured. These are listed on the "other" screen,
-where you can use the plus button in the roots section to configure as many as you need,
-along with the root's type:
 
-* For a Steam root, this should be the folder containing the `steamapps` and
-  `userdata` subdirectories. Here are some common/standard locations:
-  * Windows: `C:/Program Files (x86)/Steam`
-  * Linux: `~/.steam/steam`
+Roots are folders where Ludusavi Sync looks for installed games and their
+save data. On first launch, the application tries to detect a few common
+roots automatically; you can review and adjust them on the "other" screen.
 
-  On Linux, for games that use Proton, Ludusavi will back up the `*.reg` files
-  if the game is known to have registry-based saves.
+Each root has a **type** that tells the application what to expect inside.
 
-  On Linux, if you've used Steam's "add a non-Steam game" feature,
-  then Ludusavi will also back up any Proton save data for those games.
-  This requires the shortcut name in Steam to match the title by which Ludusavi knows the game
-  (i.e., the title of its PCGamingWiki article).
-* For a Heroic root, this should be the folder containing the `gog_store`
-  and `GamesConfig` subdirectories.
+## Root types
 
-  Ludusavi can find GOG, Epic, Amazon, and sideloaded game saves in Heroic's game install folders.
-  On Linux, Ludusavi can also find saves in Heroic's Wine, Proton, and Lutris prefixes.
+* **Steam.** The folder containing `steamapps` and `userdata`.
+  Common locations: `C:/Program Files (x86)/Steam` on Windows,
+  `~/.steam/steam` on Linux. On Linux, Proton's `*.reg` files are
+  backed up automatically for games known to have registry-based saves.
+  Non-Steam games added to Steam are also picked up if their shortcut
+  name in Steam matches the title used by the manifest.
 
-  When using Wine prefixes with Heroic, Ludusavi will back up the `*.reg` files
-  if the game is known to have registry-based saves.
-* For a Legendary root, this should be the folder containing `installed.json`.
-  Currently, Ludusavi cannot detect Wine prefixes for Legendary roots.
-* For a Lutris root, this should be the folder containing the `games` subdirectory.
+* **Heroic.** The folder containing `gog_store` and `GamesConfig`.
+  Heroic stores GOG, Epic, Amazon, and sideloaded games here, and on
+  Linux also exposes Wine, Proton, and Lutris prefixes that
+  Ludusavi Sync can scan.
 
-  Ludusavi expects the game YAML files to contain a few fields,
-  particularly `name` and either `game.working_dir` or `game.exe`.
-  Games will be skipped if they don't have the necessary fields.
-* For the "other" root type and the remaining store-specific roots,
-  this should be a folder whose direct children are individual games.
-  For example, in the Epic Games store, this would be what you choose as the
-  "install location" for your games (e.g., if you choose `D:/Epic` and it
-  creates a subfolder for `D:/Epic/Celeste`, then the root would be `D:/Epic`).
-* For a home folder root, you may specify any folder. Whenever Ludusavi
-  normally checks your standard home folder (Windows: `%USERPROFILE%`,
-  Linux/Mac: `~`), it will additionally check this root. This is useful if
-  you set a custom `HOME` to manipulate the location of save data.
-* For a Wine prefix root, this should be the folder containing `drive_c`.
-  Currently, Ludusavi does not back up registry-based saves from the prefix,
-  but will back up any file-based saves.
-* The Windows, Linux, and Mac drive roots can be used
-  to make Ludusavi scan external hard drives with a separate OS installation.
-  For example, let's say you had a Windows laptop that broke,
-  but you recovered the hard drive and turned it into an external drive.
-  You could add it as a Windows drive root to make Ludusavi scan it.
+* **Legendary.** The folder containing `installed.json`. Wine prefixes
+  for Legendary roots are not currently detected.
 
-  In this case, Ludusavi can only look for normal/default locations of system folders.
-  Ludusavi will not be able to use the Windows API or check `XDG` environment variables
-  to detect alternative folder locations (e.g., if you've moved the `Documents` folder).
+* **Lutris.** The folder containing the `games` subdirectory. Each
+  game's YAML must have at least `name` and either `game.working_dir`
+  or `game.exe`; games missing those fields are skipped.
 
-You may use [globs] in root paths to identify multiple roots at once.
-If you have a folder name that contains a special glob character,
-you can escape it by wrapping it in brackets (e.g., `[` becomes `[[]`).
+* **"Other" and remaining store-specific types.** A folder whose direct
+  children are individual games. For example, in the Epic Games Store
+  this is the install location you chose for your library
+  (e.g. `D:/Epic`, with `D:/Epic/Celeste` underneath).
 
-<!--
-You may also use the placeholder `<game>` as part of a root path.
-In this case, for each game, Ludusavi will try replacing `<game>`
-with the game's title and any known install folder names from the manifest.
-For example, you may want to use this feature if you have a collection of
-game-specific Wine prefixes, so you could add a single Wine root entry
-with a path like `~/prefixes/<game>`.
-This has an advantage over the glob version `~/prefixes/*`
-because the glob would cause every prefix to be scanned for every game
-(resulting in a slower scan and potentially finding false positives),
-whereas `<game>` would only scan the prefix that applies to each game.
--->
+* **Home folder.** Any folder that should also be treated as a `~`
+  equivalent. Useful when you have changed `HOME` to relocate save data.
 
-The order of the configured roots is not significant.
-The only case where it may make a difference is if Ludusavi finds secondary manifests (`.ludusavi.yaml` files)
-*and* those manfiests contain overlapping entries for the same game,
-in which case Ludusavi will merge the data together in the order that it finds them.
+* **Wine prefix.** A folder containing `drive_c`. File-based saves are
+  backed up; registry-based saves inside the prefix are not.
 
-[globs]: https://en.wikipedia.org/wiki/Glob_(programming)
+* **Windows / Linux / Mac drive.** External drives carrying a separate
+  OS install. For example, an old Windows drive turned into an external
+  USB drive can be added as a Windows drive root so its saves can be
+  scanned. In this mode, only the default locations of system folders
+  are checked — there is no access to the OS APIs or `XDG` variables
+  that would resolve relocated folders.
+
+## Globs
+
+You may use [globs](https://en.wikipedia.org/wiki/Glob_(programming))
+in root paths to match several folders at once. Escape literal glob
+meta-characters by wrapping them in brackets (`[` becomes `[[]`).
+
+## Order
+
+The order in which roots are listed does not matter. The only edge case
+is secondary manifests (`.ludusavi.yaml` files): if two of them define
+overlapping data for the same game, Ludusavi Sync merges them in the
+order it discovered them.

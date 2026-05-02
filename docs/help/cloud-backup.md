@@ -1,49 +1,51 @@
 # Cloud backup
-Ludusavi integrates with [Rclone](https://rclone.org) to provide cloud backups.
-You can configure this on the "other" screen.
-Any Rclone remote is supported, but Ludusavi can help you configure some of the more common ones:
-Google Drive, OneDrive, Dropbox, Box, FTP servers, SMB servers, and WebDAV servers.
-Support is verified for Rclone 1.62.2, but other versions should work as well.
 
-If you turn on automtic synchronization,
-then Ludusavi will check if your local and cloud saves are already in sync at the start of a backup.
-If so, then any changes will be uploaded once the backup is done.
-If they weren't in sync to begin with, then Ludusavi will warn you about the conflict and leave the cloud data alone.
-You can perform an upload or download at any time on the "other" screen to resolve such a conflict.
+Ludusavi Sync uses [Rclone](https://rclone.org) for cloud storage. You
+configure the remote on the "other" screen.
 
-Bear in mind that many factors can affect cloud sync performance,
-including network speed, outages on the cloud side, and any limitations of Rclone itself.
-You can try setting custom Rclone arguments if you find that it is too slow.
-For example, `--fast-list` and/or `--ignore-checksum` can speed things up,
-while `--transfers=1` can help to avoid rate-limiting but may slow things down.
-The "other" screen has a field to configure custom arguments,
-and you can find documentation for them here: https://rclone.org/flags
+Any Rclone remote will work. The application can guide you through setting
+up the most common ones (Google Drive, OneDrive, Dropbox, Box, FTP, SMB,
+WebDAV); for anything else, configure the remote with `rclone config` first
+and then point Ludusavi Sync at the existing remote name.
 
-You can also use other cloud backup tools of your choice,
-as long as they can make the storage available as what looks like a normal folder.
-For example:
+## How it ties into save modes
 
-* If you use something like [Google Drive for Desktop](https://www.google.com/drive/download),
-  which creates a special drive (`G:`) to stream from/to the cloud,
-  then you can set Ludusavi's backup target to a folder in that drive.
-* If you use something like [Syncthing](https://syncthing.net),
-  which continuously synchronizes a local folder across systems,
-  then you can set Ludusavi's backup target to that local folder.
-* If you use Rclone's mounting functionality,
-  then you can set Ludusavi's backup target to the mount folder.
+Cloud sync is what makes the difference between save modes:
 
-## Rclone and Flatpak
-For Linux users who have installed Ludusavi via Flatpak,
-the default Flatpak permissions will keep Ludusavi from seeing your system copy of Rclone.
-Therefore, a copy of Rclone is included in the Flatpak environment,
-which you can reference as `/app/bin/rclone` in Ludusavi.
+* `LOCAL` games are never sent to the cloud.
+* `CLOUD` games are sent on demand whenever you trigger a backup.
+* `SYNC` games are sent automatically by the [daemon](daemon.md) shortly
+  after the on-disk save changes.
 
-If you prefer to use your system copy of Rclone,
-one solution is to give Ludusavi host filesystem access
-(`flatpak override com.github.mtkennerly.ludusavi --filesystem=host`).
-Then, in Ludusavi, you can set the Rclone executable path to
-`/var/run/host/usr/bin/rclone`.
+If your local and cloud copies are already in sync at the start of a
+backup, any new changes are uploaded once the backup completes. If they
+are out of sync, Ludusavi Sync warns you about the conflict and leaves
+the cloud data untouched. Manual upload and download buttons on the
+"other" screen let you resolve the conflict.
 
-You can also configure Ludusavi's list of Rclone arguments to include
-`--config /home/<USER>/.config/rclone/rclone.conf`
-if you want to share the configuration from your system copy.
+## Tuning Rclone
+
+Cloud throughput depends on your network, the cloud provider, and Rclone
+itself. The "other" screen has a field for custom Rclone arguments.
+Useful flags include:
+
+* `--fast-list` and/or `--ignore-checksum` to speed transfers up.
+* `--transfers=1` to avoid being rate-limited at the cost of speed.
+
+Full list: https://rclone.org/flags
+
+## Alternative: filesystem-mounted clouds
+
+You don't strictly need Ludusavi Sync's built-in Rclone integration. If
+you have a tool that exposes your cloud storage as a normal folder, you
+can point the backup target at that folder instead:
+
+* [Google Drive for Desktop](https://www.google.com/drive/download) creates
+  a `G:` drive that streams from/to the cloud.
+* [Syncthing](https://syncthing.net) keeps a local folder mirrored across
+  devices.
+* `rclone mount` mounts any remote as a folder.
+
+In all of these cases, the daemon's `SYNC` behaviour still works: it sees
+file changes locally and triggers a backup, and the underlying tool then
+moves the bytes.

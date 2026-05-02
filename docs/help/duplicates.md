@@ -1,10 +1,13 @@
 # Duplicates
-You may see a "duplicates" badge next to some games. This means that some of
-the same files were also backed up for another game. That could be intentional
-(e.g., an HD remaster may reuse the original save locations), but it could
-also be a sign of an issue in the manifest data. You can expand the game's
-file list to see which exact entries are duplicated.
 
-You can resolve conflicts by disabling certain save files from being backed up.
-Once a conflict is resolved, the badge will become faded.
-You can also click on the badge to view just the conflicting games.
+If two or more games are configured to back up the same file, a
+"duplicates" badge appears next to each of them.
+
+This is sometimes intentional — an HD remaster may legitimately reuse the
+original game's save folder — but it can also indicate a mistake in the
+manifest data or in your custom-game entries.
+
+To resolve a conflict, expand the game's file list and disable the
+overlapping save files for whichever game should not own them. Once the
+conflict is resolved, the badge fades. Click the badge itself to filter
+the game list to just the games that share files.

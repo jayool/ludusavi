@@ -1,12 +1,14 @@
 # Backup validation
-On the restore screen, there is a "validate" button that will check the integrity
-of the latest backup (full + differential, if any) for each game.
-You won't normally need to use this, but it exists for troubleshooting purposes.
 
-Specifically, this checks the following:
+The restore screen has a "validate" button that checks the integrity of the
+latest backup for every game. You should not normally need to use this; it
+exists for troubleshooting.
 
-* Is mapping.yaml malformed?
-* Is any file declared in mapping.yaml, but missing from the actual backup?
+The check looks for:
 
-If it finds problems, then it will prompt you to create new full backups for the games in question.
-At this time, it will not remove the invalid backups, outside of your normal retention settings.
+* `mapping.yaml` files that are missing or malformed.
+* Files that are listed in `mapping.yaml` but absent from the ZIP.
+
+If problems are found, Ludusavi Sync will prompt you to take a fresh
+backup of the affected games. Invalid backups are not deleted; that is up
+to you.
