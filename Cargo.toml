@@ -6,6 +6,7 @@ edition = "2021"
 description = "Game save sync tool"
 readme = "README.md"
 license = "MIT"
+default-run = "ludusavi"
 
 [[bin]]
 name = "ludusavi"
