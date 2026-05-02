@@ -77,9 +77,6 @@ fn translate(id: &str) -> String {
         "button-disable-all" => "Disable all",
         "button-customize" => "Customize",
         "button-exit" => "Exit",
-        "button-comment" => "Comment",
-        "button-lock" => "Lock",
-        "button-unlock" => "Unlock",
         "button-validate" => "Validate",
         "button-override-manifest" => "Override manifest",
         "button-extend-manifest" => "Extend manifest",
@@ -112,7 +109,6 @@ fn translate(id: &str) -> String {
         "label-updated" => "Updated",
         "label-new" => "New",
         "label-removed" => "Removed",
-        "label-comment" => "Comment",
         "label-unchanged" => "Unchanged",
         "label-backup" => "Backup",
         "label-scan" => "Scan",
@@ -254,18 +250,6 @@ impl Translator {
 
     pub fn pcgamingwiki(&self) -> String {
         "PCGamingWiki".to_string()
-    }
-
-    pub fn comment_button(&self) -> String {
-        translate("button-comment")
-    }
-
-    pub fn lock_button(&self) -> String {
-        translate("button-lock")
-    }
-
-    pub fn unlock_button(&self) -> String {
-        translate("button-unlock")
     }
 
     pub fn handle_error(&self, error: &Error) -> String {
@@ -847,10 +831,6 @@ impl Translator {
 
     pub fn updated_label(&self) -> String {
         self.field(&translate("label-updated"))
-    }
-
-    pub fn comment_label(&self) -> String {
-        translate("label-comment")
     }
 
     pub fn backup_label(&self) -> String {

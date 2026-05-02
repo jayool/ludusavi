@@ -101,36 +101,6 @@ impl Backup {
         }
     }
 
-    pub fn comment(&self) -> Option<&String> {
-        match self {
-            Self::Full(x) => x.comment.as_ref(),
-            Self::Differential(x) => x.comment.as_ref(),
-        }
-    }
-
-    pub fn set_comment(&mut self, comment: String) {
-        let comment = if comment.is_empty() { None } else { Some(comment) };
-
-        match self {
-            Self::Full(x) => x.comment = comment,
-            Self::Differential(x) => x.comment = comment,
-        }
-    }
-
-    pub fn locked(&self) -> bool {
-        match self {
-            Self::Full(x) => x.locked,
-            Self::Differential(x) => x.locked,
-        }
-    }
-
-    pub fn set_locked(&mut self, locked: bool) {
-        match self {
-            Self::Full(x) => x.locked = locked,
-            Self::Differential(x) => x.locked = locked,
-        }
-    }
-
     pub fn label(&self) -> String {
         match self {
             Self::Full(x) => x.label(),
@@ -240,11 +210,6 @@ pub struct FullBackup {
     pub when: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os: Option<Os>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-    /// Locked backups do not count toward retention limits and are never deleted.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub locked: bool,
     pub files: BTreeMap<String, IndividualMappingFile>,
     pub registry: IndividualMappingRegistry,
     pub children: VecDeque<DifferentialBackup>,
@@ -280,11 +245,6 @@ pub struct DifferentialBackup {
     pub when: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os: Option<Os>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-    /// Locked backups do not count toward retention limits and are never deleted.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub locked: bool,
     pub files: BTreeMap<String, Option<IndividualMappingFile>>,
     pub registry: Option<IndividualMappingRegistry>,
 }
@@ -900,10 +860,7 @@ impl GameLayout {
         now: &chrono::DateTime<chrono::Utc>,
         format: &BackupFormats,
     ) -> String {
-        if *kind == BackupKind::Full
-            && format.chosen == BackupFormat::Simple
-            && self.mapping.backups.iter().all(|x| !x.locked)
-        {
+        if *kind == BackupKind::Full && format.chosen == BackupFormat::Simple {
             SOLO.to_string()
         } else {
             let timestamp = Self::generate_file_friendly_timestamp(now);
@@ -970,8 +927,6 @@ impl GameLayout {
             name: self.generate_backup_name(&BackupKind::Full, now, format),
             when: *now,
             os: Some(Os::HOST),
-            comment: None,
-            locked: false,
             files,
             registry,
             children: VecDeque::new(),
@@ -1043,8 +998,6 @@ impl GameLayout {
             name: self.generate_backup_name(&BackupKind::Differential, now, format),
             when: *now,
             os: Some(Os::HOST),
-            comment: None,
-            locked: false,
             files,
             registry,
         }
@@ -1268,54 +1221,12 @@ impl GameLayout {
     }
 
     fn forget_excess_backups(&mut self) {
-        let max_full: usize = 1;
-        let max_diff: usize = 0;
-        // We need to track by index rather than by ID.
-        // If we're merging into a single existing backup (like the special ID `.`),
-        // then we may have two of them before pruning the older one.
-        let mut excess = vec![];
-
-        let unlocked_fulls = self
-            .mapping
-            .backups
-            .iter()
-            .filter(|full| !full.locked && full.children.iter().all(|diff| !diff.locked))
-            .count();
-        let mut excess_fulls = unlocked_fulls.saturating_sub(max_full);
-
-        for (i, full) in self.mapping.backups.iter_mut().enumerate() {
-            let locked = full.locked || full.children.iter().any(|diff| diff.locked);
-            if !locked && excess_fulls > 0 {
-                excess.push((i, None));
-                excess_fulls -= 1;
-            }
-
-            let unlocked_diffs = full.children.iter().filter(|diff| !diff.locked).count();
-            let mut excess_diffs = unlocked_diffs.saturating_sub(max_diff);
-
-            for (j, diff) in full.children.iter_mut().enumerate() {
-                let locked = diff.locked;
-                if !locked && excess_diffs > 0 {
-                    excess.push((i, Some(j)));
-                    excess_diffs -= 1;
-                }
-            }
+        // The fork keeps a single full backup per game and no differentials.
+        while self.mapping.backups.len() > 1 {
+            self.mapping.backups.pop_front();
         }
-
-        log::debug!("[{}] Excess backups: {:?}", &self.mapping.name, excess);
-
-        if !excess.is_empty() {
-            // Remove indices from biggest to smallest so that the order is stable.
-            excess.sort();
-            excess.reverse();
-
-            for (full, diff) in excess {
-                if let Some(diff) = diff {
-                    self.mapping.backups[full].children.remove(diff);
-                } else {
-                    self.mapping.backups.remove(full);
-                }
-            }
+        if let Some(full) = self.mapping.backups.back_mut() {
+            full.children.clear();
         }
     }
 
@@ -1408,8 +1319,6 @@ impl GameLayout {
             name,
             when,
             os,
-            comment,
-            locked,
             files,
             registry,
         } = initial.children.pop_front()?;
@@ -1417,8 +1326,6 @@ impl GameLayout {
         initial.name = name;
         initial.when = when;
         initial.os = os;
-        initial.comment = comment;
-        initial.locked = initial.locked || locked;
         initial.files = files.into_iter().filter_map(|(k, v)| Some((k, v?))).collect();
         if let Some(registry) = registry {
             initial.registry = registry;
@@ -1892,55 +1799,6 @@ impl GameLayout {
         }
 
         log::trace!("[{}] done removing empty backup subdirs", self.mapping.name);
-    }
-
-    pub fn modify_backup(
-        &mut self,
-        id: &BackupId,
-        on_full: impl FnOnce(&mut FullBackup),
-        on_diff: impl FnOnce(&mut DifferentialBackup),
-    ) {
-        match id {
-            BackupId::Latest => {
-                if let Some(full) = self.mapping.backups.back_mut() {
-                    if let Some(diff) = full.children.back_mut() {
-                        on_diff(diff);
-                    } else {
-                        on_full(full);
-                    }
-                }
-            }
-            BackupId::Named(id) => {
-                for full in &mut self.mapping.backups {
-                    if full.name == *id {
-                        on_full(full);
-                        return;
-                    }
-                    for diff in &mut full.children {
-                        if diff.name == *id {
-                            on_diff(diff);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn set_backup_comment(&mut self, id: &BackupId, comment: &str) {
-        let value = || {
-            if comment.is_empty() {
-                None
-            } else {
-                Some(comment.to_string())
-            }
-        };
-
-        self.modify_backup(id, |x| x.comment = value(), |x| x.comment = value());
-    }
-
-    pub fn set_backup_locked(&mut self, id: &BackupId, locked: bool) {
-        self.modify_backup(id, |x| x.locked = locked, |x| x.locked = locked);
     }
 
     /// Returns whether the backup is valid.
@@ -2553,38 +2411,6 @@ mod tests {
                     ..Default::default()
                 },
                 layout.plan_differential_backup(&scan, &now(), &BackupFormats::default()),
-            );
-        }
-
-        #[test]
-        fn can_forget_excess_backups_without_locks_using_duplicate_name() {
-            let mut layout = GameLayout {
-                mapping: IndividualMapping {
-                    backups: VecDeque::from_iter(vec![
-                        FullBackup {
-                            name: SOLO.to_string(),
-                            comment: Some("old".to_string()),
-                            ..Default::default()
-                        },
-                        FullBackup {
-                            name: SOLO.to_string(),
-                            comment: Some("new".to_string()),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            layout.forget_excess_backups();
-            assert_eq!(
-                VecDeque::from_iter(vec![FullBackup {
-                    name: SOLO.to_string(),
-                    comment: Some("new".to_string()),
-                    ..Default::default()
-                },]),
-                layout.mapping.backups,
             );
         }
 
