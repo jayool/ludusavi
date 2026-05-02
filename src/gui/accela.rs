@@ -223,7 +223,25 @@ impl AccelaScreen {
                 .into();
         }
 
-        let mut col = Column::new().spacing(4);
+        let header_row = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(text("AppID").size(11).class(style::Text::Muted).width(80))
+            .push(text("Name").size(11).class(style::Text::Muted).width(Length::Fill))
+            .push(
+                text("Manifest size")
+                    .size(11)
+                    .class(style::Text::Muted)
+                    .width(110),
+            )
+            .push(
+                text("Uploaded")
+                    .size(11)
+                    .class(style::Text::Muted)
+                    .width(110),
+            );
+
+        let mut col = Column::new().spacing(4).push(header_row);
         for game in &self.results {
             let size_str = match game.manifest_size {
                 Some(bytes) if game.manifest_available => format_size(bytes),
