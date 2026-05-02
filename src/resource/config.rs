@@ -1837,7 +1837,7 @@ mod tests {
                     enable: true,
                     secondary: vec![]
                 },
-                theme: Theme::Light,
+                theme: Theme::Dark,
                 roots: vec![],
                 backup: BackupConfig {
                     path: StrictPath::relative(s("~/backup"), Some(StrictPath::cwd().render())),
@@ -1944,7 +1944,7 @@ mod tests {
                         enable: true,
                     }]
                 },
-                theme: Theme::Light,
+                theme: Theme::Dark,
                 roots: vec![Root::new("~/steam", Store::Steam), Root::new("~/other", Store::Other),],
                 backup: BackupConfig {
                     path: StrictPath::relative(s("~/backup"), Some(StrictPath::cwd().render())),
