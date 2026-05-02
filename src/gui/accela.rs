@@ -17,6 +17,7 @@ use tokio::process::Command;
 
 use crate::gui::{
     common::{Message, ScrollSubject},
+    icon::Icon,
     style,
     widget::{text, Button, Column, Container, Element, Row, TextInput},
 };
@@ -37,6 +38,8 @@ pub enum Event {
     ZipProcessed(Result<GameDetail, String>),
     BackToSearch,
     FileDropped(PathBuf),
+    OpenAccelaPathPicker,
+    OpenPythonPathPicker,
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +196,13 @@ impl AccelaScreen {
                             .on_input(|s| Message::Accela(Event::AccelaPathChanged(s)))
                             .padding(6)
                             .size(12),
+                        )
+                        .push(
+                            Button::new(Icon::FolderOpen.text_small())
+                                .padding(5)
+                                .height(25)
+                                .width(25)
+                                .on_press(Message::Accela(Event::OpenAccelaPathPicker)),
                         ),
                 )
                 .push(
@@ -213,6 +223,13 @@ impl AccelaScreen {
                             .on_input(|s| Message::Accela(Event::PythonPathChanged(s)))
                             .padding(6)
                             .size(12),
+                        )
+                        .push(
+                            Button::new(Icon::FolderOpen.text_small())
+                                .padding(5)
+                                .height(25)
+                                .width(25)
+                                .on_press(Message::Accela(Event::OpenPythonPathPicker)),
                         ),
                 ),
         )
@@ -375,7 +392,12 @@ impl AccelaScreen {
                 );
 
             let id = game.game_id.clone();
-            let clickable = iced::widget::mouse_area(row)
+            let card = Container::new(row)
+                .padding([8, 10])
+                .width(Length::Fill)
+                .class(style::Container::GameListEntry);
+
+            let clickable = iced::widget::mouse_area(card)
                 .on_press(Message::Accela(Event::ResultClicked(id)));
 
             col = col.push(clickable);
@@ -557,15 +579,20 @@ async fn send_command(
     accela_path: &str,
     cmd_json: String,
 ) -> Result<serde_json::Value, String> {
-    let mut child = Command::new(python_path)
-        .arg(adapter_path)
+    let mut cmd = Command::new(python_path);
+    cmd.arg(adapter_path)
         .arg("--accela-path")
         .arg(accela_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn failed: {e}"))?;
+        .stderr(Stdio::piped());
+
+    // CREATE_NO_WINDOW = 0x08000000. Hide the console window that Windows
+    // would otherwise pop up for every spawned python process.
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
 
     let mut stdin = child
         .stdin

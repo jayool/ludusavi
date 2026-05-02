@@ -1038,6 +1038,22 @@ impl App {
                         self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
                         Task::none()
                     }
+                    AE::OpenAccelaPathPicker => Task::future(async move {
+                        match rfd::AsyncFileDialog::new().pick_folder().await {
+                            Some(handle) => Message::Accela(AE::AccelaPathChanged(
+                                handle.path().display().to_string(),
+                            )),
+                            None => Message::Ignore,
+                        }
+                    }),
+                    AE::OpenPythonPathPicker => Task::future(async move {
+                        match rfd::AsyncFileDialog::new().pick_file().await {
+                            Some(handle) => Message::Accela(AE::PythonPathChanged(
+                                handle.path().display().to_string(),
+                            )),
+                            None => Message::Ignore,
+                        }
+                    }),
                     AE::FileDropped(path) => {
                         let is_zip = path
                             .extension()
