@@ -463,7 +463,6 @@ mod tests {
             ignored: false,
             change: Default::default(),
             container: None,
-            redirected: None,
         };
         let scan_key_1b = StrictPath::from("file1b.txt");
         let file1b = ScannedFile {
@@ -473,7 +472,6 @@ mod tests {
             ignored: false,
             change: Default::default(),
             container: None,
-            redirected: None,
         };
 
         detector.add_game(
@@ -515,8 +513,7 @@ mod tests {
                     ignored: false,
                     change: Default::default(),
                     container: None,
-                    redirected: None,
-                }
+                        }
             )
         );
 
@@ -542,8 +539,7 @@ mod tests {
                     ignored: false,
                     change: Default::default(),
                     container: None,
-                    redirected: None,
-                }
+                        }
             )
         );
     }

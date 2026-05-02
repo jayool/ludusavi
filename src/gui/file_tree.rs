@@ -188,18 +188,6 @@ impl FileTreeNode {
                             .map(|x| Badge::new(&TRANSLATOR.badge_failed()).tooltip(x.clone()).view()),
                     )
                     .push({
-                        self.scanned_file.as_ref().and_then(|(scan_key, scanned)| {
-                            let scan_kind = scanned.scan_kind();
-                            scanned.alt(scan_key, scan_kind).as_ref().map(|alt| {
-                                let msg = match scan_kind {
-                                    ScanKind::Backup => TRANSLATOR.badge_redirecting_to(alt),
-                                    ScanKind::Restore => TRANSLATOR.badge_redirected_from(alt),
-                                };
-                                Badge::new(&msg).view()
-                            })
-                        })
-                    })
-                    .push({
                         self.scanned_file.as_ref().map(|(_, f)| {
                             let size = TRANSLATOR.adjusted_size(f.size);
                             Badge::new(&size).faded(f.ignored).view()
@@ -509,7 +497,7 @@ impl FileTree {
         let mut nodes = BTreeMap::<TreeNodeKey, FileTreeNode>::new();
 
         for (scan_key, item) in &scan_info.found_files {
-            let rendered = item.readable(scan_key, scan_info.scan_kind());
+            let rendered = item.readable(scan_key);
             let components: Vec<_> = rendered.split('/').map(|x| TreeNodeKey::File(x.to_string())).collect();
 
             nodes

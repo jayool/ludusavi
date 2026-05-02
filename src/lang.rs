@@ -213,8 +213,6 @@ fn translate(id: &str) -> String {
 
 fn translate_args(id: &str, args: &LangArgs) -> String {
     let template: &'static str = match id {
-        "badge-redirected-from" => "FROM: {$path}",
-        "badge-redirecting-to" => "TO: {$path}",
         "button-get-app" => "Get {$app}",
         "command-unlaunched" => "Command did not launch: {$command}",
         "command-terminated" => "Command terminated abruptly: {$command}",
@@ -382,19 +380,6 @@ impl Translator {
     pub fn badge_ignored(&self) -> String {
         translate("badge-ignored")
     }
-
-    pub fn badge_redirected_from(&self, original: &StrictPath) -> String {
-        let mut args = LangArgs::new();
-        args.set(PATH, original.render());
-        translate_args("badge-redirected-from", &args)
-    }
-
-    pub fn badge_redirecting_to(&self, path: &StrictPath) -> String {
-        let mut args = LangArgs::new();
-        args.set(PATH, path.render());
-        translate_args("badge-redirecting-to", &args)
-    }
-
 
     pub fn backup_button(&self) -> String {
         translate("button-backup")

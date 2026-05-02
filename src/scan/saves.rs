@@ -15,7 +15,6 @@ pub struct ScannedFile {
     pub change: ScanChange,
     /// An enclosing archive file, if any, depending on the `BackupFormat`.
     pub container: Option<StrictPath>,
-    pub redirected: Option<StrictPath>,
 }
 
 impl ScannedFile {
@@ -28,7 +27,6 @@ impl ScannedFile {
             ignored: false,
             change: Default::default(),
             container: None,
-            redirected: None,
         }
     }
 
@@ -41,7 +39,6 @@ impl ScannedFile {
             ignored: false,
             change,
             container: None,
-            redirected: None,
         }
     }
 
@@ -85,38 +82,12 @@ impl ScannedFile {
 
     /// This is used for operations.
     pub fn effective<'a>(&'a self, scan_key: &'a StrictPath) -> &'a StrictPath {
-        self.redirected.as_ref().unwrap_or_else(|| self.original_path(scan_key))
+        self.original_path(scan_key)
     }
 
     /// This is the main path to show to the user.
-    pub fn readable(&self, scan_key: &StrictPath, scan_kind: ScanKind) -> String {
-        match scan_kind {
-            ScanKind::Backup => self.original_path(scan_key).render(),
-            ScanKind::Restore => self
-                .redirected
-                .as_ref()
-                .unwrap_or_else(|| self.original_path(scan_key))
-                .render(),
-        }
-    }
-
-    /// This is shown in the GUI/CLI to annotate the `readable` path.
-    pub fn alt<'a>(&'a self, scan_key: &'a StrictPath, scan_kind: ScanKind) -> Option<&'a StrictPath> {
-        match scan_kind {
-            ScanKind::Backup => self.redirected.as_ref(),
-            ScanKind::Restore => {
-                if self.redirected.is_some() {
-                    Some(self.original_path(scan_key))
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
-    /// This is shown in the GUI/CLI to annotate the `readable` path.
-    pub fn alt_readable(&self, scan_key: &StrictPath, scan_kind: ScanKind) -> Option<String> {
-        self.alt(scan_key, scan_kind).map(|x| x.render())
+    pub fn readable(&self, scan_key: &StrictPath) -> String {
+        self.original_path(scan_key).render()
     }
 
     pub fn will_take_space(&self) -> bool {

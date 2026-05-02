@@ -341,7 +341,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use velcro::{btree_map, hash_map};
 
-    use crate::{path::StrictPath, scan::ScannedRegistryValue};
+    use crate::scan::ScannedRegistryValue;
 
     use super::*;
 
@@ -453,37 +453,6 @@ mod tests {
         };
 
         assert_eq!(ScanChange::Same, scan.overall_change());
-    }
-
-    #[test]
-    fn overall_change_when_game_is_fully_redirected() {
-        let scan = ScanInfo {
-            found_files: hash_map! {
-                "/new".into(): ScannedFile {
-                    redirected: Some(StrictPath::new("/old")),
-                    change: ScanChange::New,
-                    ..Default::default()
-                },
-            },
-            has_backups: false,
-            ..Default::default()
-        };
-
-        assert_eq!(ScanChange::New, scan.overall_change());
-
-        let scan = ScanInfo {
-            found_files: hash_map! {
-                "/new".into(): ScannedFile {
-                    redirected: Some(StrictPath::new("/old")),
-                    change: ScanChange::New,
-                    ..Default::default()
-                },
-            },
-            has_backups: true,
-            ..Default::default()
-        };
-
-        assert_eq!(ScanChange::Different, scan.overall_change());
     }
 
     #[test]

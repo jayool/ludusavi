@@ -579,16 +579,13 @@ pub fn scan_game_for_backup(
                 log::debug!("[{name}] found: {scan_key:?}");
                 let size = scan_key.size();
                 let hash = scan_key.sha1();
-                let redirected: Option<StrictPath> = None;
-                let change =
-                    ScanChange::evaluate_backup(&hash, previous_files.get(redirected.as_ref().unwrap_or(&scan_key)));
+                let change = ScanChange::evaluate_backup(&hash, previous_files.get(&scan_key));
                 found_files.insert(
                     scan_key,
                     ScannedFile {
                         change,
                         size,
                         hash,
-                        redirected,
                         original_path: None,
                         ignored,
                         container: None,
@@ -615,18 +612,13 @@ pub fn scan_game_for_backup(
                         log::debug!("[{name}] found: {scan_key:?}");
                         let size = scan_key.size();
                         let hash = scan_key.sha1();
-                        let redirected: Option<StrictPath> = None;
-                        let change = ScanChange::evaluate_backup(
-                            &hash,
-                            previous_files.get(redirected.as_ref().unwrap_or(&scan_key)),
-                        );
+                        let change = ScanChange::evaluate_backup(&hash, previous_files.get(&scan_key));
                         found_files.insert(
                             scan_key,
                             ScannedFile {
                                 change,
                                 size,
                                 hash,
-                                redirected,
                                 original_path: None,
                                 ignored,
                                 container: None,
@@ -640,28 +632,17 @@ pub fn scan_game_for_backup(
     // Mark removed files.
     let current_files: Vec<_> = found_files
         .iter()
-        .map(|(scan_key, x)| x.redirected.as_ref().unwrap_or(scan_key).interpret())
-        .collect();
-    // But if a file is only "removed" because now it has a redirect,
-    // then the removal isn't very interesting
-    // and would lead to duplicate hash keys during reporting.
-    let current_files_with_redirects: Vec<_> = found_files
-        .iter()
-        .filter(|(_, x)| x.redirected.is_some())
         .map(|(scan_key, _)| scan_key.interpret())
         .collect();
     for (previous_file, _) in previous_files {
         let previous_file_interpreted = previous_file.interpret();
-        if !current_files.contains(&previous_file_interpreted)
-            && !current_files_with_redirects.contains(&previous_file_interpreted)
-        {
+        if !current_files.contains(&previous_file_interpreted) {
             found_files.insert(
                 previous_file.to_owned(),
                 ScannedFile {
                     change: ScanChange::Removed,
                     size: 0,
                     hash: "".to_string(),
-                    redirected: None,
                     original_path: None,
                     ignored: ignored_paths.is_ignored(name, previous_file),
                     container: None,
@@ -990,7 +971,6 @@ mod tests {
                         ignored: false,
                         change: ScanChange::New,
                         container: None,
-                        redirected: Some(StrictPath::new(format!("{}/tests/root3/game5/data-symlink/file1.txt", repo()))),
                     },
                 },
                 found_registry_keys: hash_map! {},

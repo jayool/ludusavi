@@ -685,8 +685,6 @@ impl GameLayout {
 
         for (mapping_key, v) in &backup.files {
             let original_path = StrictPath::new(mapping_key.to_string());
-            let redirected: Option<StrictPath> = None;
-            let ignorable_path = redirected.as_ref().unwrap_or(&original_path);
             match backup.format() {
                 BackupFormat::Simple => {
                     let scan_key = self
@@ -698,14 +696,11 @@ impl GameLayout {
                         ScannedFile {
                             change: match scan_kind {
                                 ScanKind::Backup => ScanChange::Unknown,
-                                ScanKind::Restore => {
-                                    ScanChange::evaluate_restore(redirected.as_ref().unwrap_or(&original_path), &v.hash)
-                                }
+                                ScanKind::Restore => ScanChange::evaluate_restore(&original_path, &v.hash),
                             },
                             size: v.size,
                             hash: v.hash.clone(),
-                            ignored: toggled_paths.is_ignored(&self.mapping.name, ignorable_path),
-                            redirected,
+                            ignored: toggled_paths.is_ignored(&self.mapping.name, &original_path),
                             original_path: Some(original_path),
                             container: None,
                         },
@@ -719,14 +714,11 @@ impl GameLayout {
                         ScannedFile {
                             change: match scan_kind {
                                 ScanKind::Backup => ScanChange::Unknown,
-                                ScanKind::Restore => {
-                                    ScanChange::evaluate_restore(redirected.as_ref().unwrap_or(&original_path), &v.hash)
-                                }
+                                ScanKind::Restore => ScanChange::evaluate_restore(&original_path, &v.hash),
                             },
                             size: v.size,
                             hash: v.hash.clone(),
-                            ignored: toggled_paths.is_ignored(&self.mapping.name, ignorable_path),
-                            redirected,
+                            ignored: toggled_paths.is_ignored(&self.mapping.name, &original_path),
                             original_path: Some(original_path),
                             container: Some(self.path.joined(&backup.name)),
                         },
@@ -749,8 +741,6 @@ impl GameLayout {
         for (mapping_key, v) in &backup.files {
             let v = some_or_continue!(v);
             let original_path = StrictPath::new(mapping_key.to_string());
-            let redirected: Option<StrictPath> = None;
-            let ignorable_path = redirected.as_ref().unwrap_or(&original_path);
             match backup.format() {
                 BackupFormat::Simple => {
                     let scan_key = self
@@ -762,14 +752,11 @@ impl GameLayout {
                         ScannedFile {
                             change: match scan_kind {
                                 ScanKind::Backup => ScanChange::Unknown,
-                                ScanKind::Restore => {
-                                    ScanChange::evaluate_restore(redirected.as_ref().unwrap_or(&original_path), &v.hash)
-                                }
+                                ScanKind::Restore => ScanChange::evaluate_restore(&original_path, &v.hash),
                             },
                             size: v.size,
                             hash: v.hash.clone(),
-                            ignored: toggled_paths.is_ignored(&self.mapping.name, ignorable_path),
-                            redirected,
+                            ignored: toggled_paths.is_ignored(&self.mapping.name, &original_path),
                             original_path: Some(original_path),
                             container: None,
                         },
@@ -783,14 +770,11 @@ impl GameLayout {
                         ScannedFile {
                             change: match scan_kind {
                                 ScanKind::Backup => ScanChange::Unknown,
-                                ScanKind::Restore => {
-                                    ScanChange::evaluate_restore(redirected.as_ref().unwrap_or(&original_path), &v.hash)
-                                }
+                                ScanKind::Restore => ScanChange::evaluate_restore(&original_path, &v.hash),
                             },
                             size: v.size,
                             hash: v.hash.clone(),
-                            ignored: toggled_paths.is_ignored(&self.mapping.name, ignorable_path),
-                            redirected,
+                            ignored: toggled_paths.is_ignored(&self.mapping.name, &original_path),
                             original_path: Some(original_path),
                             container: Some(self.path.joined(&backup.name)),
                         },
@@ -841,7 +825,6 @@ impl GameLayout {
                         original_path,
                         ignored: false,
                         container: None,
-                        redirected: None,
                     },
                 );
             }
@@ -2920,7 +2903,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: None,
-                        redirected: None,
                     },
                     make_restorable_path("backup-1", "file2.txt"): ScannedFile {
                         size: 2,
@@ -2929,7 +2911,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: None,
-                        redirected: None,
                     },
                 },
                 layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
@@ -2963,7 +2944,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: Some(make_path("backup-1.zip")),
-                        redirected: None,
                     },
                     make_restorable_path_zip("file2.txt"): ScannedFile {
                         size: 2,
@@ -2972,7 +2952,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: Some(make_path("backup-1.zip")),
-                        redirected: None,
                     },
                 },
                 layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
@@ -3017,7 +2996,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: None,
-                        redirected: None,
                     },
                     make_restorable_path("backup-2", "changed.txt"): ScannedFile {
                         size: 2,
@@ -3026,7 +3004,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: None,
-                        redirected: None,
                     },
                     make_restorable_path("backup-2", "added.txt"): ScannedFile {
                         size: 5,
@@ -3035,7 +3012,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: None,
-                        redirected: None,
                     },
                 },
                 layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
@@ -3080,7 +3056,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: Some(make_path("backup-1.zip")),
-                        redirected: None,
                     },
                     make_restorable_path_zip("changed.txt"): ScannedFile {
                         size: 2,
@@ -3089,7 +3064,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: Some(make_path("backup-2.zip")),
-                        redirected: None,
                     },
                     make_restorable_path_zip("added.txt"): ScannedFile {
                         size: 5,
@@ -3098,7 +3072,6 @@ mod tests {
                         ignored: false,
                         change: Default::default(),
                         container: Some(make_path("backup-2.zip")),
-                        redirected: None,
                     },
                 },
                 layout.restorable_files(&BackupId::Latest, ScanKind::Backup, &Default::default()),
@@ -3177,8 +3150,7 @@ mod tests {
                             ignored: false,
                             change: ScanChange::New,
                             container: None,
-                            redirected: None,
-                        },
+                            },
                         restorable_file_simple(SOLO, "file2.txt"): ScannedFile {
                             size: 2,
                             hash: "9d891e731f75deae56884d79e9816736b7488080".into(),
@@ -3186,8 +3158,7 @@ mod tests {
                             ignored: false,
                             change: ScanChange::New,
                             container: None,
-                            redirected: None,
-                        },
+                            },
                     },
                     found_registry_keys: Default::default(),
                     available_backups: backups.clone(),
