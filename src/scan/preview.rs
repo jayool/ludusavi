@@ -233,7 +233,6 @@ impl ScanInfo {
             if self.all_ignored() {
                 ScanChange::Same
             } else if self.has_backups {
-                // This can happen when all of the paths are affected by a new redirect.
                 ScanChange::Different
             } else {
                 ScanChange::New

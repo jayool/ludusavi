@@ -9,7 +9,7 @@ use crate::{
 pub struct ScannedFile {
     pub size: u64,
     pub hash: String,
-    /// This is the restoration target path, without redirects applied.
+    /// This is the restoration target path. None when scanning for backup.
     pub original_path: Option<StrictPath>,
     pub ignored: bool,
     pub change: ScanChange,

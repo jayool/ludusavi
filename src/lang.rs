@@ -52,7 +52,6 @@ pub struct Translator {}
 fn translate(id: &str) -> String {
     let s: &'static str = match id {
         "ludusavi" => "Ludusavi",
-        "language" => "Language",
         "game-name" => "Name",
         "total-games" => "Games",
         "status" => "Status",
@@ -105,14 +104,9 @@ fn translate(id: &str) -> String {
         "field-sort" => "Sort:",
         "field-roots" => "Roots:",
         "field-backup-excluded-items" => "Backup exclusions:",
-        "field-redirects" => "Redirects:",
-        "field-retention-full" => "Full:",
-        "field-retention-differential" => "Differential:",
         "field-backup-format" => "Format:",
         "field-backup-compression" => "Compression:",
         "field-backup-compression-level" => "Level:",
-        "field-redirect-source.placeholder" => "Source (original location)",
-        "field-redirect-target.placeholder" => "Target (new location)",
         "label-manifest" => "Manifest",
         "label-checked" => "Checked",
         "label-updated" => "Updated",
@@ -367,10 +361,6 @@ impl Translator {
 
     pub fn field(&self, text: &str) -> String {
         format!("{text}:")
-    }
-
-    pub fn field_language(&self) -> String {
-        self.field(&translate("language"))
     }
 
     pub fn field_theme(&self) -> String {
@@ -802,14 +792,6 @@ impl Translator {
         }
     }
 
-    pub fn redirect_source_placeholder(&self) -> String {
-        translate("field-redirect-source.placeholder")
-    }
-
-    pub fn redirect_target_placeholder(&self) -> String {
-        translate("field-redirect-target.placeholder")
-    }
-
     pub fn custom_game_name_placeholder(&self) -> String {
         translate("game-name")
     }
@@ -856,18 +838,6 @@ impl Translator {
 
     pub fn ignored_items_label(&self) -> String {
         translate("field-backup-excluded-items")
-    }
-
-    pub fn redirects_label(&self) -> String {
-        translate("field-redirects")
-    }
-
-    pub fn full_retention(&self) -> String {
-        translate("field-retention-full")
-    }
-
-    pub fn differential_retention(&self) -> String {
-        translate("field-retention-differential")
     }
 
     pub fn backup_format_field(&self) -> String {
