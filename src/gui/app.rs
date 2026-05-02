@@ -1038,6 +1038,40 @@ impl App {
                         self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
                         Task::none()
                     }
+                    AE::FileDropped(path) => {
+                        let is_zip = path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| e.eq_ignore_ascii_case("zip"))
+                            .unwrap_or(false);
+                        if !is_zip {
+                            return Task::none();
+                        }
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        if python.trim().is_empty() || accela.trim().is_empty() {
+                            self.screen = Screen::Accela;
+                            self.accela_screen.status = Status::Error(
+                                "Set ACCELA bin and Python paths first.".to_string(),
+                            );
+                            return Task::none();
+                        }
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        let zip_path = path.to_string_lossy().into_owned();
+                        let zip_label = path
+                            .file_name()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| zip_path.clone());
+                        self.screen = Screen::Accela;
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Loading(format!(
+                                "Parsing dropped ZIP ({zip_label})..."
+                            ));
+                        Task::perform(
+                            crate::gui::accela::run_process_zip(python, adapter, accela, zip_path),
+                            |result| Message::Accela(AE::ZipProcessed(result)),
+                        )
+                    }
                 }
             }
             Message::AddGameRequested => {
@@ -3250,6 +3284,9 @@ impl App {
             iced::event::listen_with(|event, _status, _window| match event {
                 iced::Event::Keyboard(event) => Some(Message::KeyboardEvent(event)),
                 iced::Event::Window(iced::window::Event::CloseRequested) => Some(Message::Exit { user: true }),
+                iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+                    Some(Message::Accela(crate::gui::accela::Event::FileDropped(path)))
+                }
                 _ => None,
             }),
         ];

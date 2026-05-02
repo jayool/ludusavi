@@ -36,6 +36,7 @@ pub enum Event {
     ManifestFetched(Result<String, String>),
     ZipProcessed(Result<GameDetail, String>),
     BackToSearch,
+    FileDropped(PathBuf),
 }
 
 #[derive(Debug, Clone)]
