@@ -783,7 +783,6 @@ impl App {
             }
         };
         let mut cache = Cache::load().unwrap_or_default().migrate_config(&mut config);
-        TRANSLATOR.set_language(config.language);
 
         let manifest = if Manifest::path().exists() {
             match Manifest::load() {
@@ -1367,10 +1366,6 @@ impl App {
                 match event {
                     config::Event::Theme(theme) => {
                         self.config.theme = theme;
-                    }
-                    config::Event::Language(language) => {
-                        TRANSLATOR.set_language(language);
-                        self.config.language = language;
                     }
                     config::Event::BackupTarget(text) => {
                         self.text_histories.backup_target.push(&text);

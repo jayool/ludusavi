@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    lang::Language,
     prelude::{app_dir, CANONICAL_VERSION},
     resource::{
         config::{self, Config, Root},
@@ -64,14 +63,6 @@ impl Cache {
         if !self.migrations.adopted_cache {
             let _ = app_dir().joined(".flag_migrated_legacy_config").remove();
             self.migrations.adopted_cache = true;
-            updated = true;
-        }
-
-        if !self.migrations.fixed_spanish_config && self.version.is_none() {
-            if config.language == Language::Russian {
-                config.language = Language::Spanish;
-            }
-            self.migrations.fixed_spanish_config = true;
             updated = true;
         }
 

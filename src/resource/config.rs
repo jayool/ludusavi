@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     cloud::Remote,
-    lang::{Language, TRANSLATOR},
+    lang::TRANSLATOR,
     path::CommonPath,
     prelude::{app_dir, EditAction, Error, Security, StrictPath, AVAILABLE_PARALELLISM},
     resource::{
@@ -27,7 +27,6 @@ fn default_backup_dir() -> StrictPath {
 #[derive(Debug, Clone)]
 pub enum Event {
     Theme(Theme),
-    Language(Language),
     BackupTarget(String),
     RestoreSource(String),
     Root(EditAction),
@@ -96,7 +95,6 @@ pub enum Event {
 pub struct Config {
     pub runtime: Runtime,
     pub manifest: ManifestConfig,
-    pub language: Language,
     pub theme: Theme,
     pub roots: Vec<Root>,
     pub backup: BackupConfig,
@@ -1839,7 +1837,6 @@ mod tests {
                     enable: true,
                     secondary: vec![]
                 },
-                language: Language::English,
                 theme: Theme::Light,
                 roots: vec![],
                 backup: BackupConfig {
@@ -1947,7 +1944,6 @@ mod tests {
                         enable: true,
                     }]
                 },
-                language: Language::English,
                 theme: Theme::Light,
                 roots: vec![Root::new("~/steam", Store::Steam), Root::new("~/other", Store::Other),],
                 backup: BackupConfig {
@@ -2036,7 +2032,6 @@ runtime:
 manifest:
   url: example.com
   enable: true
-language: en-US
 theme: light
 roots:
   - store: steam
@@ -2132,7 +2127,6 @@ customGames:
                     enable: true,
                     secondary: vec![]
                 },
-                language: Language::English,
                 theme: Theme::Light,
                 roots: vec![Root::new("~/steam", Store::Steam), Root::new("~/other", Store::Other),],
                 backup: BackupConfig {

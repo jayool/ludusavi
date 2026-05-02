@@ -1,10 +1,3 @@
-use std::sync::{LazyLock, Mutex};
-
-use fluent::{bundle::FluentBundle, FluentArgs, FluentResource};
-use intl_memoizer::concurrent::IntlLangMemoizer;
-use regex::Regex;
-use unic_langid::LanguageIdentifier;
-
 use crate::{
     prelude::{CommandError, Error, StrictPath, VARIANT},
     resource::{
@@ -15,10 +8,7 @@ use crate::{
 };
 
 const PATH: &str = "path";
-const PATH_ACTION: &str = "path-action";
-const PROCESSED_GAMES: &str = "processed-games";
 const PROCESSED_SIZE: &str = "processed-size";
-const TOTAL_GAMES: &str = "total-games";
 const TOTAL_SIZE: &str = "total-size";
 const COMMAND: &str = "command";
 const CODE: &str = "code";
@@ -41,326 +31,223 @@ fn title_case(text: &str) -> String {
     }
 }
 
-// TODO: RTL blocked by https://github.com/iced-rs/iced/issues/250.
-/// Display language.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-pub enum Language {
-    /// Arabic (experimental - currently has graphical display issues)
-    #[serde(rename = "ar-SA")]
-    Arabic,
-    /// Simplified Chinese
-    #[serde(rename = "zh-Hans")]
-    ChineseSimplified,
-    /// Traditional Chinese
-    #[serde(rename = "zh-Hant")]
-    ChineseTraditional,
-    /// Czech
-    #[serde(rename = "cs-CZ")]
-    Czech,
-    /// Dutch
-    #[serde(rename = "nl-NL")]
-    Dutch,
-    /// English
-    #[default]
-    #[serde(rename = "en-US")]
-    English,
-    /// Esperanto
-    #[serde(rename = "eo")]
-    Esperanto,
-    /// Filipino
-    #[serde(rename = "fil-PH")]
-    Filipino,
-    /// Finnish
-    #[serde(rename = "fi-FI")]
-    Finnish,
-    /// French
-    #[serde(rename = "fr-FR")]
-    French,
-    /// German
-    #[serde(rename = "de-DE")]
-    German,
-    /// Italian
-    #[serde(rename = "it-IT")]
-    Italian,
-    /// Japanese
-    #[serde(rename = "ja-JP")]
-    Japanese,
-    /// Korean
-    #[serde(rename = "ko-KR")]
-    Korean,
-    /// Norwegian
-    #[serde(rename = "no-NO")]
-    Norwegian,
-    /// Polish
-    #[serde(rename = "pl-PL")]
-    Polish,
-    /// Brazilian Portuguese
-    #[serde(rename = "pt-BR")]
-    PortugueseBrazilian,
-    /// Russian
-    #[serde(rename = "ru-RU")]
-    Russian,
-    /// Spanish
-    #[serde(rename = "es-ES")]
-    Spanish,
-    /// Swedish
-    #[serde(rename = "sv-SE")]
-    Swedish,
-    /// Thai
-    #[serde(rename = "th-TH")]
-    Thai,
-    /// Turkish
-    #[serde(rename = "tr-TR")]
-    Turkish,
-    /// Ukrainian
-    #[serde(rename = "uk-UA")]
-    Ukrainian,
-    /// Vietnamese
-    #[serde(rename = "vi-VN")]
-    Vietnamese,
+#[derive(Default)]
+pub struct LangArgs {
+    items: Vec<(&'static str, String)>,
 }
 
-impl Language {
-    // These are sorted based on each language's native name.
-    pub const ALL: &'static [Self] = &[
-        Self::Czech,
-        Self::German,
-        Self::English,
-        Self::Spanish,
-        Self::Esperanto,
-        Self::Filipino,
-        Self::French,
-        Self::Italian,
-        Self::Dutch,
-        Self::Norwegian,
-        Self::Polish,
-        Self::PortugueseBrazilian,
-        Self::Russian,
-        Self::Swedish,
-        Self::Finnish,
-        Self::Vietnamese,
-        Self::Turkish,
-        Self::Ukrainian,
-        // Self::Arabic,
-        Self::ChineseSimplified,
-        Self::ChineseTraditional,
-        Self::Japanese,
-        Self::Korean,
-        Self::Thai,
-    ];
-
-    pub fn id(&self) -> LanguageIdentifier {
-        let id = match self {
-            Self::Arabic => "ar-SA",
-            Self::ChineseSimplified => "zh-Hans",
-            Self::ChineseTraditional => "zh-Hant",
-            Self::Czech => "cs-CZ",
-            Self::Dutch => "nl-NL",
-            Self::English => "en-US",
-            Self::Esperanto => "eo",
-            Self::Filipino => "fil-PH",
-            Self::Finnish => "fi-FI",
-            Self::French => "fr-FR",
-            Self::German => "de-DE",
-            Self::Italian => "it-IT",
-            Self::Japanese => "ja-JP",
-            Self::Korean => "ko-KR",
-            Self::Norwegian => "no-NO",
-            Self::Polish => "pl-PL",
-            Self::PortugueseBrazilian => "pt-BR",
-            Self::Russian => "ru-RU",
-            Self::Spanish => "es-ES",
-            Self::Swedish => "sv-SE",
-            Self::Thai => "th-TH",
-            Self::Turkish => "tr-TR",
-            Self::Ukrainian => "uk-UA",
-            Self::Vietnamese => "vi-VN",
-        };
-        id.parse().unwrap()
+impl LangArgs {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    fn name(&self) -> &'static str {
-        match self {
-            Language::Arabic => "العربية",
-            Language::ChineseSimplified => "中文（简体）",
-            Language::ChineseTraditional => "中文（繁體）",
-            Language::Czech => "Čeština",
-            Language::Dutch => "Nederlands",
-            Language::English => "English",
-            Language::Esperanto => "Esperanto",
-            Language::Filipino => "Filipino",
-            Language::Finnish => "Suomi",
-            Language::French => "Français",
-            Language::German => "Deutsch",
-            Language::Italian => "Italiano",
-            Language::Japanese => "日本語",
-            Language::Korean => "한국어",
-            Language::Norwegian => "Norsk",
-            Language::Polish => "Polski",
-            Language::PortugueseBrazilian => "Português brasileiro",
-            Language::Russian => "Русский язык",
-            Language::Spanish => "Español",
-            Language::Swedish => "Svenska",
-            Language::Thai => "ภาษาไทย",
-            Language::Turkish => "Türkçe",
-            Language::Ukrainian => "Украї́нська мо́ва",
-            Language::Vietnamese => "Tiếng Việt",
-        }
-    }
-
-    fn completion(&self) -> u8 {
-        match self {
-            Language::Arabic => 95,
-            Language::ChineseSimplified => 97,
-            Language::ChineseTraditional => 89,
-            Language::Czech => 3,
-            Language::Dutch => 91,
-            Language::English => 100,
-            Language::Esperanto => 16,
-            Language::Filipino => 30,
-            Language::Finnish => 83,
-            Language::French => 97,
-            Language::German => 97,
-            Language::Italian => 100,
-            Language::Japanese => 48,
-            Language::Korean => 82,
-            Language::Norwegian => 57,
-            Language::Polish => 97,
-            Language::PortugueseBrazilian => 98,
-            Language::Russian => 100,
-            Language::Spanish => 98,
-            Language::Swedish => 1,
-            Language::Thai => 21,
-            Language::Turkish => 100,
-            Language::Ukrainian => 36,
-            Language::Vietnamese => 9,
-        }
-    }
-}
-
-impl ToString for Language {
-    fn to_string(&self) -> String {
-        match self {
-            Self::English => self.name().to_string(),
-            _ => format!("{} ({}%)", self.name(), self.completion()),
-        }
+    pub fn set(&mut self, key: &'static str, value: impl ToString) {
+        self.items.push((key, value.to_string()));
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Translator {}
 
-static LANGUAGE: Mutex<Language> = Mutex::new(Language::English);
-
-static BUNDLE: LazyLock<Mutex<FluentBundle<FluentResource, IntlLangMemoizer>>> = LazyLock::new(|| {
-    let ftl = include_str!("../lang/en-US.ftl").to_owned();
-    let res = FluentResource::try_new(ftl).expect("Failed to parse Fluent file content.");
-
-    let mut bundle = FluentBundle::new_concurrent(vec![Language::English.id()]);
-    bundle.set_use_isolating(false);
-
-    bundle
-        .add_resource(res)
-        .expect("Failed to add Fluent resources to the bundle.");
-
-    Mutex::new(bundle)
-});
-
-fn set_language(language: Language) {
-    let mut bundle = BUNDLE.lock().unwrap();
-
-    let ftl = match language {
-        Language::Arabic => include_str!("../lang/ar-SA.ftl"),
-        Language::ChineseSimplified => include_str!("../lang/zh-CN.ftl"),
-        Language::ChineseTraditional => include_str!("../lang/zh-TW.ftl"),
-        Language::Czech => include_str!("../lang/cs-CZ.ftl"),
-        Language::Dutch => include_str!("../lang/nl-NL.ftl"),
-        Language::English => include_str!("../lang/en-US.ftl"),
-        Language::Esperanto => include_str!("../lang/eo-UY.ftl"),
-        Language::Filipino => include_str!("../lang/fil-PH.ftl"),
-        Language::Finnish => include_str!("../lang/fi-FI.ftl"),
-        Language::French => include_str!("../lang/fr-FR.ftl"),
-        Language::German => include_str!("../lang/de-DE.ftl"),
-        Language::Italian => include_str!("../lang/it-IT.ftl"),
-        Language::Japanese => include_str!("../lang/ja-JP.ftl"),
-        Language::Korean => include_str!("../lang/ko-KR.ftl"),
-        Language::Norwegian => include_str!("../lang/no-NO.ftl"),
-        Language::Polish => include_str!("../lang/pl-PL.ftl"),
-        Language::PortugueseBrazilian => include_str!("../lang/pt-BR.ftl"),
-        Language::Russian => include_str!("../lang/ru-RU.ftl"),
-        Language::Spanish => include_str!("../lang/es-ES.ftl"),
-        Language::Swedish => include_str!("../lang/sv-SE.ftl"),
-        Language::Thai => include_str!("../lang/th-TH.ftl"),
-        Language::Turkish => include_str!("../lang/tr-TR.ftl"),
-        Language::Ukrainian => include_str!("../lang/uk-UA.ftl"),
-        Language::Vietnamese => include_str!("../lang/vi-VN.ftl"),
-    }
-    .to_owned();
-
-    let res = FluentResource::try_new(ftl).expect("Failed to parse Fluent file content.");
-    bundle.locales = vec![language.id()];
-
-    bundle.add_resource_overriding(res);
-
-    let mut last_language = LANGUAGE.lock().unwrap();
-    *last_language = language;
-}
-
-static RE_EXTRA_SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([^\r\n ]) {2,}").unwrap());
-static RE_EXTRA_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([^\r\n ])[\r\n]([^\r\n ])").unwrap());
-static RE_EXTRA_PARAGRAPHS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"([^\r\n ])[\r\n]{2,}([^\r\n ])").unwrap());
-
 fn translate(id: &str) -> String {
-    translate_args(id, &FluentArgs::new())
+    let s: &'static str = match id {
+        "ludusavi" => "Ludusavi",
+        "language" => "Language",
+        "game-name" => "Name",
+        "total-games" => "Games",
+        "status" => "Status",
+        "badge-failed" => "FAILED",
+        "badge-duplicates" => "DUPLICATES",
+        "badge-duplicated" => "DUPLICATED",
+        "badge-ignored" => "IGNORED",
+        "some-entries-failed" => "Some entries failed to process; look for [FAILED] in the output for details. Double check whether you can access those files or whether their paths are very long.",
+        "button-backup" => "Back up",
+        "button-restore" => "Restore",
+        "button-nav-backup" => "BACKUP MODE",
+        "button-nav-restore" => "RESTORE MODE",
+        "button-nav-custom-games" => "CUSTOM GAMES",
+        "button-nav-other" => "OTHER",
+        "button-add-game" => "Add game",
+        "button-continue" => "Continue",
+        "button-cancel" => "Cancel",
+        "button-cancelling" => "Cancelling...",
+        "button-okay" => "Okay",
+        "button-select-all" => "Select all",
+        "button-deselect-all" => "Deselect all",
+        "button-enable-all" => "Enable all",
+        "button-disable-all" => "Disable all",
+        "button-customize" => "Customize",
+        "button-exit" => "Exit",
+        "button-comment" => "Comment",
+        "button-lock" => "Lock",
+        "button-unlock" => "Unlock",
+        "button-validate" => "Validate",
+        "button-override-manifest" => "Override manifest",
+        "button-extend-manifest" => "Extend manifest",
+        "button-sort" => "Sort",
+        "button-download" => "Download",
+        "button-upload" => "Upload",
+        "button-ignore" => "Ignore",
+        "no-roots-are-configured" => "Add some roots to back up even more data.",
+        "config-is-invalid" => "Error: The config file is invalid.",
+        "manifest-is-invalid" => "Error: The manifest file is invalid.",
+        "manifest-cannot-be-updated" => "Error: Unable to check for an update to the manifest file. Is your Internet connection down?",
+        "registry-issue" => "Error: Some registry entries were skipped.",
+        "unable-to-browse-file-system" => "Error: Unable to browse on your system.",
+        "unable-to-open-directory" => "Error: Unable to open directory:",
+        "unable-to-open-url" => "Error: Unable to open URL:",
+        "unable-to-configure-cloud" => "Unable to configure cloud.",
+        "cloud-synchronize-conflict" => "Your local and cloud backups are in conflict. Perform an upload or download to resolve this.",
+        "field-backup-target" => "Back up to:",
+        "field-restore-source" => "Restore from:",
+        "field-custom-files" => "Paths:",
+        "field-custom-registry" => "Registry:",
+        "field-sort" => "Sort:",
+        "field-roots" => "Roots:",
+        "field-backup-excluded-items" => "Backup exclusions:",
+        "field-redirects" => "Redirects:",
+        "field-retention-full" => "Full:",
+        "field-retention-differential" => "Differential:",
+        "field-backup-format" => "Format:",
+        "field-backup-compression" => "Compression:",
+        "field-backup-compression-level" => "Level:",
+        "field-redirect-source.placeholder" => "Source (original location)",
+        "field-redirect-target.placeholder" => "Target (new location)",
+        "label-manifest" => "Manifest",
+        "label-checked" => "Checked",
+        "label-updated" => "Updated",
+        "label-new" => "New",
+        "label-removed" => "Removed",
+        "label-comment" => "Comment",
+        "label-unchanged" => "Unchanged",
+        "label-backup" => "Backup",
+        "label-scan" => "Scan",
+        "label-filter" => "Filter",
+        "label-unique" => "Unique",
+        "label-complete" => "Complete",
+        "label-partial" => "Partial",
+        "label-enabled" => "Enabled",
+        "label-disabled" => "Disabled",
+        "label-threads" => "Threads",
+        "label-remote" => "Remote",
+        "label-remote-name" => "Remote name",
+        "label-folder" => "Folder",
+        "label-executable" => "Executable",
+        "label-arguments" => "Arguments",
+        "label-url" => "URL",
+        "label-host" => "Host",
+        "label-port" => "Port",
+        "label-username" => "Username",
+        "label-password" => "Password",
+        "label-provider" => "Provider",
+        "label-custom" => "Custom",
+        "label-none" => "None",
+        "label-unscanned" => "Unscanned",
+        "label-file" => "File",
+        "label-game" => "Game",
+        "label-alias" => "Alias",
+        "label-original-name" => "Original name",
+        "label-source" => "Source",
+        "label-primary-manifest" => "Primary manifest",
+        "label-integration" => "Integration",
+        "label-installed-name" => "Installed name",
+        "file-size" => "Size",
+        "store-ea" => "EA",
+        "store-epic" => "Epic",
+        "store-gog" => "GOG",
+        "store-gog-galaxy" => "GOG Galaxy",
+        "store-heroic" => "Heroic",
+        "store-legendary" => "Legendary",
+        "store-lutris" => "Lutris",
+        "store-microsoft" => "Microsoft",
+        "store-origin" => "Origin",
+        "store-prime" => "Prime Gaming",
+        "store-steam" => "Steam",
+        "store-uplay" => "Uplay",
+        "store-other-home" => "Home folder",
+        "store-other-wine" => "Wine prefix",
+        "store-other-windows" => "Windows drive",
+        "store-other-linux" => "Linux drive",
+        "store-other-mac" => "Mac drive",
+        "store-other" => "Other",
+        "backup-format-simple" => "Simple",
+        "backup-format-zip" => "Zip",
+        "compression-none" => "None",
+        "compression-deflate" => "Deflate",
+        "compression-bzip2" => "Bzip2",
+        "compression-zstd" => "Zstd",
+        "theme" => "Theme",
+        "theme-light" => "Light",
+        "theme-dark" => "Dark",
+        "show-disabled-games" => "Show disabled games",
+        "show-unchanged-games" => "Show unchanged games",
+        "show-unscanned-games" => "Show unscanned games",
+        "override-max-threads" => "Override max threads",
+        "synchronize-automatically" => "Synchronize automatically",
+        "prefer-alias-display" => "Display alias instead of original name",
+        "skip-unconstructive-backups" => "Skip backup when data would be removed, but not added or updated",
+        "explanation-for-exclude-store-screenshots" => "In backups, exclude store-specific screenshots",
+        "explanation-for-exclude-cloud-games" => "Do not back up games with cloud support on these platforms",
+        "consider-doing-a-preview" => "If you haven't already, consider doing a preview first so that there are no surprises.",
+        "confirm-restore" => "Are you sure you want to proceed with the restoration?\nThis will overwrite any current files with the backups from here:",
+        "confirm-add-missing-roots" => "Add these roots?",
+        "no-missing-roots" => "No additional roots found.",
+        "preparing-backup-target" => "Preparing backup directory...",
+        "updating-manifest" => "Updating manifest...",
+        "backups-are-valid" => "Your backups are valid.",
+        "backups-are-invalid" => "These games' backups appear to be invalid.\nDo you want to create new full backups for these games?",
+        "saves-found" => "Save data found.",
+        "no-saves-found" => "No save data found.",
+        "suffix-no-confirmation" => "no confirmation",
+        "suffix-restart-required" => "restart required",
+        "cloud-not-configured" => "Cloud backups are disabled because no cloud system is configured.",
+        "cloud-path-invalid" => "Cloud backups are disabled because the backup path is invalid.",
+        "game-is-unrecognized" => "Ludusavi does not recognize this game.",
+        "game-has-nothing-to-restore" => "This game does not have a backup to restore.",
+        "launch-game-after-error" => "Launch the game anyway?",
+        "game-did-not-launch" => "Game failed to launch.",
+        "backup-is-newer-than-current-data" => "The existing backup is newer than the current data.",
+        "backup-is-older-than-current-data" => "The existing backup is older than the current data.",
+        "new-version-check" => "Check for application updates automatically",
+        "custom-game-will-override" => "This custom game overrides a manifest entry",
+        "custom-game-will-extend" => "This custom game extends a manifest entry",
+        "operation-will-only-include-listed-games" => "This will only process the games that are currently listed",
+        _ => return format!("missing-translation={id}"),
+    };
+    s.to_string()
 }
 
-fn translate_args(id: &str, args: &FluentArgs) -> String {
-    let bundle = match BUNDLE.lock() {
-        Ok(x) => x,
-        Err(_) => return "fluent-cannot-lock".to_string(),
+fn translate_args(id: &str, args: &LangArgs) -> String {
+    let template: &'static str = match id {
+        "badge-redirected-from" => "FROM: {$path}",
+        "badge-redirecting-to" => "TO: {$path}",
+        "button-get-app" => "Get {$app}",
+        "command-unlaunched" => "Command did not launch: {$command}",
+        "command-terminated" => "Command terminated abruptly: {$command}",
+        "command-failed" => "Command failed with code {$code}: {$command}",
+        "processed-size-subset" => "{$processed-size} of {$total-size}",
+        "cannot-prepare-backup-target" => "Error: Unable to prepare backup target (either creating or emptying the folder). If you have the folder open in your file browser, try closing it: {$path}",
+        "restoration-source-is-invalid" => "Error: The restoration source is invalid (either doesn't exist or isn't a directory). Please double check the location: {$path}",
+        "prefix-error" => "Error: {$message}",
+        "prefix-warning" => "Warning: {$message}",
+        "cloud-app-unavailable" => "Cloud backups are disabled because {$app} is not available.",
+        "back-up-specific-game.confirm" => "Back up save data for {$game}?",
+        "back-up-specific-game.failed" => "Failed to back up save data for {$game}",
+        "restore-specific-game.confirm" => "Restore save data for {$game}?",
+        "restore-specific-game.failed" => "Failed to restore save data for {$game}",
+        "new-version-available" => "An application update is available: {$version}. Would you like to view the release notes?",
+        _ => return format!("missing-translation-args={id}"),
     };
 
-    let parts: Vec<&str> = id.splitn(2, '.').collect();
-    let (name, attr) = if parts.len() < 2 {
-        (id, None)
-    } else {
-        (parts[0], Some(parts[1]))
-    };
-
-    let message = match bundle.get_message(name) {
-        Some(x) => x,
-        None => return format!("fluent-no-message={name}"),
-    };
-
-    let pattern = match attr {
-        None => match message.value() {
-            Some(x) => x,
-            None => return format!("fluent-no-message-value={id}"),
-        },
-        Some(attr) => match message.get_attribute(attr) {
-            Some(x) => x.value(),
-            None => return format!("fluent-no-attr={id}"),
-        },
-    };
-    let mut errors = vec![];
-    let value = bundle.format_pattern(pattern, Some(args), &mut errors);
-
-    RE_EXTRA_PARAGRAPHS
-        .replace_all(
-            &RE_EXTRA_LINES.replace_all(&RE_EXTRA_SPACES.replace_all(&value, "${1} "), "${1} ${2}"),
-            "${1}\n\n${2}",
-        )
-        .to_string()
+    let mut result = template.to_string();
+    for (key, value) in &args.items {
+        let placeholder = format!("{{${}}}", key);
+        result = result.replace(&placeholder, value);
+    }
+    result
 }
 
 impl Translator {
-    pub fn set_language(&self, language: Language) {
-        set_language(Language::English);
-        if language != Language::English {
-            set_language(language);
-        }
-    }
-
     pub fn app_name(&self) -> String {
         translate("ludusavi")
     }
@@ -418,7 +305,7 @@ impl Translator {
     }
 
     fn handle_command_error(&self, error: &CommandError) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(COMMAND, error.command());
         match error {
             CommandError::Launched { raw, .. } => {
@@ -479,11 +366,7 @@ impl Translator {
     }
 
     pub fn field(&self, text: &str) -> String {
-        let language = LANGUAGE.lock().unwrap();
-        match *language {
-            Language::French => format!("{text} :"),
-            _ => format!("{text}:"),
-        }
+        format!("{text}:")
     }
 
     pub fn field_language(&self) -> String {
@@ -511,13 +394,13 @@ impl Translator {
     }
 
     pub fn badge_redirected_from(&self, original: &StrictPath) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(PATH, original.render());
         translate_args("badge-redirected-from", &args)
     }
 
     pub fn badge_redirecting_to(&self, path: &StrictPath) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(PATH, path.render());
         translate_args("badge-redirecting-to", &args)
     }
@@ -647,7 +530,7 @@ impl Translator {
     }
 
     pub fn get_rclone_button(&self) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(APP, "Rclone");
         translate_args("button-get-app", &args)
     }
@@ -701,13 +584,13 @@ impl Translator {
     }
 
     pub fn cannot_prepare_backup_target(&self, target: &StrictPath) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(PATH, target.render());
         translate_args("cannot-prepare-backup-target", &args)
     }
 
     pub fn restoration_source_is_invalid(&self, source: &StrictPath) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(PATH, source.render());
         translate_args("restoration-source-is-invalid", &args)
     }
@@ -744,14 +627,12 @@ impl Translator {
     }
 
     pub fn processed_games(&self, status: &OperationStatus) -> String {
-        let mut args = FluentArgs::new();
-        args.set(TOTAL_GAMES, status.total_games);
-        args.set(PROCESSED_GAMES, status.processed_games);
-
+        let n = status.total_games;
+        let unit = if n == 1 { "game" } else { "games" };
         if status.processed_all_games() {
-            translate_args("processed-games", &args)
+            format!("{n} {unit}")
         } else {
-            translate_args("processed-games-subset", &args)
+            format!("{} of {} {}", status.processed_games, n, unit)
         }
     }
 
@@ -759,7 +640,7 @@ impl Translator {
         if status.processed_all_bytes() {
             self.adjusted_size(status.total_bytes)
         } else {
-            let mut args = FluentArgs::new();
+            let mut args = LangArgs::new();
             args.set(TOTAL_SIZE, self.adjusted_size(status.total_bytes));
             args.set(PROCESSED_SIZE, self.adjusted_size(status.processed_bytes));
             translate_args("processed-size-subset", &args)
@@ -767,7 +648,7 @@ impl Translator {
     }
 
     pub fn processed_subset(&self, total: usize, processed: usize) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(TOTAL_SIZE, total as u64);
         args.set(PROCESSED_SIZE, processed as u64);
         translate_args("processed-size-subset", &args)
@@ -1139,9 +1020,12 @@ impl Translator {
     }
 
     pub fn confirm_backup(&self, target: &StrictPath, target_exists: bool, suggest: bool) -> String {
-        let mut args = FluentArgs::new();
-        args.set(PATH_ACTION, if !target_exists { "create" } else { "merge" });
-        let primary = translate_args("confirm-backup", &args);
+        let action_suffix = if target_exists {
+            "New save data will be merged into the target folder:"
+        } else {
+            "The target folder will be created:"
+        };
+        let primary = format!("Are you sure you want to proceed with the backup? {action_suffix}");
 
         if suggest {
             format!(
@@ -1151,7 +1035,7 @@ impl Translator {
                 self.consider_doing_a_preview(),
             )
         } else {
-            format!("{}\n\n{}", primary, target.render(),)
+            format!("{}\n\n{}", primary, target.render())
         }
     }
 
@@ -1187,19 +1071,19 @@ impl Translator {
     }
 
     pub fn prefix_error(&self, message: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(MESSAGE, message);
         translate_args("prefix-error", &args)
     }
 
     pub fn prefix_warning(&self, message: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(MESSAGE, message);
         translate_args("prefix-warning", &args)
     }
 
     pub fn rclone_unavailable(&self) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(APP, "Rclone");
         translate_args("cloud-app-unavailable", &args)
     }
@@ -1229,25 +1113,25 @@ impl Translator {
     }
 
     pub fn back_up_one_game_confirm(&self, game: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(GAME, game);
         translate_args("back-up-specific-game.confirm", &args)
     }
 
     pub fn back_up_one_game_failed(&self, game: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(GAME, game);
         translate_args("back-up-specific-game.failed", &args)
     }
 
     pub fn restore_one_game_confirm(&self, game: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(GAME, game);
         translate_args("restore-specific-game.confirm", &args)
     }
 
     pub fn restore_one_game_failed(&self, game: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(GAME, game);
         translate_args("restore-specific-game.failed", &args)
     }
@@ -1257,7 +1141,7 @@ impl Translator {
     }
 
     pub fn new_version_available(&self, version: &str) -> String {
-        let mut args = FluentArgs::new();
+        let mut args = LangArgs::new();
         args.set(VERSION, version);
         translate_args("new-version-available", &args)
     }
