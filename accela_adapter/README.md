@@ -10,8 +10,8 @@ post-processing) to ACCELA itself.
 
 ## Status
 
-**Phase 0** — search and fetch_manifest only. No download, no post-processing
-yet. See *Roadmap* below.
+**Phase 2** (adapter side) — search, fetch_manifest, and process_zip.
+No download, no post-processing yet. See *Roadmap* below.
 
 ## Requirements
 
@@ -35,6 +35,7 @@ on its own line. Stdout is flushed on every event.
 ```json
 {"cmd":"search","query":"portal","limit":50}
 {"cmd":"fetch_manifest","appid":"400"}
+{"cmd":"process_zip","path":"C:\\path\\to\\manifest.zip"}
 ```
 
 `limit` is optional (defaults to 100, capped at 100 by morrenus).
@@ -44,6 +45,7 @@ on its own line. Stdout is flushed on every event.
 ```json
 {"event":"search_results","games":[{"appid":400,"name":"Portal", ...}],"total_count":1}
 {"event":"manifest_ready","zip":"/home/jayoo/.local/share/ACCELA/morrenus_manifests/accela_fetch_400.zip","appid":"400"}
+{"event":"depots_parsed","appid":"400","game_name":"Portal","depots":{"401":{"key":"...","desc":"[WINDOWS] Portal Content","oslist":"windows","language":null,"size":485147}},"dlcs":{},"manifests":{"401":"123456789"},"header_url":"https://...","installdir":"Portal","buildid":"12345"}
 {"event":"error","message":"search: API Key is not set..."}
 ```
 

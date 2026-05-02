@@ -102,9 +102,41 @@ def handle_fetch_manifest(payload: Dict[str, Any]) -> None:
     emit({"event": "manifest_ready", "zip": zip_path, "appid": str(appid)})
 
 
+def handle_process_zip(payload: Dict[str, Any]) -> None:
+    """Parse a manifest ZIP (from morrenus or dropped by the user) and emit
+    the depot data inside it. Synchronous and Qt-free at the task level."""
+    from core.tasks.process_zip_task import ProcessZipTask
+
+    zip_path = payload.get("path")
+    if not zip_path:
+        emit_error("process_zip: 'path' is required")
+        return
+
+    try:
+        game_data = ProcessZipTask().run(zip_path)
+    except Exception as e:
+        emit_error(f"process_zip: {e!r}")
+        return
+
+    emit(
+        {
+            "event": "depots_parsed",
+            "appid": game_data.get("appid"),
+            "game_name": game_data.get("game_name"),
+            "depots": game_data.get("depots", {}),
+            "dlcs": game_data.get("dlcs", {}),
+            "manifests": game_data.get("manifests", {}),
+            "header_url": game_data.get("header_url"),
+            "installdir": game_data.get("installdir"),
+            "buildid": game_data.get("buildid"),
+        }
+    )
+
+
 HANDLERS = {
     "search": handle_search,
     "fetch_manifest": handle_fetch_manifest,
+    "process_zip": handle_process_zip,
 }
 
 
