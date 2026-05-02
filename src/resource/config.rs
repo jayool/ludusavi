@@ -3,7 +3,6 @@ pub mod root;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     num::NonZeroUsize,
-    sync::{Arc, Mutex},
 };
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
     path::CommonPath,
     prelude::{app_dir, EditAction, Error, Security, StrictPath, AVAILABLE_PARALELLISM},
     resource::{
-        manifest::{self, CloudMetadata, Manifest, Store},
+        manifest::{self, Manifest, Store},
         ResourceFile, SaveableResourceFile,
     },
     scan::{registry::RegistryItem, ScanKind},
@@ -45,10 +44,6 @@ pub enum Event {
     CustomGameRegistry(usize, EditAction),
     CustomGameInstallDir(usize, EditAction),
     CustomGameWinePrefix(usize, EditAction),
-    ExcludeStoreScreenshots(bool),
-    CloudFilter(CloudFilter),
-    BackupFilterIgnoredPath(EditAction),
-    BackupFilterIgnoredRegistry(EditAction),
     GameListEntryEnabled {
         name: String,
         enabled: bool,
@@ -513,143 +508,6 @@ impl Root {
 }
 
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(default, rename_all = "camelCase")]
-pub struct CloudFilter {
-    /// If true, don't back up games with cloud support
-    /// on the stores indicated in the other options here.
-    pub exclude: bool,
-    /// If this and `exclude` are true, don't back up games with cloud support on Epic.
-    pub epic: bool,
-    /// If this and `exclude` are true, don't back up games with cloud support on GOG.
-    pub gog: bool,
-    /// If this and `exclude` are true, don't back up games with cloud support on Origin / EA App.
-    pub origin: bool,
-    /// If this and `exclude` are true, don't back up games with cloud support on Steam.
-    pub steam: bool,
-    /// If this and `exclude` are true, don't back up games with cloud support on Uplay / Ubisoft Connect.
-    pub uplay: bool,
-}
-
-impl CloudFilter {
-    pub fn excludes(&self, info: &CloudMetadata) -> bool {
-        let CloudFilter {
-            exclude,
-            epic,
-            gog,
-            origin,
-            steam,
-            uplay,
-        } = self;
-
-        if !exclude {
-            return false;
-        }
-
-        (*epic && info.epic)
-            || (*gog && info.gog)
-            || (*origin && info.origin)
-            || (*steam && info.steam)
-            || (*uplay && info.uplay)
-    }
-}
-
-#[derive(Clone, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-#[serde(default, rename_all = "camelCase")]
-pub struct BackupFilter {
-    /// If true, then the backup should exclude screenshots from stores like Steam.
-    pub exclude_store_screenshots: bool,
-    pub cloud: CloudFilter,
-    /// Globally ignored paths.
-    pub ignored_paths: Vec<StrictPath>,
-    /// Globally ignored registry keys.
-    pub ignored_registry: Vec<RegistryItem>,
-    #[serde(skip)]
-    pub path_globs: Arc<Mutex<Option<globset::GlobSet>>>,
-}
-
-impl std::fmt::Debug for BackupFilter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BackupFilter")
-            .field("exclude_store_screenshots", &self.exclude_store_screenshots)
-            .field("cloud", &self.cloud)
-            .field("ignored_paths", &self.ignored_paths)
-            .field("ignored_registry", &self.ignored_registry)
-            .finish()
-    }
-}
-
-impl Eq for BackupFilter {}
-
-impl PartialEq for BackupFilter {
-    fn eq(&self, other: &Self) -> bool {
-        self.exclude_store_screenshots == other.exclude_store_screenshots
-            && self.ignored_paths == other.ignored_paths
-            && self.ignored_registry == other.ignored_registry
-    }
-}
-
-impl BackupFilter {
-    pub fn build_globs(&mut self) {
-        let mut path_globs = self.path_globs.lock().unwrap();
-        if self.ignored_paths.is_empty() {
-            *path_globs = None;
-            return;
-        }
-
-        let mut builder = globset::GlobSetBuilder::new();
-        for item in &self.ignored_paths {
-            let normalized = item.render();
-
-            let variants = vec![
-                normalized.to_string(),
-                // If the user has specified a plain folder, we also want to include its children.
-                format!("{}/**", &normalized),
-            ];
-
-            for variant in variants {
-                if let Ok(glob) = globset::GlobBuilder::new(&variant)
-                    .literal_separator(true)
-                    .backslash_escape(false)
-                    .case_insensitive(true)
-                    .build()
-                {
-                    builder.add(glob);
-                }
-            }
-        }
-
-        *path_globs = builder.build().ok();
-    }
-
-    pub fn is_path_ignored(&self, item: &StrictPath) -> bool {
-        if self.ignored_paths.is_empty() {
-            return false;
-        }
-
-        let path_globs = self.path_globs.lock().unwrap();
-        path_globs
-            .as_ref()
-            .map(|set| set.is_match(item.render()))
-            .unwrap_or(false)
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(unused))]
-    pub fn is_registry_ignored(&self, item: &RegistryItem) -> bool {
-        if self.ignored_registry.is_empty() {
-            return false;
-        }
-        let interpreted = item.interpret();
-        self.ignored_registry
-            .iter()
-            .any(|x| x.is_prefix_of(item) || x.interpret() == interpreted)
-    }
-
-    pub fn excludes(&self, explicit: bool, has_backup: bool, info: &CloudMetadata) -> bool {
-        !explicit && self.cloud.excludes(info) && !has_backup
-    }
-}
-
 /// Allows including/excluding specific file paths.
 /// Each outer key is a game name,
 /// and each nested key is a file path.
@@ -1019,7 +877,6 @@ pub struct BackupConfig {
     pub path: StrictPath,
     /// Names of games to skip when backing up.
     pub ignored_games: BTreeSet<String>,
-    pub filter: BackupFilter,
     pub toggled_paths: ToggledPaths,
     pub toggled_registry: ToggledRegistry,
     pub sort: Sort,
@@ -1255,7 +1112,6 @@ impl Default for BackupConfig {
         Self {
             path: default_backup_dir(),
             ignored_games: BTreeSet::new(),
-            filter: BackupFilter::default(),
             toggled_paths: Default::default(),
             toggled_registry: Default::default(),
             sort: Default::default(),
@@ -1289,11 +1145,6 @@ impl ResourceFile for Config {
     fn migrate(mut self) -> Self {
         self.roots.retain(|x| !x.path().raw().trim().is_empty());
         self.manifest.secondary.retain(|x| !x.value().trim().is_empty());
-        self.backup.filter.ignored_paths.retain(|x| !x.raw().trim().is_empty());
-        self.backup
-            .filter
-            .ignored_registry
-            .retain(|x| !x.raw().trim().is_empty());
         for item in &mut self.custom_games {
             item.files.retain(|x| !x.trim().is_empty());
             item.registry.retain(|x| !x.trim().is_empty());
@@ -1306,7 +1157,6 @@ impl ResourceFile for Config {
             self.apps.rclone.path = App::default_rclone().path;
         }
 
-        self.backup.filter.build_globs();
         self.rebase_paths();
 
         self
@@ -1995,10 +1845,6 @@ mod tests {
                 backup: BackupConfig {
                     path: StrictPath::relative(s("~/backup"), Some(StrictPath::cwd().render())),
                     ignored_games: BTreeSet::new(),
-                    filter: BackupFilter {
-                        exclude_store_screenshots: false,
-                        ..Default::default()
-                    },
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
                     sort: Default::default(),
@@ -2046,8 +1892,6 @@ mod tests {
                 - Backup Game 1
                 - Backup Game 2
                 - Backup Game 2
-              filter:
-                excludeStoreScreenshots: true
               onlyConstructive: true
             restore:
               path: ~/restore
@@ -2111,10 +1955,6 @@ mod tests {
                     ignored_games: btree_set! {
                         s("Backup Game 1"),
                         s("Backup Game 2"),
-                    },
-                    filter: BackupFilter {
-                        exclude_store_screenshots: true,
-                        ..Default::default()
                     },
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),
@@ -2209,17 +2049,6 @@ backup:
     - Backup Game 1
     - Backup Game 2
     - Backup Game 3
-  filter:
-    excludeStoreScreenshots: true
-    cloud:
-      exclude: false
-      epic: false
-      gog: false
-      origin: false
-      steam: false
-      uplay: false
-    ignoredPaths: []
-    ignoredRegistry: []
   toggledPaths: {}
   toggledRegistry: {}
   sort:
@@ -2312,10 +2141,6 @@ customGames:
                         s("Backup Game 3"),
                         s("Backup Game 1"),
                         s("Backup Game 2"),
-                    },
-                    filter: BackupFilter {
-                        exclude_store_screenshots: true,
-                        ..Default::default()
                     },
                     toggled_paths: Default::default(),
                     toggled_registry: Default::default(),

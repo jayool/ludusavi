@@ -207,8 +207,6 @@ pub struct TextHistories {
     pub roots: Vec<RootHistory>,
     pub secondary_manifests: Vec<TextHistory>,
     pub custom_games: Vec<CustomGameHistory>,
-    pub backup_filter_ignored_paths: Vec<TextHistory>,
-    pub backup_filter_ignored_registry: Vec<TextHistory>,
     pub rclone_executable: TextHistory,
     pub rclone_arguments: TextHistory,
     pub cloud_remote_id: TextHistory,
@@ -241,15 +239,6 @@ impl TextHistories {
 
         for x in &config.custom_games {
             histories.add_custom_game(x);
-        }
-
-        for x in &config.backup.filter.ignored_paths {
-            histories.backup_filter_ignored_paths.push(TextHistory::path(x));
-        }
-        for x in &config.backup.filter.ignored_registry {
-            histories
-                .backup_filter_ignored_registry
-                .push(TextHistory::raw(&x.raw()));
         }
 
         if let Some(Remote::Custom { id }) = &config.cloud.remote {

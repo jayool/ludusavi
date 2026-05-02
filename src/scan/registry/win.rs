@@ -3,7 +3,7 @@ use winreg::types::{FromRegValue, ToRegValue};
 
 use crate::{
     prelude::Error,
-    resource::config::{BackupFilter, ToggledRegistry},
+    resource::config::ToggledRegistry,
     scan::{
         registry::{Entries, Entry, Hives, RegistryItem, RegistryKind},
         BackupError, ScanChange, ScannedRegistry, ScannedRegistryValue, ScannedRegistryValues,
@@ -114,7 +114,6 @@ fn get_hkey_from_name(name: &str) -> Option<winreg::HKEY> {
 pub fn scan_registry(
     game: &str,
     path: &str,
-    filter: &BackupFilter,
     toggled: &ToggledRegistry,
     previous: Option<&Hives>,
 ) -> Result<HashMap<RegistryItem, ScannedRegistry>, Error> {
@@ -123,7 +122,7 @@ pub fn scan_registry(
     let (hive_name, key) = path.split_hive().ok_or(Error::RegistryIssue)?;
     let hive = get_hkey_from_name(&hive_name).ok_or(Error::RegistryIssue)?;
 
-    scan_registry_key(game, hive, &hive_name, &key, filter, toggled, previous)
+    scan_registry_key(game, hive, &hive_name, &key, toggled, previous)
 }
 
 fn scan_registry_key(
@@ -131,7 +130,6 @@ fn scan_registry_key(
     hive: winreg::HKEY,
     hive_name: &str,
     key: &str,
-    filter: &BackupFilter,
     toggled: &ToggledRegistry,
     previous: Option<&Hives>,
 ) -> Result<HashMap<RegistryItem, ScannedRegistry>, Error> {
@@ -142,7 +140,7 @@ fn scan_registry_key(
         .open_subkey(key)
         .map_err(|_| Error::RegistryIssue)?;
 
-    if !filter.is_registry_ignored(&path) {
+    if true {
         let live_entries = read_registry_key(&subkey);
         let mut live_values = ScannedRegistryValues::new();
 
@@ -193,7 +191,6 @@ fn scan_registry_key(
                     hive,
                     hive_name,
                     &format!("{key}\\{name}"),
-                    filter,
                     toggled,
                     previous,
                 )

@@ -11,7 +11,7 @@ use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use crate::{
     prelude::{app_dir, StrictPath},
     resource::{
-        config::{BackupFilter, Config, ToggledPaths, ToggledRegistry},
+        config::{Config, ToggledPaths, ToggledRegistry},
         manifest::Manifest,
     },
     scan::{layout::BackupLayout, scan_game_for_backup, Launchers, SteamShortcuts, TitleFinder},
@@ -643,7 +643,6 @@ fn auto_register_paths(
             &roots,
             &app_dir,
             &launchers,
-            &BackupFilter::default(),
             None,
             &ToggledPaths::default(),
             &ToggledRegistry::default(),

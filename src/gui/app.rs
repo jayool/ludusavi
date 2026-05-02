@@ -26,7 +26,7 @@ use crate::{
     lang::TRANSLATOR,
     prelude::{
         app_dir, get_threads_from_env, initialize_rayon, EditAction, Error, Finality,
-        Security, StrictPath,
+        Security,
     },
     resource::{
         cache::{self, Cache},
@@ -35,7 +35,7 @@ use crate::{
         ResourceFile, SaveableResourceFile,
     },
     scan::{
-        game_filter, layout::BackupLayout, prepare_backup_target, registry::RegistryItem, scan_game_for_backup,
+        game_filter, layout::BackupLayout, prepare_backup_target, scan_game_for_backup,
         Launchers, ScanKind, SteamShortcuts, TitleFinder,
     },
 };
@@ -420,9 +420,8 @@ impl App {
                 let roots = std::sync::Arc::new(config.expanded_roots());
                 let layout = std::sync::Arc::new(*layout);
                 let launchers = std::sync::Arc::new(launchers);
-                let filter = std::sync::Arc::new(self.config.backup.filter.clone());
                 let steam_shortcuts = std::sync::Arc::new(steam);
-                let games_specified = self.operation.games_specified();
+                let _games_specified = self.operation.games_specified();
 
                 for key in subjects {
                     let game = manifest.0[&key].clone();
@@ -430,7 +429,6 @@ impl App {
                     let roots = roots.clone();
                     let launchers = launchers.clone();
                     let layout = layout.clone();
-                    let filter = filter.clone();
                     let steam_shortcuts = steam_shortcuts.clone();
                     let cancel_flag = self.operation_should_cancel.clone();
                     self.operation_steps.push(OperationStep {
@@ -451,18 +449,12 @@ impl App {
                                     config.backup.only_constructive,
                                 );
 
-                                if filter.excludes(games_specified, previous.is_some(), &game.cloud) {
-                                    log::trace!("[{key}] excluded by backup filter");
-                                    return (None, None);
-                                }
-
                                 let scan_info = scan_game_for_backup(
                                     &game,
                                     &key,
                                     &roots,
                                     &app_dir(),
                                     &launchers,
-                                    &filter,
                                     None,
                                     &config.backup.toggled_paths,
                                     &config.backup.toggled_registry,
@@ -1576,63 +1568,6 @@ impl App {
                                 .wine_prefix
                                 .swap(index, offset);
                             self.config.custom_games[game_index].wine_prefix.swap(index, offset);
-                        }
-                    },
-                    config::Event::ExcludeStoreScreenshots(enabled) => {
-                        self.config.backup.filter.exclude_store_screenshots = enabled;
-                    }
-                    config::Event::CloudFilter(filter) => {
-                        self.config.backup.filter.cloud = filter;
-                    }
-                    config::Event::BackupFilterIgnoredPath(action) => {
-                        match action {
-                            EditAction::Add => {
-                                self.text_histories.backup_filter_ignored_paths.push(Default::default());
-                                self.config
-                                    .backup
-                                    .filter
-                                    .ignored_paths
-                                    .push(StrictPath::new("".to_string()));
-                            }
-                            EditAction::Change(index, value) => {
-                                self.text_histories.backup_filter_ignored_paths[index].push(&value);
-                                self.config.backup.filter.ignored_paths[index] = StrictPath::new(value);
-                            }
-                            EditAction::Remove(index) => {
-                                self.text_histories.backup_filter_ignored_paths.remove(index);
-                                self.config.backup.filter.ignored_paths.remove(index);
-                            }
-                            EditAction::Move(index, direction) => {
-                                let offset = direction.shift(index);
-                                self.text_histories.backup_filter_ignored_paths.swap(index, offset);
-                                self.config.backup.filter.ignored_paths.swap(index, offset);
-                            }
-                        }
-                        self.config.backup.filter.build_globs();
-                    }
-                    config::Event::BackupFilterIgnoredRegistry(action) => match action {
-                        EditAction::Add => {
-                            self.text_histories
-                                .backup_filter_ignored_registry
-                                .push(Default::default());
-                            self.config
-                                .backup
-                                .filter
-                                .ignored_registry
-                                .push(RegistryItem::new("".to_string()));
-                        }
-                        EditAction::Change(index, value) => {
-                            self.text_histories.backup_filter_ignored_registry[index].push(&value);
-                            self.config.backup.filter.ignored_registry[index] = RegistryItem::new(value);
-                        }
-                        EditAction::Remove(index) => {
-                            self.text_histories.backup_filter_ignored_registry.remove(index);
-                            self.config.backup.filter.ignored_registry.remove(index);
-                        }
-                        EditAction::Move(index, direction) => {
-                            let offset = direction.shift(index);
-                            self.text_histories.backup_filter_ignored_registry.swap(index, offset);
-                            self.config.backup.filter.ignored_registry.swap(index, offset);
                         }
                     },
                     config::Event::GameListEntryEnabled {

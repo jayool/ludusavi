@@ -30,7 +30,7 @@ use crate::{
     prelude::{filter_map_walkdir, Error, SKIP},
     resource::{
         config::{
-            root, BackupFilter, Config, Root, SortKey, ToggledPaths, ToggledRegistry,
+            root, Config, Root, SortKey, ToggledPaths, ToggledRegistry,
         },
         manifest::{Game, GameFileEntry, IdSet, Os, Store},
     },
@@ -417,7 +417,6 @@ pub fn scan_game_for_backup(
     roots: &[Root],
     manifest_dir: &StrictPath,
     launchers: &Launchers,
-    filter: &BackupFilter,
     wine_prefix: Option<&StrictPath>,
     ignored_paths: &ToggledPaths,
     #[cfg_attr(not(target_os = "windows"), allow(unused))] ignored_registry: &ToggledRegistry,
@@ -536,15 +535,13 @@ pub fn scan_game_for_backup(
                     None,
                 ));
                 // Screenshots:
-                if !filter.exclude_store_screenshots {
-                    paths_to_check.insert((
-                        StrictPath::relative(
-                            format!("{}/userdata/*/760/remote/{}/screenshots/*.*", &root_globbable, id),
-                            Some(manifest_dir_globbable.clone()),
-                        ),
-                        None,
-                    ));
-                }
+                paths_to_check.insert((
+                    StrictPath::relative(
+                        format!("{}/userdata/*/760/remote/{}/screenshots/*.*", &root_globbable, id),
+                        Some(manifest_dir_globbable.clone()),
+                    ),
+                    None,
+                ));
                 // Registry:
                 if !game.registry.is_empty() {
                     let prefix = format!("{}/steamapps/compatdata/{}/pfx", &root_globbable, id);
@@ -569,10 +566,6 @@ pub fn scan_game_for_backup(
         .unwrap_or_default();
     for (path, case_sensitive) in paths_to_check {
         log::trace!("[{name}] checking: {path:?}");
-        if filter.is_path_ignored(&path) {
-            log::debug!("[{name}] excluded: {path:?}");
-            continue;
-        }
         let paths = match case_sensitive {
             None => path.glob(),
             Some(cs) => path.glob_case_sensitive(cs),
@@ -582,10 +575,6 @@ pub fn scan_game_for_backup(
                 let Ok(scan_key) = p.interpreted().map(|x| x.rendered()) else {
                     continue;
                 };
-                if filter.is_path_ignored(&scan_key) {
-                    log::debug!("[{name}] excluded: {scan_key:?}");
-                    continue;
-                }
                 let ignored = ignored_paths.is_ignored(name, &scan_key);
                 log::debug!("[{name}] found: {scan_key:?}");
                 let size = scan_key.size();
@@ -622,10 +611,6 @@ pub fn scan_game_for_backup(
                         let Ok(scan_key) = StrictPath::from(&child).interpreted().map(|x| x.rendered()) else {
                             continue;
                         };
-                        if filter.is_path_ignored(&scan_key) {
-                            log::debug!("[{name}] excluded: {scan_key:?}");
-                            continue;
-                        }
                         let ignored = ignored_paths.is_ignored(name, &scan_key);
                         log::debug!("[{name}] found: {scan_key:?}");
                         let size = scan_key.size();
@@ -708,7 +693,7 @@ pub fn scan_game_for_backup(
             for candidate in &candidates {
                 log::trace!("[{name}] checking registry: {candidate}");
                 for (scan_key, mut scanned) in
-                    registry::win::scan_registry(name, candidate, filter, ignored_registry, previous_registry.as_ref())
+                    registry::win::scan_registry(name, candidate, ignored_registry, previous_registry.as_ref())
                         .unwrap_or_default()
                 {
                     log::debug!("[{name}] found registry: {}", scan_key.raw());
@@ -846,8 +831,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use velcro::{btree_map, hash_map};
     use super::*;
-    #[cfg(target_os = "windows")]
-    use crate::resource::config::ToggledRegistryEntry;
     use crate::{
         resource::{config::Config, manifest::Manifest, ResourceFile},
         testing::{repo, s, EMPTY_HASH},
@@ -934,7 +917,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -958,7 +940,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game 2".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -986,7 +967,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest(), &["game5".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1022,7 +1002,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest(), &["game5".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1050,7 +1029,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest(), &["game 2".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1090,7 +1068,6 @@ mod tests {
                 &roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&roots, &manifest(), &["install-dir-with-glob-characters".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1122,7 +1099,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest(), &["game4".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1153,7 +1129,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest(), &["game4".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1180,7 +1155,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game4".to_string()]),
-                &BackupFilter::default(),
                 Some(&StrictPath::new(format!("{}/tests/wine-prefix", repo()))),
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1207,7 +1181,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["fake-registry".to_string()]),
-                &BackupFilter::default(),
                 Some(&StrictPath::new(format!("{}/tests/wine-prefix", repo()))),
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1218,78 +1191,7 @@ mod tests {
         );
     }
     #[test]
-    fn can_scan_game_for_backup_with_file_matches_and_ignored_directory() {
-        let mut filter = BackupFilter {
-            ignored_paths: vec![StrictPath::new(format!("{}\\tests/root1/game1/subdir", repo()))],
-            ..Default::default()
-        };
-        let ignored = ToggledPaths::default();
-        let found = hash_map! {
-            format!("{}/tests/root2/game1/file1.txt", repo()).into(): ScannedFile::new(1, "3a52ce780950d4d969792a2559cd519d7ee8c727").change_new(),
-        };
-        filter.build_globs();
-        assert_eq!(
-            ScanInfo {
-                game_name: s("game1"),
-                found_files: found,
-                found_registry_keys: hash_map! {},
-                ..Default::default()
-            },
-            scan_game_for_backup(
-                &manifest().0["game1"],
-                "game1",
-                &config().roots,
-                &StrictPath::new(repo()),
-                &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &filter,
-                None,
-                &ignored,
-                &ToggledRegistry::default(),
-                None,
-                &Default::default(),
-                ONLY_CONSTRUCTIVE,
-            ),
-        );
-    }
-    #[test]
-    fn can_scan_game_for_backup_with_file_matches_and_toggled_directory() {
-        let mut filter = BackupFilter::default();
-        let ignored = ToggledPaths::new(btree_map! {
-            s("game1"): btree_map! {
-                StrictPath::new(format!("{}\\tests/root1/game1/subdir", repo())): false
-            }
-        });
-        let found = hash_map! {
-            format!("{}/tests/root1/game1/subdir/file2.txt", repo()).into(): ScannedFile::new(2, "9d891e731f75deae56884d79e9816736b7488080").change_new().ignored(),
-            format!("{}/tests/root2/game1/file1.txt", repo()).into(): ScannedFile::new(1, "3a52ce780950d4d969792a2559cd519d7ee8c727").change_new(),
-        };
-        filter.build_globs();
-        assert_eq!(
-            ScanInfo {
-                game_name: s("game1"),
-                found_files: found,
-                found_registry_keys: hash_map! {},
-                ..Default::default()
-            },
-            scan_game_for_backup(
-                &manifest().0["game1"],
-                "game1",
-                &config().roots,
-                &StrictPath::new(repo()),
-                &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &filter,
-                None,
-                &ignored,
-                &ToggledRegistry::default(),
-                None,
-                &Default::default(),
-                ONLY_CONSTRUCTIVE,
-            ),
-        );
-    }
-    #[test]
     fn can_scan_game_for_backup_with_file_matches_and_toggled_file() {
-        let mut filter = BackupFilter::default();
         let ignored = ToggledPaths::new(btree_map! {
             s("game1"): btree_map! {
                 StrictPath::new(format!("{}\\tests/root1/game1/subdir/file2.txt", repo())): false
@@ -1299,7 +1201,6 @@ mod tests {
             format!("{}/tests/root1/game1/subdir/file2.txt", repo()).into(): ScannedFile::new(2, "9d891e731f75deae56884d79e9816736b7488080").change_new().ignored(),
             format!("{}/tests/root2/game1/file1.txt", repo()).into(): ScannedFile::new(1, "3a52ce780950d4d969792a2559cd519d7ee8c727").change_new(),
         };
-        filter.build_globs();
         assert_eq!(
             ScanInfo {
                 game_name: s("game1"),
@@ -1313,7 +1214,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &filter,
                 None,
                 &ignored,
                 &ToggledRegistry::default(),
@@ -1359,7 +1259,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game3".to_string()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1414,199 +1313,6 @@ mod tests {
                 &config().roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(&config().roots, &manifest(), &["game3-outer".to_string()]),
-                &BackupFilter::default(),
-                None,
-                &ToggledPaths::default(),
-                &ToggledRegistry::default(),
-                None,
-                &Default::default(),
-                ONLY_CONSTRUCTIVE,
-            ),
-        );
-    }
-    #[test]
-    #[cfg(target_os = "windows")]
-    fn can_scan_game_for_backup_with_registry_matches_and_ignores() {
-        let cases = vec![
-            (
-                BackupFilter {
-                    ignored_registry: vec![
-                        RegistryItem::new(s("HKEY_CURRENT_USER\\Software/Ludusavi/invalid")),
-                        RegistryItem::new(s("HKEY_CURRENT_USER\\Software/Ludusavi/other")),
-                    ],
-                    ..Default::default()
-                },
-                ToggledRegistry::default(),
-                hash_map! {
-                    "HKEY_CURRENT_USER/Software/Ludusavi".into(): ScannedRegistry::new().change_as(ScanChange::New),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/game3".into(): ScannedRegistry::new().change_as(ScanChange::New)
-                        .with_value_new("binary")
-                        .with_value_new("dword")
-                        .with_value_new("expandSz")
-                        .with_value_new("multiSz")
-                        .with_value_new("qword")
-                        .with_value_new("sz"),
-                },
-                Some(registry::Hives(btree_map! {
-                    r"HKEY_CURRENT_USER".into(): registry::Keys(btree_map! {
-                        r"Software\Ludusavi".into(): registry::Entries(btree_map! {}),
-                        r"Software\Ludusavi\game3".into(): registry::Entries(btree_map! {
-                            "binary".into(): registry::Entry::Binary(vec![65]),
-                            "dword".into(): registry::Entry::Dword(1),
-                            "expandSz".into(): registry::Entry::ExpandSz("baz".to_string()),
-                            "multiSz".into(): registry::Entry::MultiSz("bar".to_string()),
-                            "qword".into(): registry::Entry::Qword(2),
-                            "sz".into(): registry::Entry::Sz("foo".to_string()),
-                        }),
-                    })
-                })),
-            ),
-            (
-                BackupFilter::default(),
-                ToggledRegistry::new(btree_map! {
-                    s("game3-outer"): btree_map! {
-                        RegistryItem::new(s("HKEY_CURRENT_USER\\Software/Ludusavi")): ToggledRegistryEntry::Key(false)
-                    }
-                }),
-                hash_map! {
-                    "HKEY_CURRENT_USER/Software/Ludusavi".into(): ScannedRegistry::new().ignored().change_as(ScanChange::New),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/game3".into():  ScannedRegistry::new().ignored().change_as(ScanChange::New)
-                        .with_value("binary", ScanChange::New, true)
-                        .with_value("dword", ScanChange::New, true)
-                        .with_value("expandSz", ScanChange::New, true)
-                        .with_value("multiSz", ScanChange::New, true)
-                        .with_value("qword", ScanChange::New, true)
-                        .with_value("sz", ScanChange::New, true),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/invalid".into(): ScannedRegistry::new().ignored().change_as(ScanChange::New)
-                        .with_value("dword", ScanChange::New, true),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/other".into(): ScannedRegistry::new().ignored().change_as(ScanChange::New),
-                },
-                None,
-            ),
-            (
-                BackupFilter::default(),
-                ToggledRegistry::new(btree_map! {
-                    s("game3-outer"): btree_map! {
-                        RegistryItem::new(s("HKEY_CURRENT_USER\\Software/Ludusavi/game3")): ToggledRegistryEntry::Complex {
-                            key: None,
-                            values: btree_map! {
-                                s("qword"): false,
-                            },
-                        },
-                        RegistryItem::new(s("HKEY_CURRENT_USER\\Software/Ludusavi/other")): ToggledRegistryEntry::Key(false),
-                    }
-                }),
-                hash_map! {
-                    "HKEY_CURRENT_USER/Software/Ludusavi".into(): ScannedRegistry::new().change_as(ScanChange::New),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/game3".into(): ScannedRegistry::new().change_as(ScanChange::New)
-                        .with_value_new("binary")
-                        .with_value_new("dword")
-                        .with_value_new("expandSz")
-                        .with_value_new("multiSz")
-                        .with_value("qword", ScanChange::New, true)
-                        .with_value_new("sz"),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/invalid".into(): ScannedRegistry::new().change_as(ScanChange::New)
-                        .with_value_new("dword"),
-                    "HKEY_CURRENT_USER/Software/Ludusavi/other".into(): ScannedRegistry::new().ignored().change_as(ScanChange::New),
-                },
-                Some(registry::Hives(btree_map! {
-                    r"HKEY_CURRENT_USER".into(): registry::Keys(btree_map! {
-                        r"Software\Ludusavi".into(): registry::Entries(btree_map! {}),
-                        r"Software\Ludusavi\game3".into(): registry::Entries(btree_map! {
-                            "binary".into(): registry::Entry::Binary(vec![65]),
-                            "dword".into(): registry::Entry::Dword(1),
-                            "expandSz".into(): registry::Entry::ExpandSz("baz".to_string()),
-                            "multiSz".into(): registry::Entry::MultiSz("bar".to_string()),
-                            "sz".into(): registry::Entry::Sz("foo".to_string()),
-                        }),
-                        r"Software\Ludusavi\invalid".into(): registry::Entries(btree_map! {
-                            "dword".into(): registry::Entry::Raw { kind: registry::RegistryKind::Dword, data: vec![0, 0, 0, 0, 0, 0, 0, 0] },
-                        }),
-                    })
-                })),
-            ),
-        ];
-        for (filter, ignored, found, dumped_registry) in cases {
-            assert_eq!(
-                ScanInfo {
-                    game_name: s("game3-outer"),
-                    found_files: hash_map! {},
-                    found_registry_keys: found,
-                    dumped_registry,
-                    ..Default::default()
-                },
-                scan_game_for_backup(
-                    &manifest().0["game3-outer"],
-                    "game3-outer",
-                    &config().roots,
-                    &StrictPath::new(repo()),
-                    &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                    &filter,
-                    None,
-                    &ToggledPaths::default(),
-                    &ignored,
-                    None,
-                    &Default::default(),
-                    ONLY_CONSTRUCTIVE,
-                ),
-            );
-        }
-    }
-    #[test]
-    fn can_scan_game_for_backup_with_exact_exclusions() {
-        let mut filter = BackupFilter {
-            ignored_paths: vec![format!("{}/tests/root1/game1/subdir/file2.txt", repo()).into()],
-            ..Default::default()
-        };
-        filter.build_globs();
-        assert_eq!(
-            ScanInfo {
-                game_name: s("game1"),
-                found_files: hash_map! {
-                    format!("{}/tests/root2/game1/file1.txt", repo()).into(): ScannedFile::new(1, "3a52ce780950d4d969792a2559cd519d7ee8c727").change_new(),
-                },
-                found_registry_keys: hash_map! {},
-                ..Default::default()
-            },
-            scan_game_for_backup(
-                &manifest().0["game1"],
-                "game1",
-                &config().roots,
-                &StrictPath::new(repo()),
-                &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &filter,
-                None,
-                &ToggledPaths::default(),
-                &ToggledRegistry::default(),
-                None,
-                &Default::default(),
-                ONLY_CONSTRUCTIVE,
-            ),
-        );
-    }
-    #[test]
-    fn can_scan_game_for_backup_with_glob_exclusions() {
-        let mut filter = BackupFilter {
-            ignored_paths: vec!["**/*2.txt".into()],
-            ..Default::default()
-        };
-        filter.build_globs();
-        assert_eq!(
-            ScanInfo {
-                game_name: s("game1"),
-                found_files: hash_map! {
-                    format!("{}/tests/root2/game1/file1.txt", repo()).into(): ScannedFile::new(1, "3a52ce780950d4d969792a2559cd519d7ee8c727").change_new(),
-                },
-                found_registry_keys: hash_map! {},
-                ..Default::default()
-            },
-            scan_game_for_backup(
-                &manifest().0["game1"],
-                "game1",
-                &config().roots,
-                &StrictPath::new(repo()),
-                &Launchers::scan_dirs(&config().roots, &manifest(), &["game1".to_string()]),
-                &filter,
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
@@ -1648,7 +1354,6 @@ mod tests {
                 roots,
                 &StrictPath::new(repo()),
                 &Launchers::scan_dirs(roots, &manifest, &[title.clone()]),
-                &BackupFilter::default(),
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),

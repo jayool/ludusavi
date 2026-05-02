@@ -893,7 +893,7 @@ fn glob_first_existing_dir(pattern: &str, sep: char) -> Option<String> {
 pub fn resolve_game_path_from_manifest(config: &Config, game_name: &str) -> Option<String> {
     use crate::resource::manifest::Manifest;
     use crate::scan::{layout::BackupLayout, scan_game_for_backup, Launchers, SteamShortcuts, TitleFinder};
-    use crate::resource::config::{BackupFilter, ToggledPaths, ToggledRegistry};
+    use crate::resource::config::{ToggledPaths, ToggledRegistry};
     use crate::prelude::app_dir;
 
     let manifest = Manifest::load().ok()?.with_extensions(config);
@@ -912,7 +912,6 @@ pub fn resolve_game_path_from_manifest(config: &Config, game_name: &str) -> Opti
         &roots,
         &app_dir,
         &launchers,
-        &BackupFilter::default(),
         None,
         &ToggledPaths::default(),
         &ToggledRegistry::default(),
