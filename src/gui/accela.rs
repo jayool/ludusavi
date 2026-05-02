@@ -6,9 +6,10 @@
 //! Phase 1 scope: configuration inputs + search + results list.
 //! Future phases add fetch_manifest, depot picker, download, post-processing.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 use iced::{Alignment, Length};
 use tokio::io::AsyncWriteExt;
@@ -20,6 +21,8 @@ use crate::gui::{
     widget::{text, Button, Column, Container, Element, Row, TextInput},
 };
 
+const DOUBLE_CLICK_THRESHOLD: Duration = Duration::from_millis(400);
+
 #[derive(Debug, Clone)]
 pub enum Event {
     AccelaPathChanged(String),
@@ -29,6 +32,10 @@ pub enum Event {
     SearchSucceeded(Vec<GameResult>),
     SearchFailed(String),
     ImageLoaded(String, Result<Vec<u8>, String>),
+    ResultClicked(String),
+    ManifestFetched(Result<String, String>),
+    ZipProcessed(Result<GameDetail, String>),
+    BackToSearch,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +43,59 @@ pub enum ImageState {
     Loading,
     Loaded(iced::widget::image::Handle),
     Failed,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum ViewState {
+    #[default]
+    Search,
+    Loading(String),
+    Depots(GameDetail),
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct GameDetail {
+    #[serde(default)]
+    pub appid: Option<String>,
+    #[serde(default)]
+    pub game_name: Option<String>,
+    #[serde(default)]
+    pub depots: BTreeMap<String, DepotInfo>,
+    #[serde(default)]
+    pub dlcs: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DepotInfo {
+    #[serde(default)]
+    pub desc: String,
+    #[serde(default)]
+    pub size: Option<serde_json::Value>,
+}
+
+impl DepotInfo {
+    pub fn size_display(&self) -> String {
+        match &self.size {
+            Some(serde_json::Value::String(s)) => s.parse::<u64>().map(format_size).unwrap_or_default(),
+            Some(serde_json::Value::Number(n)) => n.as_u64().map(format_size).unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -64,10 +124,37 @@ pub struct AccelaScreen {
     pub results: Vec<GameResult>,
     pub status: Status,
     pub image_cache: HashMap<String, ImageState>,
+    pub view_state: ViewState,
+    pub last_click: Option<(String, Instant)>,
+}
+
+impl AccelaScreen {
+    pub fn register_click(&mut self, game_id: &str) -> bool {
+        let now = Instant::now();
+        let is_double = self
+            .last_click
+            .as_ref()
+            .map(|(prev, t)| prev == game_id && now.duration_since(*t) < DOUBLE_CLICK_THRESHOLD)
+            .unwrap_or(false);
+        if is_double {
+            self.last_click = None;
+        } else {
+            self.last_click = Some((game_id.to_string(), now));
+        }
+        is_double
+    }
 }
 
 impl AccelaScreen {
     pub fn view(&self) -> Element<'_> {
+        match &self.view_state {
+            ViewState::Search => self.search_view(),
+            ViewState::Loading(label) => self.loading_view(label),
+            ViewState::Depots(detail) => self.depots_view(detail),
+        }
+    }
+
+    fn search_view(&self) -> Element<'_> {
         let header = Container::new(
             Row::new()
                 .padding([0, 24])
@@ -268,47 +355,211 @@ impl AccelaScreen {
                     .into(),
             };
 
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(image_widget)
-                    .push(
-                        text(&game.game_id)
-                            .size(12)
-                            .class(style::Text::Muted)
-                            .width(Length::Fixed(APPID_W)),
-                    )
-                    .push(text(&game.game_name).size(12).width(Length::Fill))
-                    .push(
-                        text(game.uploaded_date.clone().unwrap_or_default())
-                            .size(11)
-                            .class(style::Text::Muted)
-                            .width(Length::Fixed(DATE_W)),
-                    ),
-            );
+            let row = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(image_widget)
+                .push(
+                    text(&game.game_id)
+                        .size(12)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(APPID_W)),
+                )
+                .push(text(&game.game_name).size(12).width(Length::Fill))
+                .push(
+                    text(game.uploaded_date.clone().unwrap_or_default())
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(DATE_W)),
+                );
+
+            let id = game.game_id.clone();
+            let clickable = iced::widget::mouse_area(row)
+                .on_press(Message::Accela(Event::ResultClicked(id)));
+
+            col = col.push(clickable);
         }
         col.into()
     }
+
+    fn loading_view<'a>(&'a self, label: &'a str) -> Element<'a> {
+        let header = Container::new(
+            Row::new()
+                .padding([0, 24])
+                .height(52)
+                .align_y(Alignment::Center)
+                .push(text("ACCELA").size(15).width(Length::Fill)),
+        )
+        .width(Length::Fill)
+        .class(style::Container::TopBar);
+
+        let body = Container::new(
+            Column::new()
+                .spacing(12)
+                .padding([24, 24])
+                .push(
+                    Button::new(text("← Back to results").size(12))
+                        .padding([6, 12])
+                        .class(style::Button::Ghost)
+                        .on_press(Message::Accela(Event::BackToSearch)),
+                )
+                .push(text(label).size(13).class(style::Text::Muted)),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        Column::new().push(header).push(body).into()
+    }
+
+    fn depots_view<'a>(&'a self, detail: &'a GameDetail) -> Element<'a> {
+        let header = Container::new(
+            Row::new()
+                .padding([0, 24])
+                .height(52)
+                .align_y(Alignment::Center)
+                .push(text("ACCELA").size(15).width(Length::Fill)),
+        )
+        .width(Length::Fill)
+        .class(style::Container::TopBar);
+
+        let game_label = format!(
+            "{} ({})",
+            detail.game_name.as_deref().unwrap_or("Unknown"),
+            detail.appid.as_deref().unwrap_or("?")
+        );
+
+        let toolbar = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(
+                Button::new(text("← Back to results").size(12))
+                    .padding([6, 12])
+                    .class(style::Button::Ghost)
+                    .on_press(Message::Accela(Event::BackToSearch)),
+            )
+            .push(text(game_label).size(14).width(Length::Fill));
+
+        let depots_card = if detail.depots.is_empty() {
+            Container::new(
+                Column::new()
+                    .spacing(6)
+                    .push(text("DEPOTS").size(13).class(style::Text::Muted))
+                    .push(
+                        text("No depots found in this manifest.")
+                            .size(12)
+                            .class(style::Text::Muted),
+                    ),
+            )
+        } else {
+            let mut col = Column::new()
+                .spacing(6)
+                .push(
+                    Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .push(text("DEPOTS").size(13).class(style::Text::Muted))
+                        .push(
+                            text(format!("({})", detail.depots.len()))
+                                .size(12)
+                                .class(style::Text::Muted),
+                        ),
+                );
+
+            for (depot_id, info) in &detail.depots {
+                let size = info.size_display();
+                col = col.push(
+                    Row::new()
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(
+                            text(depot_id)
+                                .size(12)
+                                .class(style::Text::Muted)
+                                .width(Length::Fixed(80.0)),
+                        )
+                        .push(text(&info.desc).size(12).width(Length::Fill))
+                        .push(
+                            text(size)
+                                .size(11)
+                                .class(style::Text::Muted)
+                                .width(Length::Fixed(110.0)),
+                        ),
+                );
+            }
+            Container::new(col)
+        }
+        .width(Length::Fill)
+        .padding(16)
+        .class(style::Container::GamesTable);
+
+        let dlcs_card = if detail.dlcs.is_empty() {
+            None
+        } else {
+            let mut col = Column::new().spacing(6).push(
+                Row::new()
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .push(text("DLCS").size(13).class(style::Text::Muted))
+                    .push(
+                        text(format!("({})", detail.dlcs.len()))
+                            .size(12)
+                            .class(style::Text::Muted),
+                    ),
+            );
+            for (dlc_id, dlc_desc) in &detail.dlcs {
+                col = col.push(
+                    Row::new()
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(
+                            text(dlc_id)
+                                .size(12)
+                                .class(style::Text::Muted)
+                                .width(Length::Fixed(80.0)),
+                        )
+                        .push(text(dlc_desc).size(12).width(Length::Fill)),
+                );
+            }
+            Some(
+                Container::new(col)
+                    .width(Length::Fill)
+                    .padding(16)
+                    .class(style::Container::GamesTable),
+            )
+        };
+
+        let mut content_col = Column::new()
+            .spacing(16)
+            .padding([24, 24])
+            .push(toolbar)
+            .push(depots_card);
+        if let Some(dlcs) = dlcs_card {
+            content_col = content_col.push(dlcs);
+        }
+
+        Column::new()
+            .push(header)
+            .push(
+                Container::new(ScrollSubject::Other.into_widget(content_col))
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .into()
+    }
 }
 
-/// Spawn the adapter, send a single search command, return parsed results.
-///
-/// The adapter exits cleanly when stdin is closed, so this is a one-shot
-/// process per search. Future phases will keep a long-lived adapter for
-/// streaming progress events.
-pub async fn run_search(
-    python_path: String,
-    adapter_path: PathBuf,
-    accela_path: String,
-    query: String,
-) -> Result<Vec<GameResult>, String> {
-    let cmd_json = serde_json::json!({"cmd": "search", "query": query}).to_string();
-
-    let mut child = Command::new(&python_path)
-        .arg(&adapter_path)
+/// Send one command to a freshly-spawned adapter and return the first event
+/// it emits (parsed as JSON). The adapter exits cleanly when stdin is closed.
+async fn send_command(
+    python_path: &str,
+    adapter_path: &PathBuf,
+    accela_path: &str,
+    cmd_json: String,
+) -> Result<serde_json::Value, String> {
+    let mut child = Command::new(python_path)
+        .arg(adapter_path)
         .arg("--accela-path")
-        .arg(&accela_path)
+        .arg(accela_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -340,21 +591,71 @@ pub async fn run_search(
         .lines()
         .next()
         .ok_or_else(|| "no output from adapter".to_string())?;
-    let event: serde_json::Value =
-        serde_json::from_str(line).map_err(|e| format!("json parse: {e} (line: {line})"))?;
+
+    serde_json::from_str(line).map_err(|e| format!("json parse: {e} (line: {line})"))
+}
+
+fn extract_error(event: &serde_json::Value) -> String {
+    event
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown error")
+        .to_string()
+}
+
+pub async fn run_search(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    query: String,
+) -> Result<Vec<GameResult>, String> {
+    let cmd_json = serde_json::json!({"cmd": "search", "query": query}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
 
     match event.get("event").and_then(|v| v.as_str()) {
         Some("search_results") => {
             let games_value = event.get("games").cloned().unwrap_or(serde_json::Value::Null);
-            let games: Vec<GameResult> =
-                serde_json::from_value(games_value).map_err(|e| format!("results parse: {e}"))?;
-            Ok(games)
+            serde_json::from_value(games_value).map_err(|e| format!("results parse: {e}"))
         }
-        Some("error") => Err(event
-            .get("message")
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_fetch_manifest(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    appid: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({"cmd": "fetch_manifest", "appid": appid}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("manifest_ready") => event
+            .get("zip")
             .and_then(|v| v.as_str())
-            .unwrap_or("unknown error")
-            .to_string()),
+            .map(String::from)
+            .ok_or_else(|| "manifest_ready missing 'zip' field".to_string()),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_process_zip(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    zip_path: String,
+) -> Result<GameDetail, String> {
+    let cmd_json = serde_json::json!({"cmd": "process_zip", "path": zip_path}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("depots_parsed") => {
+            serde_json::from_value(event).map_err(|e| format!("depots_parsed parse: {e}"))
+        }
+        Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),
     }
 }

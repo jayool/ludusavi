@@ -979,6 +979,65 @@ impl App {
                             .insert(id, ImageState::Failed);
                         Task::none()
                     }
+                    AE::ResultClicked(id) => {
+                        if !self.accela_screen.register_click(&id) {
+                            return Task::none();
+                        }
+                        // Double click: fetch manifest then process zip.
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        if python.trim().is_empty() || accela.trim().is_empty() {
+                            self.accela_screen.status = Status::Error(
+                                "Set ACCELA bin and Python paths first.".to_string(),
+                            );
+                            return Task::none();
+                        }
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Loading(format!(
+                                "Fetching manifest for AppID {id}..."
+                            ));
+                        Task::perform(
+                            crate::gui::accela::run_fetch_manifest(python, adapter, accela, id),
+                            |result| Message::Accela(AE::ManifestFetched(result)),
+                        )
+                    }
+                    AE::ManifestFetched(Ok(zip_path)) => {
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Loading(format!(
+                                "Parsing manifest ({})...",
+                                std::path::Path::new(&zip_path)
+                                    .file_name()
+                                    .map(|s| s.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| zip_path.clone())
+                            ));
+                        Task::perform(
+                            crate::gui::accela::run_process_zip(python, adapter, accela, zip_path),
+                            |result| Message::Accela(AE::ZipProcessed(result)),
+                        )
+                    }
+                    AE::ManifestFetched(Err(e)) => {
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
+                        self.accela_screen.status = Status::Error(format!("fetch_manifest: {e}"));
+                        Task::none()
+                    }
+                    AE::ZipProcessed(Ok(detail)) => {
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Depots(detail);
+                        Task::none()
+                    }
+                    AE::ZipProcessed(Err(e)) => {
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
+                        self.accela_screen.status = Status::Error(format!("process_zip: {e}"));
+                        Task::none()
+                    }
+                    AE::BackToSearch => {
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
+                        Task::none()
+                    }
                 }
             }
             Message::AddGameRequested => {
