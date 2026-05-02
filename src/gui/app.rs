@@ -932,13 +932,51 @@ impl App {
                         )
                     }
                     AE::SearchSucceeded(games) => {
+                        use crate::gui::accela::ImageState;
+                        let mut image_tasks: Vec<Task<Message>> = Vec::new();
+                        for game in &games {
+                            if let Some(url) = &game.header_image {
+                                if !self
+                                    .accela_screen
+                                    .image_cache
+                                    .contains_key(&game.game_id)
+                                {
+                                    let id = game.game_id.clone();
+                                    let url_owned = url.clone();
+                                    self.accela_screen
+                                        .image_cache
+                                        .insert(id.clone(), ImageState::Loading);
+                                    image_tasks.push(Task::perform(
+                                        crate::gui::accela::fetch_image(url_owned),
+                                        move |r| {
+                                            Message::Accela(AE::ImageLoaded(id.clone(), r))
+                                        },
+                                    ));
+                                }
+                            }
+                        }
                         self.accela_screen.results = games;
                         self.accela_screen.status = Status::Idle;
-                        Task::none()
+                        Task::batch(image_tasks)
                     }
                     AE::SearchFailed(e) => {
                         self.accela_screen.results.clear();
                         self.accela_screen.status = Status::Error(e);
+                        Task::none()
+                    }
+                    AE::ImageLoaded(id, Ok(bytes)) => {
+                        use crate::gui::accela::ImageState;
+                        let handle = iced::widget::image::Handle::from_bytes(bytes);
+                        self.accela_screen
+                            .image_cache
+                            .insert(id, ImageState::Loaded(handle));
+                        Task::none()
+                    }
+                    AE::ImageLoaded(id, Err(_)) => {
+                        use crate::gui::accela::ImageState;
+                        self.accela_screen
+                            .image_cache
+                            .insert(id, ImageState::Failed);
                         Task::none()
                     }
                 }

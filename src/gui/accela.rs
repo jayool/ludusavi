@@ -6,6 +6,7 @@
 //! Phase 1 scope: configuration inputs + search + results list.
 //! Future phases add fetch_manifest, depot picker, download, post-processing.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -27,6 +28,14 @@ pub enum Event {
     SubmitSearch,
     SearchSucceeded(Vec<GameResult>),
     SearchFailed(String),
+    ImageLoaded(String, Result<Vec<u8>, String>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ImageState {
+    Loading,
+    Loaded(iced::widget::image::Handle),
+    Failed,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -42,11 +51,9 @@ pub struct GameResult {
     pub game_id: String,
     pub game_name: String,
     #[serde(default)]
-    pub manifest_available: bool,
-    #[serde(default)]
-    pub manifest_size: Option<u64>,
-    #[serde(default)]
     pub uploaded_date: Option<String>,
+    #[serde(default)]
+    pub header_image: Option<String>,
 }
 
 #[derive(Default)]
@@ -56,6 +63,7 @@ pub struct AccelaScreen {
     pub query: String,
     pub results: Vec<GameResult>,
     pub status: Status,
+    pub image_cache: HashMap<String, ImageState>,
 }
 
 impl AccelaScreen {
@@ -223,72 +231,64 @@ impl AccelaScreen {
                 .into();
         }
 
+        const IMG_W: f32 = 130.0;
+        const IMG_H: f32 = 60.0;
+        const APPID_W: f32 = 80.0;
+        const DATE_W: f32 = 110.0;
+
         let header_row = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
-            .push(text("AppID").size(11).class(style::Text::Muted).width(80))
-            .push(text("Name").size(11).class(style::Text::Muted).width(Length::Fill))
+            .push(Container::new(text("")).width(Length::Fixed(IMG_W)))
             .push(
-                text("Manifest size")
+                text("AppID")
                     .size(11)
                     .class(style::Text::Muted)
-                    .width(110),
+                    .width(Length::Fixed(APPID_W)),
             )
+            .push(text("Name").size(11).class(style::Text::Muted).width(Length::Fill))
             .push(
                 text("Uploaded")
                     .size(11)
                     .class(style::Text::Muted)
-                    .width(110),
+                    .width(Length::Fixed(DATE_W)),
             );
 
-        let mut col = Column::new().spacing(4).push(header_row);
+        let mut col = Column::new().spacing(8).push(header_row);
         for game in &self.results {
-            let size_str = match game.manifest_size {
-                Some(bytes) if game.manifest_available => format_size(bytes),
-                _ if !game.manifest_available => "no manifest".to_string(),
-                _ => "-".to_string(),
+            let image_widget: Element = match self.image_cache.get(&game.game_id) {
+                Some(ImageState::Loaded(handle)) => iced::widget::image(handle.clone())
+                    .width(Length::Fixed(IMG_W))
+                    .height(Length::Fixed(IMG_H))
+                    .into(),
+                _ => Container::new(text(""))
+                    .width(Length::Fixed(IMG_W))
+                    .height(Length::Fixed(IMG_H))
+                    .class(style::Container::GameListEntry)
+                    .into(),
             };
+
             col = col.push(
                 Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
+                    .push(image_widget)
                     .push(
                         text(&game.game_id)
                             .size(12)
                             .class(style::Text::Muted)
-                            .width(80),
+                            .width(Length::Fixed(APPID_W)),
                     )
                     .push(text(&game.game_name).size(12).width(Length::Fill))
-                    .push(
-                        text(size_str)
-                            .size(11)
-                            .class(style::Text::Muted)
-                            .width(110),
-                    )
                     .push(
                         text(game.uploaded_date.clone().unwrap_or_default())
                             .size(11)
                             .class(style::Text::Muted)
-                            .width(110),
+                            .width(Length::Fixed(DATE_W)),
                     ),
             );
         }
         col.into()
-    }
-}
-
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{bytes} B")
     }
 }
 
@@ -365,4 +365,12 @@ pub async fn run_search(
 /// In a real install, the user will configure this in settings (Phase 7).
 pub fn default_adapter_path() -> PathBuf {
     PathBuf::from("accela_adapter").join("adapter.py")
+}
+
+/// Fetch a header image over HTTPS. Returns the raw bytes for use with
+/// `iced::widget::image::Handle::from_bytes`.
+pub async fn fetch_image(url: String) -> Result<Vec<u8>, String> {
+    let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    Ok(bytes.to_vec())
 }
