@@ -3180,6 +3180,27 @@ impl App {
                 if let Screen::GameDetail(_) = &screen {
                     self.game_detail_files_expanded = false;
                 }
+                // When entering the ACCELA tab from a different screen,
+                // reset to the search view so the user doesn't land on a
+                // stale Settings/Depots view from a previous visit. Keep
+                // the Downloading view alive so an in-progress download
+                // can be observed when the user returns.
+                if matches!(screen, Screen::Accela)
+                    && !matches!(self.screen, Screen::Accela)
+                {
+                    let keep = matches!(
+                        self.accela_screen.view_state,
+                        crate::gui::accela::ViewState::Downloading { .. }
+                    );
+                    if !keep {
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Search;
+                        self.accela_screen.selected_depots.clear();
+                        self.accela_screen.pending_download_detail = None;
+                        self.accela_screen.pending_download_depots.clear();
+                        self.accela_screen.tool_message = None;
+                    }
+                }
                 self.switch_screen(screen)
             }
             Message::ToggleGameListEntryTreeExpanded { name, keys } => {
