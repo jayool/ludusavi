@@ -576,20 +576,7 @@ impl AccelaScreen {
         .class(style::Container::GamesTable);
 
         let results_card = Container::new(
-            Column::new()
-                .spacing(10)
-                .push(
-                    Row::new()
-                        .spacing(8)
-                        .align_y(Alignment::Center)
-                        .push(text("RESULTS").size(13).class(style::Text::Muted))
-                        .push(
-                            text(format!("({})", self.results.len()))
-                                .size(12)
-                                .class(style::Text::Muted),
-                        ),
-                )
-                .push(self.results_view()),
+            Column::new().spacing(10).push(self.results_view()),
         )
         .width(Length::Fill)
         .padding(16)
@@ -644,7 +631,20 @@ impl AccelaScreen {
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(Container::new(text("")).width(Length::Fixed(IMG_W)))
+                .push(
+                    Container::new(
+                        Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(text("RESULTS").size(13).class(style::Text::Muted))
+                            .push(
+                                text(format!("({})", self.results.len()))
+                                    .size(12)
+                                    .class(style::Text::Muted),
+                            ),
+                    )
+                    .width(Length::Fixed(IMG_W)),
+                )
                 .push(
                     text("AppID")
                         .size(11)
@@ -780,10 +780,12 @@ impl AccelaScreen {
                     ),
             )
         } else {
+            const CHECKBOX_COL: f32 = 30.0;
+
             let depot_columns_header = Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(iced::widget::Space::new().width(Length::Fixed(22.0)))
+                .push(iced::widget::Space::new().width(Length::Fixed(CHECKBOX_COL)))
                 .push(
                     text("Depot ID")
                         .size(11)
@@ -819,6 +821,18 @@ impl AccelaScreen {
                             .size(12)
                             .class(style::Text::Muted),
                         )
+                        .push(
+                            Button::new(text("Select all").size(11))
+                                .padding([4, 10])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Accela(Event::SelectAllDepots)),
+                        )
+                        .push(
+                            Button::new(text("Deselect all").size(11))
+                                .padding([4, 10])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Accela(Event::DeselectAllDepots)),
+                        )
                         .push(iced::widget::Space::new().width(Length::Fill))
                         .push(
                             Button::new(
@@ -836,23 +850,6 @@ impl AccelaScreen {
                             ),
                         ),
                 )
-                .push(
-                    Row::new()
-                        .spacing(8)
-                        .align_y(Alignment::Center)
-                        .push(
-                            Button::new(text("Select all").size(11))
-                                .padding([4, 10])
-                                .class(style::Button::Ghost)
-                                .on_press(Message::Accela(Event::SelectAllDepots)),
-                        )
-                        .push(
-                            Button::new(text("Deselect all").size(11))
-                                .padding([4, 10])
-                                .class(style::Button::Ghost)
-                                .on_press(Message::Accela(Event::DeselectAllDepots)),
-                        ),
-                )
                 .push(depot_columns_header);
 
             for (depot_id, info) in &detail.depots {
@@ -863,9 +860,12 @@ impl AccelaScreen {
                     Row::new()
                         .spacing(10)
                         .align_y(Alignment::Center)
-                        .push(crate::gui::widget::checkbox("", checked, move |_| {
-                            Message::Accela(Event::ToggleDepot(id_for_msg.clone()))
-                        }))
+                        .push(
+                            Container::new(crate::gui::widget::checkbox("", checked, move |_| {
+                                Message::Accela(Event::ToggleDepot(id_for_msg.clone()))
+                            }))
+                            .width(Length::Fixed(CHECKBOX_COL)),
+                        )
                         .push(
                             text(depot_id)
                                 .size(12)
