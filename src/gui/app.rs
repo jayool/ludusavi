@@ -3917,7 +3917,7 @@ impl App {
             .padding([16, 14]);
 
             // Nav items
-            let nav_item = |label: &'static str, screen: Screen| -> Element {
+            let nav_item = |label: String, screen: Screen| -> Element {
                 let active = self.screen == screen;
                 crate::gui::widget::Button::new(
                     crate::gui::widget::text(label).size(13),
@@ -3933,14 +3933,33 @@ impl App {
                 .into()
             };
 
+            // Reflect ACCELA download progress in its sidebar label so the
+            // user can monitor a running download from any other tab.
+            let accela_label = match &self.accela_screen.view_state {
+                crate::gui::accela::ViewState::Downloading {
+                    percentage, status, ..
+                } => match status {
+                    crate::gui::accela::DownloadStatus::InProgress => {
+                        format!("📦  ACCELA  ·  {percentage}%")
+                    }
+                    crate::gui::accela::DownloadStatus::Done => {
+                        "📦  ACCELA  ✓".to_string()
+                    }
+                    crate::gui::accela::DownloadStatus::Failed(_) => {
+                        "📦  ACCELA  ✗".to_string()
+                    }
+                },
+                _ => "📦  ACCELA".to_string(),
+            };
+
             let nav = Column::new()
                 .padding([8, 8])
                 .spacing(2)
-                .push(nav_item("🎮  Games", Screen::Games))
-                .push(nav_item("🖥  This device", Screen::ThisDevice))
-                .push(nav_item("📡  All devices", Screen::AllDevices))
-                .push(nav_item("📦  ACCELA", Screen::Accela))
-                .push(nav_item("⚙  Settings", Screen::Other));
+                .push(nav_item("🎮  Games".to_string(), Screen::Games))
+                .push(nav_item("🖥  This device".to_string(), Screen::ThisDevice))
+                .push(nav_item("📡  All devices".to_string(), Screen::AllDevices))
+                .push(nav_item(accela_label, Screen::Accela))
+                .push(nav_item("⚙  Settings".to_string(), Screen::Other));
 
             // Daemon status pill
             let daemon_pill = Container::new(
