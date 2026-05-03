@@ -306,16 +306,17 @@ def _manage_registry_inline(filename: str) -> str:
 
 def handle_download_depots(payload: Dict[str, Any]) -> None:
     """Run DownloadDepotsTask with the user's depot selection, stream
-    progress events to stdout, then run CLITaskManager post-processing."""
-    emit({"event": "progress", "phase": "download", "message": "[adapter] handler entered"})
+    progress events to stdout, then run CLITaskManager post-processing.
 
-    from PyQt6.QtCore import QEventLoop
+    Calls download_task.run() directly on the main thread. The task does
+    its own subprocess management internally; wrapping it in a QThread
+    (as ACCELA's CLI does) caused signals emitted from the worker thread
+    to never reach the lambdas connected on the main thread, leaving the
+    GUI stuck at 0% with an empty log.
+    """
     from core.tasks.download_depots_task import DownloadDepotsTask
-    from utils.task_runner import TaskRunner
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
-
-    emit({"event": "progress", "phase": "download", "message": "[adapter] modules imported"})
 
     game_data = payload.get("game_data")
     selected_depots = payload.get("depots") or []
@@ -331,14 +332,6 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
         emit_error("download_depots: 'dest' (string) is required")
         return
 
-    emit(
-        {
-            "event": "progress",
-            "phase": "download",
-            "message": f"[adapter] payload OK: {len(selected_depots)} depot(s) -> {dest_path}",
-        }
-    )
-
     # Wrap str() depot ids — selection from the GUI may come as ints.
     selected_depots = [str(d) for d in selected_depots]
     game_data["selected_depots_list"] = selected_depots
@@ -352,52 +345,25 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
             emit({"event": "progress", "phase": self.phase, "message": str(msg)})
 
         def warning(self, msg):
-            emit(
-                {
-                    "event": "progress",
-                    "phase": self.phase,
-                    "message": f"WARNING: {msg}",
-                }
-            )
+            emit({"event": "progress", "phase": self.phase, "message": f"WARNING: {msg}"})
 
         def error(self, msg):
-            emit(
-                {
-                    "event": "progress",
-                    "phase": self.phase,
-                    "message": f"ERROR: {msg}",
-                }
-            )
+            emit({"event": "progress", "phase": self.phase, "message": f"ERROR: {msg}"})
 
         def critical(self, msg):
-            emit(
-                {
-                    "event": "progress",
-                    "phase": self.phase,
-                    "message": f"CRITICAL: {msg}",
-                }
-            )
+            emit({"event": "progress", "phase": self.phase, "message": f"CRITICAL: {msg}"})
 
         def debug(self, _msg):
             pass  # too noisy for the GUI
 
         def exception(self, msg):
-            emit(
-                {
-                    "event": "progress",
-                    "phase": self.phase,
-                    "message": f"EXCEPTION: {msg}",
-                }
-            )
+            emit({"event": "progress", "phase": self.phase, "message": f"EXCEPTION: {msg}"})
 
-    download_logger = JsonLogger("download")
     postprocess_logger = JsonLogger("postprocess")
 
     download_task = DownloadDepotsTask()
     download_task.progress.connect(
-        lambda msg: emit(
-            {"event": "progress", "phase": "download", "message": msg}
-        )
+        lambda msg: emit({"event": "progress", "phase": "download", "message": msg})
     )
     download_task.progress_percentage.connect(
         lambda pct: emit(
@@ -405,33 +371,19 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
         )
     )
 
-    emit({"event": "progress", "phase": "download", "message": "[adapter] starting worker"})
-
-    runner = TaskRunner()
-    worker = runner.run(download_task.run, game_data, selected_depots, dest_path)
-
-    emit({"event": "progress", "phase": "download", "message": "[adapter] entering QEventLoop"})
-
-    loop = QEventLoop()
-    error_holder: list = [None]
-
-    def on_finished(_result):
-        loop.quit()
-
-    def on_error(err_tuple):
-        error_holder[0] = err_tuple
-        loop.quit()
-
-    worker.finished.connect(on_finished)
-    worker.error.connect(on_error)
-    loop.exec()
-
-    if error_holder[0] is not None:
-        err_type, err_value, _tb = error_holder[0]
-        emit_error(f"download_depots: {err_type.__name__}: {err_value}")
+    try:
+        download_task.run(game_data, selected_depots, dest_path)
+    except Exception as e:
+        emit_error(f"download_depots: {e!r}")
         return
 
-    download_logger.info("Download phase complete. Starting post-processing...")
+    emit(
+        {
+            "event": "progress",
+            "phase": "postprocess",
+            "message": "Download phase complete. Starting post-processing...",
+        }
+    )
 
     try:
         settings = get_settings()
