@@ -24,6 +24,7 @@ API key) from the same QSettings store that the GUI uses.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -324,8 +325,29 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
     GUI stuck at 0% with an empty log.
     """
     from core.tasks.download_depots_task import DownloadDepotsTask
+    from utils.helpers import resource_path
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
+
+    # Diagnostic: confirm where ACCELA's resource_path is going to look
+    # for DepotDownloader.dll. If this points at the adapter folder, the
+    # _MEIPASS fix in bootstrap() didn't take effect for this run.
+    meipass = getattr(sys, "_MEIPASS", None)
+    dll_probe = resource_path(os.path.join("deps", "DepotDownloader.dll"))
+    emit(
+        {
+            "event": "progress",
+            "phase": "download",
+            "message": f"[adapter] sys._MEIPASS = {meipass!r}",
+        }
+    )
+    emit(
+        {
+            "event": "progress",
+            "phase": "download",
+            "message": f"[adapter] resolved dll_path = {dll_probe} (exists: {dll_probe.exists()})",
+        }
+    )
 
     game_data = payload.get("game_data")
     selected_depots = payload.get("depots") or []
