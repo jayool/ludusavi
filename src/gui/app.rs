@@ -854,6 +854,12 @@ impl App {
             ));
         }
 
+        let accela_screen = crate::gui::accela::AccelaScreen {
+            accela_path: config.accela.bin_path.clone(),
+            python_path: config.accela.python_path.clone(),
+            ..Default::default()
+        };
+
         (
             Self {
                 backup_screen: screen::Backup::new(&config, &cache),
@@ -868,6 +874,7 @@ impl App {
                 screen,
                 pending_save,
                 sync_games_config: ludusavi::sync::sync_config::SyncGamesConfig::load(),
+                accela_screen,
                 ..Self::default()
             },
             Task::batch(commands),
@@ -906,11 +913,15 @@ impl App {
                 use crate::gui::accela::{Event as AE, Status};
                 match event {
                     AE::AccelaPathChanged(s) => {
-                        self.accela_screen.accela_path = s;
+                        self.accela_screen.accela_path = s.clone();
+                        self.config.accela.bin_path = s;
+                        self.save_config();
                         Task::none()
                     }
                     AE::PythonPathChanged(s) => {
-                        self.accela_screen.python_path = s;
+                        self.accela_screen.python_path = s.clone();
+                        self.config.accela.python_path = s;
+                        self.save_config();
                         Task::none()
                     }
                     AE::QueryChanged(s) => {

@@ -103,6 +103,25 @@ pub struct Config {
     pub cloud: Cloud,
     pub apps: Apps,
     pub custom_games: Vec<CustomGame>,
+    #[serde(skip_serializing_if = "AccelaConfig::is_empty")]
+    pub accela: AccelaConfig,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AccelaConfig {
+    /// Filesystem path to ACCELA's `bin/` folder (the one containing `src/`).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub bin_path: String,
+    /// Filesystem path to a Python interpreter that has ACCELA's deps installed.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub python_path: String,
+}
+
+impl AccelaConfig {
+    fn is_empty(&self) -> bool {
+        self.bin_path.is_empty() && self.python_path.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
@@ -2016,6 +2035,7 @@ mod tests {
                         expanded: false,
                     },
                 ],
+                accela: Default::default(),
             },
             config,
         );
@@ -2213,6 +2233,7 @@ customGames:
                         expanded: false,
                     },
                 ],
+                accela: Default::default(),
             })
             .unwrap()
             .trim(),
