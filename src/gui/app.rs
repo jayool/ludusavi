@@ -1124,26 +1124,92 @@ impl App {
                         if self.accela_screen.selected_depots.is_empty() {
                             return Task::none();
                         }
-                        Task::future(async move {
-                            match rfd::AsyncFileDialog::new().pick_folder().await {
-                                Some(handle) => Message::Accela(AE::DownloadDestPicked(Some(
-                                    handle.path().to_path_buf(),
-                                ))),
-                                None => Message::Accela(AE::DownloadDestPicked(None)),
-                            }
-                        })
-                    }
-                    AE::DownloadDestPicked(None) => Task::none(),
-                    AE::DownloadDestPicked(Some(dest)) => {
                         let detail = match &self.accela_screen.view_state {
                             crate::gui::accela::ViewState::Depots(d) => d.clone(),
                             _ => return Task::none(),
                         };
+                        let depots: Vec<String> =
+                            self.accela_screen.selected_depots.iter().cloned().collect();
+                        self.accela_screen.pending_download_detail = Some(detail);
+                        self.accela_screen.pending_download_depots = depots;
+
                         let python = self.accela_screen.python_path.clone();
                         let accela = self.accela_screen.accela_path.clone();
                         let adapter = crate::gui::accela::default_adapter_path();
-                        let depots: Vec<String> =
-                            self.accela_screen.selected_depots.iter().cloned().collect();
+
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Loading(
+                            "Detecting Steam libraries...".to_string(),
+                        );
+
+                        Task::perform(
+                            crate::gui::accela::run_get_steam_libraries(python, adapter, accela),
+                            |result| Message::Accela(AE::SteamLibrariesLoaded(result)),
+                        )
+                    }
+                    AE::SteamLibrariesLoaded(result) => {
+                        let libs = match result {
+                            Ok(libs) if !libs.is_empty() => libs,
+                            _ => {
+                                // No libraries detected (or error): fall back
+                                // to a freeform folder picker.
+                                return Task::future(async move {
+                                    match rfd::AsyncFileDialog::new().pick_folder().await {
+                                        Some(handle) => Message::Accela(AE::DownloadDestPicked(
+                                            Some(handle.path().to_path_buf()),
+                                        )),
+                                        None => Message::Accela(AE::DownloadDestPicked(None)),
+                                    }
+                                });
+                            }
+                        };
+                        let detail = match &self.accela_screen.pending_download_detail {
+                            Some(d) => d,
+                            None => return Task::none(),
+                        };
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::PickingDest {
+                                game_name: detail.game_name.clone().unwrap_or_default(),
+                                appid: detail.appid.clone().unwrap_or_default(),
+                                libraries: libs,
+                            };
+                        Task::none()
+                    }
+                    AE::PickLibrary(path) => Task::done(Message::Accela(
+                        AE::DownloadDestPicked(Some(std::path::PathBuf::from(path))),
+                    )),
+                    AE::PickCustomDest => Task::future(async move {
+                        match rfd::AsyncFileDialog::new().pick_folder().await {
+                            Some(handle) => Message::Accela(AE::DownloadDestPicked(Some(
+                                handle.path().to_path_buf(),
+                            ))),
+                            None => Message::Accela(AE::DownloadDestPicked(None)),
+                        }
+                    }),
+                    AE::DownloadDestPicked(None) => {
+                        // User cancelled: restore the depots view if we
+                        // stashed a detail.
+                        if let Some(detail) =
+                            self.accela_screen.pending_download_detail.take()
+                        {
+                            self.accela_screen.view_state =
+                                crate::gui::accela::ViewState::Depots(detail);
+                        }
+                        self.accela_screen.pending_download_depots.clear();
+                        Task::none()
+                    }
+                    AE::DownloadDestPicked(Some(dest)) => {
+                        let detail =
+                            match self.accela_screen.pending_download_detail.take() {
+                                Some(d) => d,
+                                None => return Task::none(),
+                            };
+                        let depots = std::mem::take(
+                            &mut self.accela_screen.pending_download_depots,
+                        );
+
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
                         let dest_str = dest.to_string_lossy().into_owned();
                         let game_name = detail.game_name.clone().unwrap_or_default();
                         let appid = detail.appid.clone().unwrap_or_default();

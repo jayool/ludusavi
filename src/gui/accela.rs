@@ -45,6 +45,9 @@ pub enum Event {
     SelectAllDepots,
     DeselectAllDepots,
     RequestDownload,
+    SteamLibrariesLoaded(Result<Vec<String>, String>),
+    PickLibrary(String),
+    PickCustomDest,
     DownloadDestPicked(Option<PathBuf>),
     DownloadEvent(serde_json::Value),
     OpenSettings,
@@ -151,6 +154,11 @@ pub enum ViewState {
     Search,
     Loading(String),
     Depots(GameDetail),
+    PickingDest {
+        game_name: String,
+        appid: String,
+        libraries: Vec<String>,
+    },
     Downloading {
         game_name: String,
         appid: String,
@@ -256,6 +264,8 @@ pub struct AccelaScreen {
     pub tool_busy: Option<String>,
     pub tool_message: Option<String>,
     pub selected_depots: BTreeSet<String>,
+    pub pending_download_detail: Option<GameDetail>,
+    pub pending_download_depots: Vec<String>,
 }
 
 pub enum SettingValue {
@@ -430,6 +440,11 @@ impl AccelaScreen {
             ViewState::Search => self.search_view(),
             ViewState::Loading(label) => self.loading_view(label),
             ViewState::Depots(detail) => self.depots_view(detail),
+            ViewState::PickingDest {
+                game_name,
+                appid,
+                libraries,
+            } => self.picking_dest_view(game_name, appid, libraries),
             ViewState::Downloading {
                 game_name,
                 appid,
@@ -893,6 +908,101 @@ impl AccelaScreen {
             .push(header)
             .push(
                 Container::new(ScrollSubject::Other.into_widget(content_col))
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .into()
+    }
+
+    fn picking_dest_view<'a>(
+        &'a self,
+        game_name: &'a str,
+        appid: &'a str,
+        libraries: &'a [String],
+    ) -> Element<'a> {
+        let header = Container::new(
+            Row::new()
+                .padding([0, 24])
+                .height(52)
+                .align_y(Alignment::Center)
+                .push(
+                    text("ACCELA — Choose download destination")
+                        .size(15)
+                        .width(Length::Fill),
+                ),
+        )
+        .width(Length::Fill)
+        .class(style::Container::TopBar);
+
+        let cancel = Button::new(text("← Cancel").size(12))
+            .padding([6, 12])
+            .class(style::Button::Ghost)
+            .on_press(Message::Accela(Event::DownloadDestPicked(None)));
+
+        let title = text(format!("Where do you want to install {game_name} ({appid})?"))
+            .size(14);
+
+        let mut libs_col = Column::new().spacing(6).push(
+            text("DETECTED STEAM LIBRARIES")
+                .size(13)
+                .class(style::Text::Muted),
+        );
+        if libraries.is_empty() {
+            libs_col = libs_col.push(
+                text("No Steam libraries detected.")
+                    .size(12)
+                    .class(style::Text::Muted),
+            );
+        } else {
+            for lib in libraries {
+                let lib_clone = lib.clone();
+                libs_col = libs_col.push(
+                    Button::new(text(lib.clone()).size(12))
+                        .padding([8, 14])
+                        .width(Length::Fill)
+                        .class(style::Button::Ghost)
+                        .on_press(Message::Accela(Event::PickLibrary(lib_clone))),
+                );
+            }
+        }
+
+        let custom_card = Container::new(
+            Column::new()
+                .spacing(6)
+                .push(text("OTHER LOCATION").size(13).class(style::Text::Muted))
+                .push(
+                    text("Pick a custom folder. ACCELA will install into <folder>/steamapps/common/.")
+                        .size(12)
+                        .class(style::Text::Muted),
+                )
+                .push(
+                    Button::new(text("Choose folder...").size(12))
+                        .padding([8, 14])
+                        .class(style::Button::Primary)
+                        .on_press(Message::Accela(Event::PickCustomDest)),
+                ),
+        )
+        .width(Length::Fill)
+        .padding(16)
+        .class(style::Container::GamesTable);
+
+        let content = Column::new()
+            .spacing(16)
+            .padding([24, 24])
+            .push(cancel)
+            .push(title)
+            .push(
+                Container::new(libs_col)
+                    .width(Length::Fill)
+                    .padding(16)
+                    .class(style::Container::GamesTable),
+            )
+            .push(custom_card);
+
+        Column::new()
+            .push(header)
+            .push(
+                Container::new(ScrollSubject::Other.into_widget(content))
                     .width(Length::Fill)
                     .height(Length::Fill),
             )
@@ -1754,6 +1864,30 @@ pub async fn run_set_setting(
     let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
     match event.get("event").and_then(|v| v.as_str()) {
         Some("setting_saved") => Ok(()),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_get_steam_libraries(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+) -> Result<Vec<String>, String> {
+    let cmd_json = serde_json::json!({"cmd": "get_steam_libraries"}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("steam_libraries") => {
+            let libs = event
+                .get("libraries")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            Ok(libs
+                .into_iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect())
+        }
         Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),
     }
