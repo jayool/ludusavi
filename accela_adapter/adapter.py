@@ -74,83 +74,116 @@ def bootstrap(accela_path: Path) -> None:
 
 
 def _install_qthread_compat_patches() -> None:
-    """Make ACCELA's QThread + TaskRunner code run synchronously on the
-    main thread inside our adapter.
+    """Replace ACCELA's QThread-based post-processing methods with
+    synchronous equivalents that run on the main thread.
 
-    ACCELA dispatches long-running tasks (DownloadDepotsTask was one,
-    SteamlessTask, ApplicationShortcutsTask, GenerateAchievementsTask)
-    by spawning a QThread and waiting on a nested QEventLoop. In the
-    standalone ACCELA CLI this works because that process has a full
-    QApplication driving its main event loop. In our headless adapter
-    we only have a QCoreApplication, and queued signals from a worker
-    QThread to lambdas connected on the main thread don't get
-    delivered through a nested QEventLoop — the loop blocks but the
-    cross-thread signal queue is never drained.
+    Background: ACCELA dispatches long-running tasks (Steamless,
+    ApplicationShortcutsTask, GenerateAchievementsTask) by spawning a
+    QThread and waiting on a nested QEventLoop for the worker's
+    finished signal. In the standalone ACCELA CLI this works because
+    that process has a full QApplication driving its main event loop.
 
-    Workaround: redirect TaskRunner.run() and SteamlessTask.start() to
-    schedule the work via QTimer.singleShot(0, ...) on the main thread.
-    The nested QEventLoop processes the timer event, runs the task
-    synchronously on the main thread, and signals fire as
-    DirectConnection (same thread = synchronous slot call), so the
-    lambdas execute as expected.
+    In our headless adapter we only have a QCoreApplication, and
+    queued signals across threads (QThread → main-thread lambdas)
+    never get delivered when only a nested QEventLoop is active. Even
+    explicitly forcing QueuedConnection or scheduling via QTimer.
+    singleShot does not work — the nested loop blocks but the
+    cross-thread/event queue never drains.
+
+    Direct fix: replace _run_steamless / _run_application_shortcuts /
+    _run_achievement_generation on CLITaskManager with synchronous
+    versions that just call task.run() directly on the main thread.
+    Signals emitted during run() use DirectConnection (same thread =
+    synchronous slot call), so the lambdas reach our JsonLogger and
+    we get progress events on stdout in real time.
     """
-    import traceback
+    import os
+    import sys as _sys
 
-    from PyQt6.QtCore import QObject, Qt, pyqtSignal
-    from utils.task_runner import TaskRunner, Worker
-    from core.tasks.steamless_task import SteamlessTask
+    from managers.cli_manager import CLITaskManager
+    from utils.steam_manifest import get_game_directory
+    from utils.yaml_config_manager import is_slssteam_mode_enabled
 
-    # Helper QObject whose `fire` signal we use to dispatch a no-arg
-    # callable into the main thread's event queue with QueuedConnection.
-    # QTimer.singleShot(0, ...) does NOT fire inside our nested QEventLoop
-    # (likely because we only have QCoreApplication, not QApplication,
-    # and singleShot's internal timer dispatcher gets bypassed by nested
-    # loops). A QueuedConnection signal does post a regular event onto
-    # the thread's queue, which loop.exec() drains.
-    class _Dispatcher(QObject):
-        fire = pyqtSignal()
+    def sync_run_steamless(self):
+        """Synchronous replacement for CLITaskManager._run_steamless."""
+        if not self.current_dest_path or not self.game_data:
+            return
+        game_directory = get_game_directory(self.current_dest_path, self.game_data)
+        if not os.path.exists(game_directory):
+            return
 
-    # Keep dispatchers alive so the queued connections aren't dropped.
-    _dispatchers: list = []
+        from core.tasks.steamless_task import SteamlessTask
 
-    def _post_to_main_thread(callable_):
-        d = _Dispatcher()
-        d.fire.connect(callable_, Qt.ConnectionType.QueuedConnection)
-        _dispatchers.append(d)
-        d.fire.emit()
+        self.logger.info("Starting Steamless DRM Removal...")
+        self.logger.info(f"Processing directory: {game_directory}")
 
-    def sync_run(self, target_func, *args, **kwargs):
-        self.worker = Worker(target_func, *args, **kwargs)
+        steamless_task = SteamlessTask()
+        steamless_task.progress.connect(self.logger.info)
+        steamless_task.set_game_directory(game_directory)
+        steamless_task.run()  # direct, on main thread; signals are sync
 
-        def do_work():
-            try:
-                result = target_func(*args, **kwargs)
-                self.worker.finished.emit(result)
-            except Exception as e:
-                self.worker.error.emit((type(e), e, traceback.format_exc()))
-            finally:
-                self.worker.completed.emit()
-                self.cleanup_complete.emit()
+        self.logger.info("Steamless processing completed")
 
-        TaskRunner._active_runners.append(self)
-        _post_to_main_thread(do_work)
-        return self.worker
+    def sync_run_application_shortcuts(self):
+        """Synchronous replacement for CLITaskManager._run_application_shortcuts."""
+        if not self.game_data:
+            return
+        if _sys.platform != "linux":
+            self.logger.info("Application shortcuts are only supported on Linux")
+            return
+        if not is_slssteam_mode_enabled():
+            self.logger.info(
+                "Steam library integration is disabled, skipping shortcuts creation"
+            )
+            return
+        app_id = self.game_data.get("appid")
+        game_name = self.game_data.get("game_name")
+        if not app_id:
+            return
+        sgdb_api_key = self.settings.value("sgdb_api_key", "", type=str)
+        if not sgdb_api_key:
+            return
 
-    TaskRunner.run = sync_run
+        try:
+            from core.tasks.application_shortcuts import ApplicationShortcutsTask
+        except ImportError:
+            self.logger.error("ApplicationShortcutsTask module not found")
+            return
 
-    def sync_steamless_start(self):
-        def do_run():
-            try:
-                self.run()
-            finally:
-                # QThread.finished is normally emitted when the worker
-                # thread exits; since we're not using a real thread
-                # here, emit it manually so loop.quit() callbacks fire.
-                self.finished.emit()
+        self.logger.info("Creating application shortcuts...")
+        shortcuts_task = ApplicationShortcutsTask()
+        shortcuts_task.set_api_key(sgdb_api_key)
+        shortcuts_task.progress.connect(self.logger.info)
+        shortcuts_task.run(app_id, game_name)  # direct
+        self.logger.info("Application shortcuts created")
 
-        _post_to_main_thread(do_run)
+    def sync_run_achievement_generation(self):
+        """Synchronous replacement for CLITaskManager._run_achievement_generation."""
+        if not self.game_data:
+            return
+        app_id = self.game_data.get("appid")
+        if not app_id:
+            return
 
-    SteamlessTask.start = sync_steamless_start
+        from core.tasks.generate_achievements_task import GenerateAchievementsTask
+
+        self.logger.info("Generating achievements...")
+        achievement_task = GenerateAchievementsTask()
+        achievement_task.progress.connect(self.logger.info)
+        result = achievement_task.run(app_id)  # direct
+        if result and result.get("success"):
+            self.logger.info(
+                f"Achievement generation completed: {result.get('message')}"
+            )
+        else:
+            self.logger.info(
+                f"Achievement generation failed: "
+                f"{result.get('message') if result else 'Unknown error'}"
+            )
+
+    CLITaskManager._run_steamless = sync_run_steamless
+    CLITaskManager._run_application_shortcuts = sync_run_application_shortcuts
+    CLITaskManager._run_achievement_generation = sync_run_achievement_generation
 
 
 def handle_search(payload: Dict[str, Any]) -> None:
