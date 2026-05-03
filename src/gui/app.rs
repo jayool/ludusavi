@@ -1036,6 +1036,7 @@ impl App {
                         Task::none()
                     }
                     AE::ZipProcessed(Ok(detail)) => {
+                        self.accela_screen.selected_depots.clear();
                         self.accela_screen.view_state =
                             crate::gui::accela::ViewState::Depots(detail);
                         Task::none()
@@ -1047,6 +1048,7 @@ impl App {
                     }
                     AE::BackToSearch => {
                         self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
+                        self.accela_screen.selected_depots.clear();
                         Task::none()
                     }
                     AE::OpenAccelaPathPicker => Task::future(async move {
@@ -1098,6 +1100,125 @@ impl App {
                             crate::gui::accela::run_process_zip(python, adapter, accela, zip_path),
                             |result| Message::Accela(AE::ZipProcessed(result)),
                         )
+                    }
+                    AE::ToggleDepot(id) => {
+                        if !self.accela_screen.selected_depots.insert(id.clone()) {
+                            self.accela_screen.selected_depots.remove(&id);
+                        }
+                        Task::none()
+                    }
+                    AE::SelectAllDepots => {
+                        if let crate::gui::accela::ViewState::Depots(detail) =
+                            &self.accela_screen.view_state
+                        {
+                            self.accela_screen.selected_depots =
+                                detail.depots.keys().cloned().collect();
+                        }
+                        Task::none()
+                    }
+                    AE::DeselectAllDepots => {
+                        self.accela_screen.selected_depots.clear();
+                        Task::none()
+                    }
+                    AE::RequestDownload => {
+                        if self.accela_screen.selected_depots.is_empty() {
+                            return Task::none();
+                        }
+                        Task::future(async move {
+                            match rfd::AsyncFileDialog::new().pick_folder().await {
+                                Some(handle) => Message::Accela(AE::DownloadDestPicked(Some(
+                                    handle.path().to_path_buf(),
+                                ))),
+                                None => Message::Accela(AE::DownloadDestPicked(None)),
+                            }
+                        })
+                    }
+                    AE::DownloadDestPicked(None) => Task::none(),
+                    AE::DownloadDestPicked(Some(dest)) => {
+                        let detail = match &self.accela_screen.view_state {
+                            crate::gui::accela::ViewState::Depots(d) => d.clone(),
+                            _ => return Task::none(),
+                        };
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        let depots: Vec<String> =
+                            self.accela_screen.selected_depots.iter().cloned().collect();
+                        let dest_str = dest.to_string_lossy().into_owned();
+                        let game_name = detail.game_name.clone().unwrap_or_default();
+                        let appid = detail.appid.clone().unwrap_or_default();
+
+                        self.accela_screen.view_state =
+                            crate::gui::accela::ViewState::Downloading {
+                                game_name: game_name.clone(),
+                                appid: appid.clone(),
+                                percentage: 0,
+                                messages: std::collections::VecDeque::new(),
+                                status: crate::gui::accela::DownloadStatus::InProgress,
+                            };
+
+                        let stream = crate::gui::accela::run_download_stream(
+                            python,
+                            adapter,
+                            accela,
+                            detail.raw,
+                            depots,
+                            dest_str,
+                        );
+                        Task::stream(stream)
+                            .map(|event| Message::Accela(AE::DownloadEvent(event)))
+                    }
+                    AE::DownloadEvent(event) => {
+                        use crate::gui::accela::{DownloadStatus, ViewState};
+                        let event_type = event
+                            .get("event")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if let ViewState::Downloading {
+                            percentage,
+                            messages,
+                            status,
+                            ..
+                        } = &mut self.accela_screen.view_state
+                        {
+                            match event_type.as_str() {
+                                "progress" => {
+                                    if let Some(pct) =
+                                        event.get("percentage").and_then(|v| v.as_u64())
+                                    {
+                                        *percentage = pct.min(100) as u32;
+                                    }
+                                    if let Some(msg) =
+                                        event.get("message").and_then(|v| v.as_str())
+                                    {
+                                        let phase = event
+                                            .get("phase")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("download");
+                                        messages.push_back(format!("[{phase}] {msg}"));
+                                        while messages.len() > 200 {
+                                            messages.pop_front();
+                                        }
+                                    }
+                                }
+                                "download_done" => {
+                                    *status = DownloadStatus::Done;
+                                    *percentage = 100;
+                                    messages.push_back("✓ Download complete.".to_string());
+                                }
+                                "error" => {
+                                    let msg = event
+                                        .get("message")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown error")
+                                        .to_string();
+                                    *status = DownloadStatus::Failed(msg);
+                                }
+                                _ => {}
+                            }
+                        }
+                        Task::none()
                     }
                     AE::OpenSettings => {
                         let python = self.accela_screen.python_path.clone();

@@ -304,6 +304,165 @@ def _manage_registry_inline(filename: str) -> str:
     return f"Imported {filename}"
 
 
+def handle_download_depots(payload: Dict[str, Any]) -> None:
+    """Run DownloadDepotsTask with the user's depot selection, stream
+    progress events to stdout, then run CLITaskManager post-processing.
+
+    Emitted events while running:
+        {"event":"progress","phase":"download","message":"..."}
+        {"event":"progress","phase":"download","percentage":42}
+        {"event":"progress","phase":"postprocess","message":"..."}
+        {"event":"download_done","game_name":"...","dest":"..."}
+        {"event":"error","message":"..."}
+
+    This handler blocks on a QEventLoop until the task completes.
+    Stdin is not read while running, so cancellation is not supported in
+    this iteration.
+    """
+    from PyQt6.QtCore import QEventLoop
+    from core.tasks.download_depots_task import DownloadDepotsTask
+    from utils.task_runner import TaskRunner
+    from utils.settings import get_settings
+    from managers.cli_manager import CLITaskManager
+
+    game_data = payload.get("game_data")
+    selected_depots = payload.get("depots") or []
+    dest_path = payload.get("dest")
+
+    if not isinstance(game_data, dict):
+        emit_error("download_depots: 'game_data' (object) is required")
+        return
+    if not selected_depots:
+        emit_error("download_depots: 'depots' (non-empty list) is required")
+        return
+    if not dest_path:
+        emit_error("download_depots: 'dest' (string) is required")
+        return
+
+    # Wrap str() depot ids — selection from the GUI may come as ints.
+    selected_depots = [str(d) for d in selected_depots]
+    game_data["selected_depots_list"] = selected_depots
+
+    # Logger-like object that emits each call as a JSON progress event.
+    class JsonLogger:
+        def __init__(self, phase: str):
+            self.phase = phase
+
+        def info(self, msg):
+            emit({"event": "progress", "phase": self.phase, "message": str(msg)})
+
+        def warning(self, msg):
+            emit(
+                {
+                    "event": "progress",
+                    "phase": self.phase,
+                    "message": f"WARNING: {msg}",
+                }
+            )
+
+        def error(self, msg):
+            emit(
+                {
+                    "event": "progress",
+                    "phase": self.phase,
+                    "message": f"ERROR: {msg}",
+                }
+            )
+
+        def critical(self, msg):
+            emit(
+                {
+                    "event": "progress",
+                    "phase": self.phase,
+                    "message": f"CRITICAL: {msg}",
+                }
+            )
+
+        def debug(self, _msg):
+            pass  # too noisy for the GUI
+
+        def exception(self, msg):
+            emit(
+                {
+                    "event": "progress",
+                    "phase": self.phase,
+                    "message": f"EXCEPTION: {msg}",
+                }
+            )
+
+    download_logger = JsonLogger("download")
+    postprocess_logger = JsonLogger("postprocess")
+
+    download_task = DownloadDepotsTask()
+    download_task.progress.connect(
+        lambda msg: emit(
+            {"event": "progress", "phase": "download", "message": msg}
+        )
+    )
+    download_task.progress_percentage.connect(
+        lambda pct: emit(
+            {"event": "progress", "phase": "download", "percentage": int(pct)}
+        )
+    )
+
+    runner = TaskRunner()
+    worker = runner.run(download_task.run, game_data, selected_depots, dest_path)
+
+    loop = QEventLoop()
+    error_holder: list = [None]
+
+    def on_finished(_result):
+        loop.quit()
+
+    def on_error(err_tuple):
+        error_holder[0] = err_tuple
+        loop.quit()
+
+    worker.finished.connect(on_finished)
+    worker.error.connect(on_error)
+    loop.exec()
+
+    if error_holder[0] is not None:
+        err_type, err_value, _tb = error_holder[0]
+        emit_error(f"download_depots: {err_type.__name__}: {err_value}")
+        return
+
+    download_logger.info("Download phase complete. Starting post-processing...")
+
+    try:
+        settings = get_settings()
+        task_manager = CLITaskManager(settings, postprocess_logger)
+        task_manager.run_post_processing(game_data, download_task, dest_path)
+    except Exception as e:
+        emit_error(f"post_processing: {e!r}")
+        return
+
+    emit(
+        {
+            "event": "download_done",
+            "game_name": game_data.get("game_name"),
+            "appid": game_data.get("appid"),
+            "dest": dest_path,
+        }
+    )
+
+
+def handle_get_steam_libraries(_payload: Dict[str, Any]) -> None:
+    """Return the list of detected Steam library paths so the GUI can offer
+    them as preset destinations (in addition to the freeform folder picker)."""
+    try:
+        from core.steam_helpers import get_steam_libraries
+    except Exception as e:
+        emit_error(f"get_steam_libraries: import failed: {e!r}")
+        return
+    try:
+        libs = get_steam_libraries()
+    except Exception as e:
+        emit_error(f"get_steam_libraries: {e!r}")
+        return
+    emit({"event": "steam_libraries", "libraries": list(libs) if libs else []})
+
+
 def handle_run_tool(payload: Dict[str, Any]) -> None:
     """Run a Tools-tab action. kind selects which one."""
     kind = payload.get("kind")
@@ -397,6 +556,8 @@ HANDLERS = {
     "get_morrenus_stats": handle_get_morrenus_stats,
     "apply_steam_updates_block": handle_apply_steam_updates_block,
     "run_tool": handle_run_tool,
+    "download_depots": handle_download_depots,
+    "get_steam_libraries": handle_get_steam_libraries,
 }
 
 

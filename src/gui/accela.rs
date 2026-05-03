@@ -6,13 +6,14 @@
 //! Phase 1 scope: configuration inputs + search + results list.
 //! Future phases add fetch_manifest, depot picker, download, post-processing.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use iced::futures::SinkExt;
 use iced::{Alignment, Length};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::gui::{
@@ -40,6 +41,12 @@ pub enum Event {
     FileDropped(PathBuf),
     OpenAccelaPathPicker,
     OpenPythonPathPicker,
+    ToggleDepot(String),
+    SelectAllDepots,
+    DeselectAllDepots,
+    RequestDownload,
+    DownloadDestPicked(Option<PathBuf>),
+    DownloadEvent(serde_json::Value),
     OpenSettings,
     SettingsLoaded(Result<AccelaSettings, String>),
     SwitchSettingsTab(SettingsTab),
@@ -144,7 +151,21 @@ pub enum ViewState {
     Search,
     Loading(String),
     Depots(GameDetail),
+    Downloading {
+        game_name: String,
+        appid: String,
+        percentage: u32,
+        messages: VecDeque<String>,
+        status: DownloadStatus,
+    },
     Settings,
+}
+
+#[derive(Debug, Clone)]
+pub enum DownloadStatus {
+    InProgress,
+    Done,
+    Failed(String),
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -157,6 +178,12 @@ pub struct GameDetail {
     pub depots: BTreeMap<String, DepotInfo>,
     #[serde(default)]
     pub dlcs: BTreeMap<String, String>,
+    /// Full game_data JSON (raw `depots_parsed` event minus the "event" key),
+    /// preserved so we can pass it back to the adapter's `download_depots`
+    /// command without losing fields the typed view doesn't surface
+    /// (manifests, installdir, buildid, header_url, app_token, ...).
+    #[serde(default, skip)]
+    pub raw: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -228,6 +255,7 @@ pub struct AccelaScreen {
     pub sgdb_key_visible: bool,
     pub tool_busy: Option<String>,
     pub tool_message: Option<String>,
+    pub selected_depots: BTreeSet<String>,
 }
 
 pub enum SettingValue {
@@ -402,6 +430,13 @@ impl AccelaScreen {
             ViewState::Search => self.search_view(),
             ViewState::Loading(label) => self.loading_view(label),
             ViewState::Depots(detail) => self.depots_view(detail),
+            ViewState::Downloading {
+                game_name,
+                appid,
+                percentage,
+                messages,
+                status,
+            } => self.downloading_view(game_name, appid, *percentage, messages, status),
             ViewState::Settings => self.settings_view(),
         }
     }
@@ -711,6 +746,9 @@ impl AccelaScreen {
             )
             .push(text(game_label).size(14).width(Length::Fill));
 
+        let selected_count = self.selected_depots.len();
+        let download_enabled = selected_count > 0;
+
         let depots_card = if detail.depots.is_empty() {
             Container::new(
                 Column::new()
@@ -731,18 +769,40 @@ impl AccelaScreen {
                         .align_y(Alignment::Center)
                         .push(text("DEPOTS").size(13).class(style::Text::Muted))
                         .push(
-                            text(format!("({})", detail.depots.len()))
-                                .size(12)
-                                .class(style::Text::Muted),
+                            text(format!(
+                                "({} / {} selected)",
+                                selected_count,
+                                detail.depots.len()
+                            ))
+                            .size(12)
+                            .class(style::Text::Muted),
+                        )
+                        .push(iced::widget::Space::new().width(Length::Fill))
+                        .push(
+                            Button::new(text("Select all").size(11))
+                                .padding([4, 10])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Accela(Event::SelectAllDepots)),
+                        )
+                        .push(
+                            Button::new(text("Deselect all").size(11))
+                                .padding([4, 10])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Accela(Event::DeselectAllDepots)),
                         ),
                 );
 
             for (depot_id, info) in &detail.depots {
                 let size = info.size_display();
+                let checked = self.selected_depots.contains(depot_id);
+                let id_for_msg = depot_id.clone();
                 col = col.push(
                     Row::new()
                         .spacing(10)
                         .align_y(Alignment::Center)
+                        .push(crate::gui::widget::checkbox("", checked, move |_| {
+                            Message::Accela(Event::ToggleDepot(id_for_msg.clone()))
+                        }))
                         .push(
                             text(depot_id)
                                 .size(12)
@@ -758,6 +818,28 @@ impl AccelaScreen {
                         ),
                 );
             }
+
+            col = col.push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(iced::widget::Space::new().width(Length::Fill))
+                    .push(
+                        Button::new(
+                            text(format!("Download {} depot(s)", selected_count)).size(13),
+                        )
+                        .padding([8, 16])
+                        .class(if download_enabled {
+                            style::Button::Primary
+                        } else {
+                            style::Button::Ghost
+                        })
+                        .on_press_maybe(
+                            download_enabled.then_some(Message::Accela(Event::RequestDownload)),
+                        ),
+                    ),
+            );
+
             Container::new(col)
         }
         .width(Length::Fill)
@@ -813,6 +895,115 @@ impl AccelaScreen {
             .push(header)
             .push(
                 Container::new(ScrollSubject::Other.into_widget(content_col))
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .into()
+    }
+
+    fn downloading_view<'a>(
+        &'a self,
+        game_name: &'a str,
+        appid: &'a str,
+        percentage: u32,
+        messages: &'a VecDeque<String>,
+        status: &'a DownloadStatus,
+    ) -> Element<'a> {
+        let header = Container::new(
+            Row::new()
+                .padding([0, 24])
+                .height(52)
+                .align_y(Alignment::Center)
+                .push(
+                    text(format!("ACCELA — Downloading {game_name}"))
+                        .size(15)
+                        .width(Length::Fill),
+                ),
+        )
+        .width(Length::Fill)
+        .class(style::Container::TopBar);
+
+        let title_row = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(
+                text(format!("{game_name} ({appid})"))
+                    .size(14)
+                    .width(Length::Fill),
+            );
+
+        let status_widget: Element = match status {
+            DownloadStatus::InProgress => Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    text(format!("{}%", percentage))
+                        .size(13)
+                        .width(Length::Fixed(60.0)),
+                )
+                .push(
+                    Container::new(iced::widget::progress_bar(
+                        0.0..=100.0,
+                        percentage as f32,
+                    ))
+                    .width(Length::Fill),
+                )
+                .into(),
+            DownloadStatus::Done => text("✓ Download complete.")
+                .size(13)
+                .class(style::Text::Green)
+                .into(),
+            DownloadStatus::Failed(e) => text(format!("✗ Failed: {e}"))
+                .size(13)
+                .class(style::Text::Failure)
+                .into(),
+        };
+
+        let mut log_col = Column::new().spacing(2);
+        for msg in messages {
+            log_col = log_col.push(text(msg.clone()).size(11).class(style::Text::Muted));
+        }
+
+        let back_button = Button::new(text("← Back to results").size(12))
+            .padding([6, 12])
+            .class(style::Button::Ghost)
+            .on_press_maybe(match status {
+                DownloadStatus::InProgress => None,
+                _ => Some(Message::Accela(Event::BackToSearch)),
+            });
+
+        let content = Column::new()
+            .spacing(16)
+            .padding([24, 24])
+            .push(title_row)
+            .push(
+                Container::new(
+                    Column::new()
+                        .spacing(10)
+                        .push(text("STATUS").size(13).class(style::Text::Muted))
+                        .push(status_widget),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable),
+            )
+            .push(
+                Container::new(
+                    Column::new()
+                        .spacing(6)
+                        .push(text("LOG").size(13).class(style::Text::Muted))
+                        .push(log_col),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .class(style::Container::GamesTable),
+            )
+            .push(back_button);
+
+        Column::new()
+            .push(header)
+            .push(
+                Container::new(ScrollSubject::Other.into_widget(content))
                     .width(Length::Fill)
                     .height(Length::Fill),
             )
@@ -1394,11 +1585,128 @@ pub async fn run_process_zip(
 
     match event.get("event").and_then(|v| v.as_str()) {
         Some("depots_parsed") => {
-            serde_json::from_value(event).map_err(|e| format!("depots_parsed parse: {e}"))
+            // Strip the "event" marker so we can pass the rest as game_data
+            // verbatim to download_depots later.
+            let mut raw = event.clone();
+            if let Some(obj) = raw.as_object_mut() {
+                obj.remove("event");
+            }
+            let mut detail: GameDetail = serde_json::from_value(event)
+                .map_err(|e| format!("depots_parsed parse: {e}"))?;
+            detail.raw = raw;
+            Ok(detail)
         }
         Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),
     }
+}
+
+/// Spawn the adapter, send a `download_depots` command, and stream every
+/// JSON event the adapter emits back to the caller as a Stream of values.
+/// The receiver closes when the adapter exits (EOF on stdout).
+pub fn run_download_stream(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    game_data: serde_json::Value,
+    depots: Vec<String>,
+    dest: String,
+) -> iced::futures::channel::mpsc::Receiver<serde_json::Value> {
+    let (mut tx, rx) = iced::futures::channel::mpsc::channel::<serde_json::Value>(128);
+
+    tokio::spawn(async move {
+        let cmd_json = serde_json::json!({
+            "cmd": "download_depots",
+            "game_data": game_data,
+            "depots": depots,
+            "dest": dest,
+        })
+        .to_string();
+
+        let mut cmd = Command::new(&python_path);
+        cmd.arg(&adapter_path)
+            .arg("--accela-path")
+            .arg(&accela_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx
+                    .send(serde_json::json!({
+                        "event": "error",
+                        "message": format!("spawn failed: {e}")
+                    }))
+                    .await;
+                return;
+            }
+        };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(e) = stdin.write_all(format!("{cmd_json}\n").as_bytes()).await {
+                let _ = tx
+                    .send(serde_json::json!({
+                        "event": "error",
+                        "message": format!("stdin write: {e}")
+                    }))
+                    .await;
+                return;
+            }
+        }
+
+        let stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = tx
+                    .send(serde_json::json!({
+                        "event": "error",
+                        "message": "stdout pipe missing"
+                    }))
+                    .await;
+                return;
+            }
+        };
+
+        let mut reader = BufReader::new(stdout).lines();
+        loop {
+            match reader.next_line().await {
+                Ok(Some(line)) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<serde_json::Value>(trimmed) {
+                        Ok(event) => {
+                            if tx.send(event).await.is_err() {
+                                return; // receiver dropped
+                            }
+                        }
+                        Err(_) => {
+                            // Forward unparseable lines as raw progress messages.
+                            let event = serde_json::json!({
+                                "event": "progress",
+                                "phase": "download",
+                                "message": trimmed,
+                            });
+                            if tx.send(event).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+
+        let _ = child.wait().await;
+    });
+
+    rx
 }
 
 /// Resolve the adapter script path relative to the running binary.
