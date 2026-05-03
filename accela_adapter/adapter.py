@@ -133,10 +133,270 @@ def handle_process_zip(payload: Dict[str, Any]) -> None:
     )
 
 
+# Spec of ACCELA settings exposed to Ludusavi's UI. Any key not in this spec
+# is hidden from get_settings; set_setting accepts any key but the UI will not
+# round-trip values not declared here.
+SETTINGS_SPEC: Dict[str, Any] = {
+    # Downloads tab
+    "library_mode": ("bool", False),
+    "auto_skip_single_choice": ("bool", False),
+    "max_downloads": ("int", 255),
+    "generate_achievements": ("bool", False),
+    "use_steamless": ("bool", False),
+    "auto_apply_goldberg": ("bool", False),
+    "create_application_shortcuts": ("bool", False),
+    # Integrations tab
+    "morrenus_api_key": ("str", ""),
+    "sgdb_api_key": ("str", ""),
+    # Steam tab
+    "slssteam_mode": ("bool", False),
+    "sls_config_management": ("bool", True),
+    "prompt_steam_restart": ("bool", True),
+    "block_steam_updates": ("bool", False),
+}
+
+
+def _coerce(value: Any, kind: str, default: Any) -> Any:
+    if value is None:
+        return default
+    if kind == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "1", "yes", "on")
+        return default
+    if kind == "int":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    return str(value)
+
+
+def handle_get_settings(_payload: Dict[str, Any]) -> None:
+    from PyQt6.QtCore import QSettings
+
+    settings = QSettings("Tachibana Labs", "ACCELA")
+    values: Dict[str, Any] = {}
+    for key, (kind, default) in SETTINGS_SPEC.items():
+        raw = settings.value(key, default)
+        values[key] = _coerce(raw, kind, default)
+    emit({"event": "settings", "values": values})
+
+
+def handle_set_setting(payload: Dict[str, Any]) -> None:
+    from PyQt6.QtCore import QSettings
+
+    key = payload.get("key")
+    if not key:
+        emit_error("set_setting: 'key' is required")
+        return
+    if "value" not in payload:
+        emit_error("set_setting: 'value' is required")
+        return
+    settings = QSettings("Tachibana Labs", "ACCELA")
+    settings.setValue(key, payload["value"])
+    settings.sync()
+    emit({"event": "setting_saved", "key": key})
+
+
+def handle_get_morrenus_stats(_payload: Dict[str, Any]) -> None:
+    from core.morrenus_api import get_user_stats
+
+    stats = get_user_stats()
+    if isinstance(stats, dict) and stats.get("error"):
+        emit_error(f"get_morrenus_stats: {stats['error']}")
+        return
+    emit({"event": "morrenus_stats", "stats": stats})
+
+
+def handle_apply_steam_updates_block(payload: Dict[str, Any]) -> None:
+    """Toggle Steam's auto-update block by writing/removing steam.cfg in the
+    Steam install directory. The QSetting itself is set separately via
+    set_setting; this handler only handles the file side-effect."""
+    import os
+    import shutil
+
+    enabled = bool(payload.get("enabled", False))
+    try:
+        from core.steam_helpers import find_steam_install
+        from utils.paths import Paths
+    except Exception as e:
+        emit_error(f"apply_steam_updates_block: import failed: {e!r}")
+        return
+
+    try:
+        path = find_steam_install()
+    except Exception as e:
+        emit_error(f"apply_steam_updates_block: find_steam_install failed: {e!r}")
+        return
+
+    if not path:
+        emit({"event": "tool_done", "kind": "apply_steam_updates_block", "note": "Steam install not found; skipped."})
+        return
+
+    dest = os.path.join(path, "steam.cfg")
+    src = Paths.deps("steam.cfg")
+
+    try:
+        if enabled:
+            if not src.exists():
+                emit_error("apply_steam_updates_block: bundled steam.cfg missing")
+                return
+            shutil.copy2(str(src), dest)
+            emit({"event": "tool_done", "kind": "apply_steam_updates_block", "note": f"Wrote {dest}"})
+        else:
+            if os.path.exists(dest):
+                os.remove(dest)
+                emit({"event": "tool_done", "kind": "apply_steam_updates_block", "note": f"Removed {dest}"})
+            else:
+                emit({"event": "tool_done", "kind": "apply_steam_updates_block", "note": "No steam.cfg to remove."})
+    except (OSError, IOError) as e:
+        emit_error(f"apply_steam_updates_block: {e!r}")
+
+
+def _manage_registry_inline(filename: str) -> str:
+    """Replicate ACCELA's SettingsDialog._manage_registry without Qt UI calls.
+    Returns a status note for the tool_done event. Windows only."""
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    if sys.platform != "win32":
+        raise RuntimeError("registry actions are Windows-only")
+
+    base = os.path.join(
+        os.path.dirname(os.path.abspath(sys.argv[0])),
+        "deps",
+    ) if not getattr(sys, "frozen", False) else os.path.join(getattr(sys, "_MEIPASS"), "deps")
+
+    # Adapter is run from outside ACCELA, so sys.argv[0] is adapter.py.
+    # Resolve the deps folder relative to ACCELA's src dir which is on sys.path.
+    if not os.path.exists(os.path.join(base, filename)):
+        for entry in sys.path:
+            candidate = os.path.join(os.path.dirname(entry), "deps", filename)
+            if os.path.exists(candidate):
+                base = os.path.dirname(candidate)
+                break
+
+    reg_path = os.path.join(base, filename)
+    if not os.path.exists(reg_path):
+        raise FileNotFoundError(f"Missing {filename} (looked in {base})")
+
+    with open(reg_path, "r", encoding="utf-8-sig") as f:
+        content = f.read().replace("[INSTALL_PATH]", sys.executable.replace("\\", "\\\\"))
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".reg", delete=False) as tmp:
+        tmp.write(content)
+        tmp_name = tmp.name
+
+    try:
+        subprocess.run(["regedit", "/s", tmp_name], check=True, shell=True)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+
+    return f"Imported {filename}"
+
+
+def handle_run_tool(payload: Dict[str, Any]) -> None:
+    """Run a Tools-tab action. kind selects which one."""
+    kind = payload.get("kind")
+    if not kind:
+        emit_error("run_tool: 'kind' is required")
+        return
+
+    try:
+        if kind == "register_protocol":
+            note = _manage_registry_inline("ACCELA.reg")
+            emit({"event": "tool_done", "kind": kind, "note": note})
+            return
+        if kind == "unregister_protocol":
+            note = _manage_registry_inline("ACCELA_uninstall.reg")
+            emit({"event": "tool_done", "kind": kind, "note": note})
+            return
+        if kind == "run_slscheevo":
+            from utils.helpers import get_slscheevo_path, get_slscheevo_save_path, get_venv_python
+            import os
+            import sys
+
+            path = get_slscheevo_path()
+            if not os.path.exists(path):
+                emit_error(f"run_tool: SLScheevo missing at {path}")
+                return
+            save = get_slscheevo_save_path()
+            cmd = []
+            if str(path).endswith(".py"):
+                py = get_venv_python()
+                cmd.append(py if py else ("python" if sys.platform == "win32" else "python3"))
+            cmd.extend([str(path), "--save-dir", str(save), "--noclear", "--max-tries", "101"])
+            _launch_in_terminal(cmd, os.path.dirname(path))
+            emit({"event": "tool_done", "kind": kind, "note": "Launched SLScheevo in a terminal."})
+            return
+        if kind == "run_steamless":
+            exe = payload.get("exe_path")
+            if not exe:
+                emit_error("run_tool: 'exe_path' is required for run_steamless")
+                return
+            from core.tasks.steamless_task import SteamlessTask
+
+            task = SteamlessTask()
+            task.set_game_directory(exe)
+            task.start()
+            # Steamless runs synchronously inside its own thread; we just kick it off.
+            emit({"event": "tool_done", "kind": kind, "note": f"Steamless started on {exe}"})
+            return
+        emit_error(f"run_tool: unknown kind '{kind}'")
+    except Exception as e:
+        emit_error(f"run_tool {kind}: {e!r}")
+
+
+def _launch_in_terminal(cmd: list, cwd: str) -> None:
+    """Try to launch a command in a visible terminal. Cross-platform."""
+    import subprocess
+    import sys
+
+    cmd = [str(part) for part in cmd]
+    cwd = str(cwd)
+
+    if sys.platform == "win32":
+        q = " ".join([f'"{c}"' if " " in c else c for c in cmd])
+        subprocess.Popen(f'start cmd /k "cd /d {cwd} && {q}"', shell=True)
+        return
+
+    terms = [
+        ["wezterm", "start", "--always-new-process", "--"],
+        ["konsole", "-e"],
+        ["gnome-terminal", "--"],
+        ["alacritty", "-e"],
+        ["xterm", "-e"],
+    ]
+    import shutil
+
+    for term in terms:
+        if shutil.which(term[0]):
+            try:
+                subprocess.Popen(term + cmd, cwd=cwd)
+                return
+            except FileNotFoundError:
+                continue
+    raise RuntimeError("No terminal emulator found")
+
+
 HANDLERS = {
     "search": handle_search,
     "fetch_manifest": handle_fetch_manifest,
     "process_zip": handle_process_zip,
+    "get_settings": handle_get_settings,
+    "set_setting": handle_set_setting,
+    "get_morrenus_stats": handle_get_morrenus_stats,
+    "apply_steam_updates_block": handle_apply_steam_updates_block,
+    "run_tool": handle_run_tool,
 }
 
 

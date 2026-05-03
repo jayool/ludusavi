@@ -1099,6 +1099,183 @@ impl App {
                             |result| Message::Accela(AE::ZipProcessed(result)),
                         )
                     }
+                    AE::OpenSettings => {
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        if python.trim().is_empty() || accela.trim().is_empty() {
+                            self.accela_screen.status = Status::Error(
+                                "Set ACCELA bin and Python paths first.".to_string(),
+                            );
+                            return Task::none();
+                        }
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Settings;
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        Task::perform(
+                            crate::gui::accela::run_get_settings(python, adapter, accela),
+                            |result| Message::Accela(AE::SettingsLoaded(result)),
+                        )
+                    }
+                    AE::SettingsLoaded(Ok(settings)) => {
+                        self.accela_screen.settings = Some(settings);
+                        Task::none()
+                    }
+                    AE::SettingsLoaded(Err(e)) => {
+                        self.accela_screen.view_state = crate::gui::accela::ViewState::Search;
+                        self.accela_screen.status = Status::Error(format!("get_settings: {e}"));
+                        Task::none()
+                    }
+                    AE::SwitchSettingsTab(tab) => {
+                        self.accela_screen.settings_tab = tab;
+                        Task::none()
+                    }
+                    AE::SetSettingBool(key, value) => {
+                        self.accela_screen.update_setting(&key, crate::gui::accela::SettingValue::Bool(value));
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        Task::perform(
+                            crate::gui::accela::run_set_setting(
+                                python,
+                                adapter,
+                                accela,
+                                key,
+                                serde_json::Value::Bool(value),
+                            ),
+                            |result| Message::Accela(AE::SettingSaved(result)),
+                        )
+                    }
+                    AE::SetSettingString(key, value) => {
+                        self.accela_screen.update_setting(
+                            &key,
+                            crate::gui::accela::SettingValue::Str(value.clone()),
+                        );
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        Task::perform(
+                            crate::gui::accela::run_set_setting(
+                                python,
+                                adapter,
+                                accela,
+                                key,
+                                serde_json::Value::String(value),
+                            ),
+                            |result| Message::Accela(AE::SettingSaved(result)),
+                        )
+                    }
+                    AE::SetSettingInt(key, value) => {
+                        self.accela_screen.update_setting(
+                            &key,
+                            crate::gui::accela::SettingValue::Int(value),
+                        );
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        Task::perform(
+                            crate::gui::accela::run_set_setting(
+                                python,
+                                adapter,
+                                accela,
+                                key,
+                                serde_json::Value::Number(value.into()),
+                            ),
+                            |result| Message::Accela(AE::SettingSaved(result)),
+                        )
+                    }
+                    AE::SetBlockSteamUpdates(value) => {
+                        self.accela_screen.update_setting(
+                            "block_steam_updates",
+                            crate::gui::accela::SettingValue::Bool(value),
+                        );
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        let p1 = python.clone();
+                        let a1 = accela.clone();
+                        let ad1 = adapter.clone();
+                        let task_set = Task::perform(
+                            crate::gui::accela::run_set_setting(
+                                p1,
+                                ad1,
+                                a1,
+                                "block_steam_updates".to_string(),
+                                serde_json::Value::Bool(value),
+                            ),
+                            |result| Message::Accela(AE::SettingSaved(result)),
+                        );
+                        let task_apply = Task::perform(
+                            crate::gui::accela::run_apply_steam_updates_block(
+                                python, adapter, accela, value,
+                            ),
+                            |result| Message::Accela(AE::ToolFinished(result)),
+                        );
+                        Task::batch(vec![task_set, task_apply])
+                    }
+                    AE::SettingSaved(Ok(())) => Task::none(),
+                    AE::SettingSaved(Err(e)) => {
+                        self.accela_screen.tool_message = Some(format!("Save failed: {e}"));
+                        Task::none()
+                    }
+                    AE::ToggleApiKeyVisibility => {
+                        self.accela_screen.api_key_visible = !self.accela_screen.api_key_visible;
+                        Task::none()
+                    }
+                    AE::ToggleSgdbKeyVisibility => {
+                        self.accela_screen.sgdb_key_visible = !self.accela_screen.sgdb_key_visible;
+                        Task::none()
+                    }
+                    AE::RefreshMorrenusStats => {
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        Task::perform(
+                            crate::gui::accela::run_get_morrenus_stats(python, adapter, accela),
+                            |result| Message::Accela(AE::StatsLoaded(result)),
+                        )
+                    }
+                    AE::StatsLoaded(Ok(stats)) => {
+                        self.accela_screen.morrenus_stats = Some(stats);
+                        Task::none()
+                    }
+                    AE::StatsLoaded(Err(e)) => {
+                        self.accela_screen.tool_message = Some(format!("Stats failed: {e}"));
+                        Task::none()
+                    }
+                    AE::RunTool(tool) => {
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        self.accela_screen.tool_busy = Some(format!("{tool:?}"));
+                        self.accela_screen.tool_message = None;
+                        Task::perform(
+                            crate::gui::accela::run_tool(python, adapter, accela, tool),
+                            |result| Message::Accela(AE::ToolFinished(result)),
+                        )
+                    }
+                    AE::BrowseSteamlessExe => Task::future(async move {
+                        match rfd::AsyncFileDialog::new()
+                            .add_filter("Executable", &["exe"])
+                            .pick_file()
+                            .await
+                        {
+                            Some(handle) => Message::Accela(AE::RunTool(
+                                crate::gui::accela::ToolKind::RunSteamless(
+                                    handle.path().to_path_buf(),
+                                ),
+                            )),
+                            None => Message::Ignore,
+                        }
+                    }),
+                    AE::ToolFinished(Ok(note)) => {
+                        self.accela_screen.tool_busy = None;
+                        self.accela_screen.tool_message = Some(note);
+                        Task::none()
+                    }
+                    AE::ToolFinished(Err(e)) => {
+                        self.accela_screen.tool_busy = None;
+                        self.accela_screen.tool_message = Some(format!("Failed: {e}"));
+                        Task::none()
+                    }
                 }
             }
             Message::AddGameRequested => {

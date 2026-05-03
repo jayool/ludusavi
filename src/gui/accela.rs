@@ -40,6 +40,78 @@ pub enum Event {
     FileDropped(PathBuf),
     OpenAccelaPathPicker,
     OpenPythonPathPicker,
+    OpenSettings,
+    SettingsLoaded(Result<AccelaSettings, String>),
+    SwitchSettingsTab(SettingsTab),
+    SetSettingBool(String, bool),
+    SetSettingString(String, String),
+    SetSettingInt(String, i64),
+    SetBlockSteamUpdates(bool),
+    SettingSaved(Result<(), String>),
+    ToggleApiKeyVisibility,
+    ToggleSgdbKeyVisibility,
+    RefreshMorrenusStats,
+    StatsLoaded(Result<serde_json::Value, String>),
+    RunTool(ToolKind),
+    BrowseSteamlessExe,
+    ToolFinished(Result<String, String>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    Downloads,
+    Integrations,
+    Steam,
+    Tools,
+}
+
+impl SettingsTab {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Downloads => "Downloads",
+            Self::Integrations => "Integrations",
+            Self::Steam => "Steam",
+            Self::Tools => "Tools",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ToolKind {
+    RegisterProtocol,
+    UnregisterProtocol,
+    RunSlscheevo,
+    RunSteamless(PathBuf),
+}
+
+impl ToolKind {
+    fn key(&self) -> &'static str {
+        match self {
+            Self::RegisterProtocol => "register_protocol",
+            Self::UnregisterProtocol => "unregister_protocol",
+            Self::RunSlscheevo => "run_slscheevo",
+            Self::RunSteamless(_) => "run_steamless",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct AccelaSettings {
+    pub library_mode: bool,
+    pub auto_skip_single_choice: bool,
+    pub max_downloads: u32,
+    pub generate_achievements: bool,
+    pub use_steamless: bool,
+    pub auto_apply_goldberg: bool,
+    pub create_application_shortcuts: bool,
+    pub morrenus_api_key: String,
+    pub sgdb_api_key: String,
+    pub slssteam_mode: bool,
+    pub sls_config_management: bool,
+    pub prompt_steam_restart: bool,
+    pub block_steam_updates: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +127,7 @@ pub enum ViewState {
     Search,
     Loading(String),
     Depots(GameDetail),
+    Settings,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -130,9 +203,48 @@ pub struct AccelaScreen {
     pub image_cache: HashMap<String, ImageState>,
     pub view_state: ViewState,
     pub last_click: Option<(String, Instant)>,
+    pub settings: Option<AccelaSettings>,
+    pub settings_tab: SettingsTab,
+    pub morrenus_stats: Option<serde_json::Value>,
+    pub api_key_visible: bool,
+    pub sgdb_key_visible: bool,
+    pub tool_busy: Option<String>,
+    pub tool_message: Option<String>,
+}
+
+pub enum SettingValue {
+    Bool(bool),
+    Int(i64),
+    Str(String),
 }
 
 impl AccelaScreen {
+    pub fn update_setting(&mut self, key: &str, value: SettingValue) {
+        let Some(s) = self.settings.as_mut() else {
+            return;
+        };
+        match (key, value) {
+            ("library_mode", SettingValue::Bool(b)) => s.library_mode = b,
+            ("auto_skip_single_choice", SettingValue::Bool(b)) => s.auto_skip_single_choice = b,
+            ("max_downloads", SettingValue::Int(n)) => {
+                s.max_downloads = n.clamp(0, 255) as u32;
+            }
+            ("generate_achievements", SettingValue::Bool(b)) => s.generate_achievements = b,
+            ("use_steamless", SettingValue::Bool(b)) => s.use_steamless = b,
+            ("auto_apply_goldberg", SettingValue::Bool(b)) => s.auto_apply_goldberg = b,
+            ("create_application_shortcuts", SettingValue::Bool(b)) => {
+                s.create_application_shortcuts = b
+            }
+            ("morrenus_api_key", SettingValue::Str(v)) => s.morrenus_api_key = v,
+            ("sgdb_api_key", SettingValue::Str(v)) => s.sgdb_api_key = v,
+            ("slssteam_mode", SettingValue::Bool(b)) => s.slssteam_mode = b,
+            ("sls_config_management", SettingValue::Bool(b)) => s.sls_config_management = b,
+            ("prompt_steam_restart", SettingValue::Bool(b)) => s.prompt_steam_restart = b,
+            ("block_steam_updates", SettingValue::Bool(b)) => s.block_steam_updates = b,
+            _ => {}
+        }
+    }
+
     pub fn register_click(&mut self, game_id: &str) -> bool {
         let now = Instant::now();
         let is_double = self
@@ -155,6 +267,7 @@ impl AccelaScreen {
             ViewState::Search => self.search_view(),
             ViewState::Loading(label) => self.loading_view(label),
             ViewState::Depots(detail) => self.depots_view(detail),
+            ViewState::Settings => self.settings_view(),
         }
     }
 
@@ -242,6 +355,17 @@ impl AccelaScreen {
             && !self.query.trim().is_empty()
             && self.status != Status::Searching;
 
+        let toolbar = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(iced::widget::Space::new().width(Length::Fill))
+            .push(
+                Button::new(text("⚙ Settings").size(12))
+                    .padding([6, 12])
+                    .class(style::Button::Ghost)
+                    .on_press(Message::Accela(Event::OpenSettings)),
+            );
+
         let search_card = Container::new(
             Column::new()
                 .spacing(10)
@@ -302,6 +426,7 @@ impl AccelaScreen {
                     Column::new()
                         .spacing(16)
                         .padding([24, 24])
+                        .push(toolbar)
                         .push(paths_card)
                         .push(search_card)
                         .push(results_card),
@@ -569,6 +694,416 @@ impl AccelaScreen {
             )
             .into()
     }
+
+    fn settings_view(&self) -> Element<'_> {
+        let header = Container::new(
+            Row::new()
+                .padding([0, 24])
+                .height(52)
+                .align_y(Alignment::Center)
+                .push(text("ACCELA — Settings").size(15).width(Length::Fill)),
+        )
+        .width(Length::Fill)
+        .class(style::Container::TopBar);
+
+        let mut toolbar = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(
+                Button::new(text("← Back to results").size(12))
+                    .padding([6, 12])
+                    .class(style::Button::Ghost)
+                    .on_press(Message::Accela(Event::BackToSearch)),
+            )
+            .push(iced::widget::Space::new().width(Length::Fill));
+        if let Some(msg) = &self.tool_message {
+            toolbar = toolbar.push(text(msg.clone()).size(11).class(style::Text::Muted));
+        }
+
+        let mut tabs_row = Row::new().spacing(4);
+        for tab in [
+            SettingsTab::Downloads,
+            SettingsTab::Integrations,
+            SettingsTab::Steam,
+            SettingsTab::Tools,
+        ] {
+            let active = self.settings_tab == tab;
+            tabs_row = tabs_row.push(
+                Button::new(text(tab.label()).size(12))
+                    .padding([6, 14])
+                    .class(if active {
+                        style::Button::Primary
+                    } else {
+                        style::Button::Ghost
+                    })
+                    .on_press(Message::Accela(Event::SwitchSettingsTab(tab))),
+            );
+        }
+
+        let body: Element = match self.settings.as_ref() {
+            None => text("Loading settings...")
+                .size(12)
+                .class(style::Text::Muted)
+                .into(),
+            Some(s) => match self.settings_tab {
+                SettingsTab::Downloads => self.downloads_tab(s),
+                SettingsTab::Integrations => self.integrations_tab(s),
+                SettingsTab::Steam => self.steam_tab(s),
+                SettingsTab::Tools => self.tools_tab(),
+            },
+        };
+
+        let content = Column::new()
+            .spacing(16)
+            .padding([24, 24])
+            .push(toolbar)
+            .push(tabs_row)
+            .push(body);
+
+        Column::new()
+            .push(header)
+            .push(
+                Container::new(ScrollSubject::Other.into_widget(content))
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            )
+            .into()
+    }
+
+    fn downloads_tab<'a>(&'a self, s: &'a AccelaSettings) -> Element<'a> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(text("DOWNLOAD SETTINGS").size(13).class(style::Text::Muted))
+            .push(toggle_row(
+                "Limit Downloads to Steam Libraries",
+                "library_mode",
+                s.library_mode,
+            ))
+            .push(toggle_row(
+                "Skip single-choice selection",
+                "auto_skip_single_choice",
+                s.auto_skip_single_choice,
+            ))
+            .push(int_input_row(
+                "Maximum concurrent downloads",
+                "max_downloads",
+                s.max_downloads,
+            ))
+            .push(text("POST-PROCESSING").size(13).class(style::Text::Muted))
+            .push(toggle_row(
+                "Generate Steam Achievements",
+                "generate_achievements",
+                s.generate_achievements,
+            ))
+            .push(toggle_row(
+                "Remove Steam DRM with Steamless",
+                "use_steamless",
+                s.use_steamless,
+            ))
+            .push(toggle_row(
+                "Apply Goldberg Automatically",
+                "auto_apply_goldberg",
+                s.auto_apply_goldberg,
+            ));
+
+        if cfg!(target_os = "linux") {
+            col = col.push(toggle_row(
+                "Create Application Shortcuts (Linux only)",
+                "create_application_shortcuts",
+                s.create_application_shortcuts,
+            ));
+        }
+
+        Container::new(col)
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into()
+    }
+
+    fn integrations_tab<'a>(&'a self, s: &'a AccelaSettings) -> Element<'a> {
+        let api_row = api_key_row(
+            "Morrenus API Key",
+            "morrenus_api_key",
+            &s.morrenus_api_key,
+            self.api_key_visible,
+            Message::Accela(Event::ToggleApiKeyVisibility),
+        );
+
+        let mut col = Column::new()
+            .spacing(12)
+            .push(text("API KEYS").size(13).class(style::Text::Muted))
+            .push(api_row);
+
+        if cfg!(target_os = "linux") {
+            col = col.push(api_key_row(
+                "SteamGridDB API Key (Linux only)",
+                "sgdb_api_key",
+                &s.sgdb_api_key,
+                self.sgdb_key_visible,
+                Message::Accela(Event::ToggleSgdbKeyVisibility),
+            ));
+        }
+
+        col = col.push(text("MORRENUS STATS").size(13).class(style::Text::Muted));
+        col = col.push(self.stats_view());
+        col = col.push(
+            Button::new(text("Refresh").size(12))
+                .padding([6, 14])
+                .class(style::Button::Ghost)
+                .on_press(Message::Accela(Event::RefreshMorrenusStats)),
+        );
+
+        Container::new(col)
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into()
+    }
+
+    fn stats_view(&self) -> Element<'_> {
+        match self.morrenus_stats.as_ref() {
+            None => text("Click Refresh to load stats.")
+                .size(12)
+                .class(style::Text::Muted)
+                .into(),
+            Some(stats) => {
+                let user = stats
+                    .get("username")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?")
+                    .to_string();
+                let daily_used = stats.get("daily_usage").and_then(|v| v.as_u64()).unwrap_or(0);
+                let daily_limit = stats
+                    .get("daily_limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total = stats
+                    .get("api_key_usage_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let expires = stats
+                    .get("api_key_expires_at")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.split('T').next().unwrap_or(s).to_string())
+                    .unwrap_or_else(|| "Never".to_string());
+                let active = stats
+                    .get("can_make_requests")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Column::new()
+                    .spacing(4)
+                    .push(text(format!("User: {user}")).size(12))
+                    .push(text(format!("Daily: {daily_used}/{daily_limit}")).size(12))
+                    .push(text(format!("Total calls: {total}")).size(12))
+                    .push(text(format!("Expires: {expires}")).size(12))
+                    .push(
+                        text(format!("Status: {}", if active { "Active" } else { "Blocked" }))
+                            .size(12)
+                            .class(if active {
+                                style::Text::Green
+                            } else {
+                                style::Text::Failure
+                            }),
+                    )
+                    .into()
+            }
+        }
+    }
+
+    fn steam_tab<'a>(&'a self, s: &'a AccelaSettings) -> Element<'a> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(
+                text("STEAM INTEGRATION")
+                    .size(13)
+                    .class(style::Text::Muted),
+            );
+
+        if cfg!(target_os = "windows") {
+            col = col.push(toggle_row(
+                "GreenLuma Wrapper Mode",
+                "slssteam_mode",
+                s.slssteam_mode,
+            ));
+        } else {
+            col = col.push(
+                text("SLSsteam is enabled automatically for Steam library installs on Linux.")
+                    .size(12)
+                    .class(style::Text::Muted),
+            );
+        }
+
+        col = col
+            .push(toggle_row(
+                "SLSsteam / GreenLuma Config Management",
+                "sls_config_management",
+                s.sls_config_management,
+            ))
+            .push(text("STEAM SETTINGS").size(13).class(style::Text::Muted))
+            .push(toggle_row(
+                "Prompt Steam Restart",
+                "prompt_steam_restart",
+                s.prompt_steam_restart,
+            ))
+            .push({
+                // Special toggle: writes/removes steam.cfg as side-effect.
+                let label = "Block Steam Updates (writes steam.cfg)";
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(crate::gui::widget::checkbox(label, s.block_steam_updates, |b| {
+                        Message::Accela(Event::SetBlockSteamUpdates(b))
+                    }))
+            });
+
+        Container::new(col)
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into()
+    }
+
+    fn tools_tab(&self) -> Element<'_> {
+        let busy = self.tool_busy.is_some();
+        let busy_label = self
+            .tool_busy
+            .clone()
+            .map(|k| format!("Running: {k}..."))
+            .unwrap_or_default();
+
+        let mut col = Column::new()
+            .spacing(12)
+            .push(text("TOOLS").size(13).class(style::Text::Muted));
+
+        if !busy_label.is_empty() {
+            col = col.push(
+                text(busy_label)
+                    .size(12)
+                    .class(style::Text::Muted),
+            );
+        }
+
+        col = col.push(tool_button(
+            "Configure Achievements",
+            "Launch SLScheevo to setup achievement credentials.",
+            (!busy).then(|| Message::Accela(Event::RunTool(ToolKind::RunSlscheevo))),
+        ));
+
+        col = col.push(tool_button(
+            "Remove DRM (Steamless)",
+            "Pick an .exe and run Steamless on it.",
+            (!busy).then_some(Message::Accela(Event::BrowseSteamlessExe)),
+        ));
+
+        col = col.push(tool_button(
+            "Open SLSsteam installer (web)",
+            "Open the recommended SLSsteam installer page on GitHub.",
+            Some(Message::OpenUrl(
+                "https://github.com/Deadboy666/h3adcr-b?tab=readme-ov-file#headcrab".to_string(),
+            )),
+        ));
+
+        if cfg!(target_os = "windows") {
+            col = col
+                .push(text("WINDOWS REGISTRY").size(13).class(style::Text::Muted))
+                .push(tool_button(
+                    "Register Registry Entries",
+                    "Register accela:// URL protocol and .zip context menu entries.",
+                    (!busy).then(|| Message::Accela(Event::RunTool(ToolKind::RegisterProtocol))),
+                ))
+                .push(tool_button(
+                    "Remove Registry Entries",
+                    "Remove accela:// URL protocol and .zip context menu entries.",
+                    (!busy).then(|| Message::Accela(Event::RunTool(ToolKind::UnregisterProtocol))),
+                ));
+        }
+
+        Container::new(col)
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into()
+    }
+}
+
+fn toggle_row<'a>(label: &'a str, key: &'static str, value: bool) -> Element<'a> {
+    crate::gui::widget::checkbox(label, value, move |b| {
+        Message::Accela(Event::SetSettingBool(key.to_string(), b))
+    })
+    .into()
+}
+
+fn int_input_row<'a>(label: &'a str, key: &'static str, value: u32) -> Element<'a> {
+    Row::new()
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .push(text(label).size(12).width(Length::Fill))
+        .push(
+            TextInput::new("", &value.to_string())
+                .on_input(move |s| {
+                    let parsed: i64 = s.parse().unwrap_or(0);
+                    Message::Accela(Event::SetSettingInt(key.to_string(), parsed))
+                })
+                .padding(6)
+                .size(12)
+                .width(Length::Fixed(80.0)),
+        )
+        .into()
+}
+
+fn api_key_row<'a>(
+    label: &'a str,
+    key: &'static str,
+    value: &'a str,
+    visible: bool,
+    toggle_msg: Message,
+) -> Element<'a> {
+    let display: String = if visible {
+        value.to_string()
+    } else {
+        "*".repeat(value.len().min(32))
+    };
+    Column::new()
+        .spacing(4)
+        .push(text(label).size(12).class(style::Text::Muted))
+        .push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    TextInput::new("Paste your API key", &display)
+                        .on_input(move |s| {
+                            Message::Accela(Event::SetSettingString(key.to_string(), s))
+                        })
+                        .padding(6)
+                        .size(12),
+                )
+                .push(
+                    Button::new(text(if visible { "Hide" } else { "Show" }).size(11))
+                        .padding([6, 10])
+                        .class(style::Button::Ghost)
+                        .on_press(toggle_msg),
+                ),
+        )
+        .into()
+}
+
+fn tool_button<'a>(label: &'a str, tooltip: &'a str, action: Option<Message>) -> Element<'a> {
+    Column::new()
+        .spacing(2)
+        .push(
+            Button::new(text(label).size(12))
+                .padding([7, 14])
+                .class(if action.is_some() {
+                    style::Button::Primary
+                } else {
+                    style::Button::Ghost
+                })
+                .on_press_maybe(action),
+        )
+        .push(text(tooltip).size(11).class(style::Text::Muted))
+        .into()
 }
 
 /// Send one command to a freshly-spawned adapter and return the first event
@@ -702,4 +1237,96 @@ pub async fn fetch_image(url: String) -> Result<Vec<u8>, String> {
     let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     Ok(bytes.to_vec())
+}
+
+pub async fn run_get_settings(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+) -> Result<AccelaSettings, String> {
+    let cmd_json = serde_json::json!({"cmd": "get_settings"}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("settings") => {
+            let values = event
+                .get("values")
+                .cloned()
+                .ok_or_else(|| "settings event missing 'values'".to_string())?;
+            serde_json::from_value(values).map_err(|e| format!("settings parse: {e}"))
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_set_setting(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    key: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let cmd_json = serde_json::json!({"cmd": "set_setting", "key": key, "value": value}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("setting_saved") => Ok(()),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_get_morrenus_stats(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+) -> Result<serde_json::Value, String> {
+    let cmd_json = serde_json::json!({"cmd": "get_morrenus_stats"}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("morrenus_stats") => Ok(event.get("stats").cloned().unwrap_or(serde_json::Value::Null)),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_apply_steam_updates_block(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    enabled: bool,
+) -> Result<String, String> {
+    let cmd_json =
+        serde_json::json!({"cmd": "apply_steam_updates_block", "enabled": enabled}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("tool_done") => Ok(event
+            .get("note")
+            .and_then(|v| v.as_str())
+            .unwrap_or("done")
+            .to_string()),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_tool(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    tool: ToolKind,
+) -> Result<String, String> {
+    let mut payload = serde_json::json!({"cmd": "run_tool", "kind": tool.key()});
+    if let ToolKind::RunSteamless(path) = &tool {
+        payload["exe_path"] = serde_json::Value::String(path.to_string_lossy().into_owned());
+    }
+    let event = send_command(&python_path, &adapter_path, &accela_path, payload.to_string()).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("tool_done") => Ok(event
+            .get("note")
+            .and_then(|v| v.as_str())
+            .unwrap_or("done")
+            .to_string()),
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
 }
