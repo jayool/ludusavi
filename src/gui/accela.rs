@@ -48,7 +48,6 @@ pub enum Event {
     SetSettingInt(String, i64),
     SetBlockSteamUpdates(bool),
     SaveSettings,
-    DiscardSettings,
     SettingsBatchSaved(Result<usize, String>),
     ToggleApiKeyVisibility,
     ToggleSgdbKeyVisibility,
@@ -413,7 +412,13 @@ impl AccelaScreen {
                 .padding([0, 24])
                 .height(52)
                 .align_y(Alignment::Center)
-                .push(text("ACCELA").size(15).width(Length::Fill)),
+                .push(text("ACCELA").size(15).width(Length::Fill))
+                .push(
+                    Button::new(text("⚙ Settings").size(12))
+                        .padding([6, 12])
+                        .class(style::Button::Ghost)
+                        .on_press(Message::Accela(Event::OpenSettings)),
+                ),
         )
         .width(Length::Fill)
         .class(style::Container::TopBar);
@@ -486,17 +491,6 @@ impl AccelaScreen {
             && !self.query.trim().is_empty()
             && self.status != Status::Searching;
 
-        let toolbar = Row::new()
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .push(iced::widget::Space::new().width(Length::Fill))
-            .push(
-                Button::new(text("⚙ Settings").size(12))
-                    .padding([6, 12])
-                    .class(style::Button::Ghost)
-                    .on_press(Message::Accela(Event::OpenSettings)),
-            );
-
         let search_card = Container::new(
             Column::new()
                 .spacing(10)
@@ -557,7 +551,6 @@ impl AccelaScreen {
                     Column::new()
                         .spacing(16)
                         .padding([24, 24])
-                        .push(toolbar)
                         .push(paths_card)
                         .push(search_card)
                         .push(results_card),
@@ -851,23 +844,16 @@ impl AccelaScreen {
         if let Some(msg) = &self.tool_message {
             toolbar = toolbar.push(text(msg.clone()).size(11).class(style::Text::Muted));
         }
-        toolbar = toolbar
-            .push(
-                Button::new(text("Discard").size(12))
-                    .padding([6, 14])
-                    .class(style::Button::Ghost)
-                    .on_press_maybe(dirty.then_some(Message::Accela(Event::DiscardSettings))),
-            )
-            .push(
-                Button::new(text(if dirty { "Save *" } else { "Save" }).size(12))
-                    .padding([6, 14])
-                    .class(if dirty {
-                        style::Button::Primary
-                    } else {
-                        style::Button::Ghost
-                    })
-                    .on_press_maybe(dirty.then_some(Message::Accela(Event::SaveSettings))),
-            );
+        toolbar = toolbar.push(
+            Button::new(text(if dirty { "Save *" } else { "Save" }).size(12))
+                .padding([6, 14])
+                .class(if dirty {
+                    style::Button::Primary
+                } else {
+                    style::Button::Ghost
+                })
+                .on_press_maybe(dirty.then_some(Message::Accela(Event::SaveSettings))),
+        );
 
         let mut tabs_row = Row::new().spacing(4);
         for tab in [

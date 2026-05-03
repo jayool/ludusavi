@@ -1199,13 +1199,6 @@ impl App {
                             |result| Message::Accela(AE::SettingsBatchSaved(result)),
                         )
                     }
-                    AE::DiscardSettings => {
-                        if let Some(saved) = self.accela_screen.settings_saved.clone() {
-                            self.accela_screen.settings = Some(saved);
-                            self.accela_screen.tool_message = Some("Changes discarded.".to_string());
-                        }
-                        Task::none()
-                    }
                     AE::SettingsBatchSaved(Ok(n)) => {
                         if let Some(cur) = self.accela_screen.settings.clone() {
                             self.accela_screen.settings_saved = Some(cur);
