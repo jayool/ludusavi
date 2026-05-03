@@ -70,6 +70,69 @@ def bootstrap(accela_path: Path) -> None:
     app.setOrganizationName("Tachibana Labs")
     app.setApplicationName("ACCELA")
 
+    _install_qthread_compat_patches()
+
+
+def _install_qthread_compat_patches() -> None:
+    """Make ACCELA's QThread + TaskRunner code run synchronously on the
+    main thread inside our adapter.
+
+    ACCELA dispatches long-running tasks (DownloadDepotsTask was one,
+    SteamlessTask, ApplicationShortcutsTask, GenerateAchievementsTask)
+    by spawning a QThread and waiting on a nested QEventLoop. In the
+    standalone ACCELA CLI this works because that process has a full
+    QApplication driving its main event loop. In our headless adapter
+    we only have a QCoreApplication, and queued signals from a worker
+    QThread to lambdas connected on the main thread don't get
+    delivered through a nested QEventLoop — the loop blocks but the
+    cross-thread signal queue is never drained.
+
+    Workaround: redirect TaskRunner.run() and SteamlessTask.start() to
+    schedule the work via QTimer.singleShot(0, ...) on the main thread.
+    The nested QEventLoop processes the timer event, runs the task
+    synchronously on the main thread, and signals fire as
+    DirectConnection (same thread = synchronous slot call), so the
+    lambdas execute as expected.
+    """
+    import traceback
+
+    from PyQt6.QtCore import QTimer
+    from utils.task_runner import TaskRunner, Worker
+    from core.tasks.steamless_task import SteamlessTask
+
+    def sync_run(self, target_func, *args, **kwargs):
+        self.worker = Worker(target_func, *args, **kwargs)
+
+        def do_work():
+            try:
+                result = target_func(*args, **kwargs)
+                self.worker.finished.emit(result)
+            except Exception as e:
+                self.worker.error.emit((type(e), e, traceback.format_exc()))
+            finally:
+                self.worker.completed.emit()
+                self.cleanup_complete.emit()
+
+        TaskRunner._active_runners.append(self)
+        QTimer.singleShot(0, do_work)
+        return self.worker
+
+    TaskRunner.run = sync_run
+
+    def sync_steamless_start(self):
+        def do_run():
+            try:
+                self.run()
+            finally:
+                # QThread.finished is normally emitted when the worker
+                # thread exits; since we're not using a real thread
+                # here, emit it manually so loop.quit() callbacks fire.
+                self.finished.emit()
+
+        QTimer.singleShot(0, do_run)
+
+    SteamlessTask.start = sync_steamless_start
+
 
 def handle_search(payload: Dict[str, Any]) -> None:
     from core.morrenus_api import search_games
@@ -331,25 +394,6 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
 
-    # Diagnostic: confirm where ACCELA's resource_path is going to look
-    # for DepotDownloader.dll. If this points at the adapter folder, the
-    # _MEIPASS fix in bootstrap() didn't take effect for this run.
-    meipass = getattr(sys, "_MEIPASS", None)
-    dll_probe = resource_path(os.path.join("deps", "DepotDownloader.dll"))
-    emit(
-        {
-            "event": "progress",
-            "phase": "download",
-            "message": f"[adapter] sys._MEIPASS = {meipass!r}",
-        }
-    )
-    emit(
-        {
-            "event": "progress",
-            "phase": "download",
-            "message": f"[adapter] resolved dll_path = {dll_probe} (exists: {dll_probe.exists()})",
-        }
-    )
 
     game_data = payload.get("game_data")
     selected_depots = payload.get("depots") or []
