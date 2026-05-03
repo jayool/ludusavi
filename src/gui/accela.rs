@@ -640,23 +640,27 @@ impl AccelaScreen {
         const APPID_W: f32 = 80.0;
         const DATE_W: f32 = 110.0;
 
-        let header_row = Row::new()
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .push(Container::new(text("")).width(Length::Fixed(IMG_W)))
-            .push(
-                text("AppID")
-                    .size(11)
-                    .class(style::Text::Muted)
-                    .width(Length::Fixed(APPID_W)),
-            )
-            .push(text("Name").size(11).class(style::Text::Muted).width(Length::Fill))
-            .push(
-                text("Uploaded")
-                    .size(11)
-                    .class(style::Text::Muted)
-                    .width(Length::Fixed(DATE_W)),
-            );
+        let header_row = Container::new(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(Container::new(text("")).width(Length::Fixed(IMG_W)))
+                .push(
+                    text("AppID")
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(APPID_W)),
+                )
+                .push(text("Name").size(11).class(style::Text::Muted).width(Length::Fill))
+                .push(
+                    text("Uploaded")
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(DATE_W)),
+                ),
+        )
+        .padding([8, 10])
+        .width(Length::Fill);
 
         let mut col = Column::new().spacing(8).push(header_row);
         for game in &self.results {
@@ -776,6 +780,29 @@ impl AccelaScreen {
                     ),
             )
         } else {
+            let depot_columns_header = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(iced::widget::Space::new().width(Length::Fixed(22.0)))
+                .push(
+                    text("Depot ID")
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(80.0)),
+                )
+                .push(
+                    text("Description")
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fill),
+                )
+                .push(
+                    text("Size")
+                        .size(11)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(110.0)),
+                );
+
             let mut col = Column::new()
                 .spacing(6)
                 .push(
@@ -792,6 +819,27 @@ impl AccelaScreen {
                             .size(12)
                             .class(style::Text::Muted),
                         )
+                        .push(iced::widget::Space::new().width(Length::Fill))
+                        .push(
+                            Button::new(
+                                text(format!("Download {} depot(s)", selected_count)).size(12),
+                            )
+                            .padding([6, 14])
+                            .class(if download_enabled {
+                                style::Button::Primary
+                            } else {
+                                style::Button::Ghost
+                            })
+                            .on_press_maybe(
+                                download_enabled
+                                    .then_some(Message::Accela(Event::RequestDownload)),
+                            ),
+                        ),
+                )
+                .push(
+                    Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
                         .push(
                             Button::new(text("Select all").size(11))
                                 .padding([4, 10])
@@ -804,7 +852,8 @@ impl AccelaScreen {
                                 .class(style::Button::Ghost)
                                 .on_press(Message::Accela(Event::DeselectAllDepots)),
                         ),
-                );
+                )
+                .push(depot_columns_header);
 
             for (depot_id, info) in &detail.depots {
                 let size = info.size_display();
@@ -832,26 +881,6 @@ impl AccelaScreen {
                         ),
                 );
             }
-
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(
-                        Button::new(
-                            text(format!("Download {} depot(s)", selected_count)).size(13),
-                        )
-                        .padding([8, 16])
-                        .class(if download_enabled {
-                            style::Button::Primary
-                        } else {
-                            style::Button::Ghost
-                        })
-                        .on_press_maybe(
-                            download_enabled.then_some(Message::Accela(Event::RequestDownload)),
-                        ),
-                    ),
-            );
 
             Container::new(col)
         }
@@ -1017,15 +1046,25 @@ impl AccelaScreen {
         messages: &'a VecDeque<String>,
         status: &'a DownloadStatus,
     ) -> Element<'a> {
+        let back_enabled = !matches!(status, DownloadStatus::InProgress);
         let header = Container::new(
             Row::new()
                 .padding([0, 24])
                 .height(52)
+                .spacing(10)
                 .align_y(Alignment::Center)
                 .push(
                     text(format!("ACCELA — Downloading {game_name}"))
                         .size(15)
                         .width(Length::Fill),
+                )
+                .push(
+                    Button::new(text("← Back to results").size(12))
+                        .padding([6, 12])
+                        .class(style::Button::Ghost)
+                        .on_press_maybe(
+                            back_enabled.then_some(Message::Accela(Event::BackToSearch)),
+                        ),
                 ),
         )
         .width(Length::Fill)
@@ -1072,14 +1111,6 @@ impl AccelaScreen {
             log_col = log_col.push(text(msg.clone()).size(11).class(style::Text::Muted));
         }
 
-        let back_button = Button::new(text("← Back to results").size(12))
-            .padding([6, 12])
-            .class(style::Button::Ghost)
-            .on_press_maybe(match status {
-                DownloadStatus::InProgress => None,
-                _ => Some(Message::Accela(Event::BackToSearch)),
-            });
-
         let content = Column::new()
             .spacing(16)
             .padding([24, 24])
@@ -1105,8 +1136,7 @@ impl AccelaScreen {
                 .width(Length::Fill)
                 .padding(16)
                 .class(style::Container::GamesTable),
-            )
-            .push(back_button);
+            );
 
         Column::new()
             .push(header)
@@ -1393,14 +1423,18 @@ impl AccelaScreen {
             .push({
                 Column::new()
                     .spacing(2)
-                    .push(crate::gui::widget::checkbox(
-                        "Block Steam Updates",
-                        s.block_steam_updates,
-                        |b| Message::Accela(Event::SetBlockSteamUpdates(b)),
-                    ))
+                    .push(
+                        crate::gui::widget::checkbox(
+                            "Block Steam Updates",
+                            s.block_steam_updates,
+                            |b| Message::Accela(Event::SetBlockSteamUpdates(b)),
+                        )
+                        .text_size(12)
+                        .size(16),
+                    )
                     .push(
                         Row::new()
-                            .push(iced::widget::Space::new().width(Length::Fixed(20.0)))
+                            .push(iced::widget::Space::new().width(Length::Fixed(22.0)))
                             .push(
                                 text(
                                     "Prevent Steam from automatically updating itself (writes steam.cfg in the Steam install folder).",
@@ -1489,13 +1523,15 @@ fn toggle_row<'a>(
 ) -> Element<'a> {
     let cb = crate::gui::widget::checkbox(label, value, move |b| {
         Message::Accela(Event::SetSettingBool(key.to_string(), b))
-    });
+    })
+    .text_size(12)
+    .size(16);
     Column::new()
         .spacing(2)
         .push(cb)
         .push(
             Row::new()
-                .push(iced::widget::Space::new().width(Length::Fixed(20.0)))
+                .push(iced::widget::Space::new().width(Length::Fixed(22.0)))
                 .push(text(tooltip).size(11).class(style::Text::Muted)),
         )
         .into()
