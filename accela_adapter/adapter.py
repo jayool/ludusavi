@@ -185,6 +185,35 @@ def _install_qthread_compat_patches() -> None:
     CLITaskManager._run_application_shortcuts = sync_run_application_shortcuts
     CLITaskManager._run_achievement_generation = sync_run_achievement_generation
 
+    # Workaround for an ACCELA bug: cli_manager.py:_create_applist_file
+    # calls find_next_applist_number(app_list_dir, self.logger) with two
+    # args, but core.steam_helpers.find_next_applist_number(app_list_dir)
+    # only accepts one. Replace the method with a corrected version.
+    from core.steam_helpers import (
+        app_id_exists_in_applist,
+        find_next_applist_number,
+    )
+
+    def fixed_create_applist_file(self, app_list_dir, appid, is_dlc=False):
+        if not app_id_exists_in_applist(app_list_dir, appid):
+            next_num = find_next_applist_number(app_list_dir)
+            filepath = os.path.join(app_list_dir, f"{next_num}.txt")
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(str(appid))
+            log_msg = f"Created GreenLuma file: {filepath} for "
+            log_msg += f"DLC: {appid}" if is_dlc else f"AppID: {appid}"
+            self.logger.info(log_msg)
+        else:
+            log_msg = (
+                f"AppID {appid} already exists in AppList folder. "
+                f"Skipping file creation."
+            )
+            if is_dlc:
+                log_msg = f"DLC {log_msg}"
+            self.logger.info(log_msg)
+
+    CLITaskManager._create_applist_file = fixed_create_applist_file
+
 
 def handle_search(payload: Dict[str, Any]) -> None:
     from core.morrenus_api import search_games
