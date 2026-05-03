@@ -47,7 +47,9 @@ pub enum Event {
     SetSettingString(String, String),
     SetSettingInt(String, i64),
     SetBlockSteamUpdates(bool),
-    SettingSaved(Result<(), String>),
+    SaveSettings,
+    DiscardSettings,
+    SettingsBatchSaved(Result<usize, String>),
     ToggleApiKeyVisibility,
     ToggleSgdbKeyVisibility,
     RefreshMorrenusStats,
@@ -112,6 +114,22 @@ pub struct AccelaSettings {
     pub sls_config_management: bool,
     pub prompt_steam_restart: bool,
     pub block_steam_updates: bool,
+}
+
+fn accela_settings_equal(a: &AccelaSettings, b: &AccelaSettings) -> bool {
+    a.library_mode == b.library_mode
+        && a.auto_skip_single_choice == b.auto_skip_single_choice
+        && a.max_downloads == b.max_downloads
+        && a.generate_achievements == b.generate_achievements
+        && a.use_steamless == b.use_steamless
+        && a.auto_apply_goldberg == b.auto_apply_goldberg
+        && a.create_application_shortcuts == b.create_application_shortcuts
+        && a.morrenus_api_key == b.morrenus_api_key
+        && a.sgdb_api_key == b.sgdb_api_key
+        && a.slssteam_mode == b.slssteam_mode
+        && a.sls_config_management == b.sls_config_management
+        && a.prompt_steam_restart == b.prompt_steam_restart
+        && a.block_steam_updates == b.block_steam_updates
 }
 
 #[derive(Debug, Clone)]
@@ -204,6 +222,7 @@ pub struct AccelaScreen {
     pub view_state: ViewState,
     pub last_click: Option<(String, Instant)>,
     pub settings: Option<AccelaSettings>,
+    pub settings_saved: Option<AccelaSettings>,
     pub settings_tab: SettingsTab,
     pub morrenus_stats: Option<serde_json::Value>,
     pub api_key_visible: bool,
@@ -216,6 +235,14 @@ pub enum SettingValue {
     Bool(bool),
     Int(i64),
     Str(String),
+}
+
+/// One pending change ready to ship to the adapter on Save.
+#[derive(Debug, Clone)]
+pub struct PendingChange {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub side_effect: Option<bool>,
 }
 
 impl AccelaScreen {
@@ -243,6 +270,115 @@ impl AccelaScreen {
             ("block_steam_updates", SettingValue::Bool(b)) => s.block_steam_updates = b,
             _ => {}
         }
+    }
+
+    /// True when the working copy of settings differs from the last-saved snapshot.
+    pub fn settings_dirty(&self) -> bool {
+        match (&self.settings, &self.settings_saved) {
+            (Some(cur), Some(saved)) => !accela_settings_equal(cur, saved),
+            _ => false,
+        }
+    }
+
+    /// Compute the list of changed fields to ship on Save.
+    pub fn pending_changes(&self) -> Vec<PendingChange> {
+        let (cur, saved) = match (&self.settings, &self.settings_saved) {
+            (Some(c), Some(s)) => (c, s),
+            _ => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        if cur.library_mode != saved.library_mode {
+            out.push(PendingChange {
+                key: "library_mode".into(),
+                value: cur.library_mode.into(),
+                side_effect: None,
+            });
+        }
+        if cur.auto_skip_single_choice != saved.auto_skip_single_choice {
+            out.push(PendingChange {
+                key: "auto_skip_single_choice".into(),
+                value: cur.auto_skip_single_choice.into(),
+                side_effect: None,
+            });
+        }
+        if cur.max_downloads != saved.max_downloads {
+            out.push(PendingChange {
+                key: "max_downloads".into(),
+                value: serde_json::Value::Number(cur.max_downloads.into()),
+                side_effect: None,
+            });
+        }
+        if cur.generate_achievements != saved.generate_achievements {
+            out.push(PendingChange {
+                key: "generate_achievements".into(),
+                value: cur.generate_achievements.into(),
+                side_effect: None,
+            });
+        }
+        if cur.use_steamless != saved.use_steamless {
+            out.push(PendingChange {
+                key: "use_steamless".into(),
+                value: cur.use_steamless.into(),
+                side_effect: None,
+            });
+        }
+        if cur.auto_apply_goldberg != saved.auto_apply_goldberg {
+            out.push(PendingChange {
+                key: "auto_apply_goldberg".into(),
+                value: cur.auto_apply_goldberg.into(),
+                side_effect: None,
+            });
+        }
+        if cur.create_application_shortcuts != saved.create_application_shortcuts {
+            out.push(PendingChange {
+                key: "create_application_shortcuts".into(),
+                value: cur.create_application_shortcuts.into(),
+                side_effect: None,
+            });
+        }
+        if cur.morrenus_api_key != saved.morrenus_api_key {
+            out.push(PendingChange {
+                key: "morrenus_api_key".into(),
+                value: serde_json::Value::String(cur.morrenus_api_key.clone()),
+                side_effect: None,
+            });
+        }
+        if cur.sgdb_api_key != saved.sgdb_api_key {
+            out.push(PendingChange {
+                key: "sgdb_api_key".into(),
+                value: serde_json::Value::String(cur.sgdb_api_key.clone()),
+                side_effect: None,
+            });
+        }
+        if cur.slssteam_mode != saved.slssteam_mode {
+            out.push(PendingChange {
+                key: "slssteam_mode".into(),
+                value: cur.slssteam_mode.into(),
+                side_effect: None,
+            });
+        }
+        if cur.sls_config_management != saved.sls_config_management {
+            out.push(PendingChange {
+                key: "sls_config_management".into(),
+                value: cur.sls_config_management.into(),
+                side_effect: None,
+            });
+        }
+        if cur.prompt_steam_restart != saved.prompt_steam_restart {
+            out.push(PendingChange {
+                key: "prompt_steam_restart".into(),
+                value: cur.prompt_steam_restart.into(),
+                side_effect: None,
+            });
+        }
+        if cur.block_steam_updates != saved.block_steam_updates {
+            out.push(PendingChange {
+                key: "block_steam_updates".into(),
+                value: cur.block_steam_updates.into(),
+                side_effect: Some(cur.block_steam_updates),
+            });
+        }
+        out
     }
 
     pub fn register_click(&mut self, game_id: &str) -> bool {
@@ -286,11 +422,6 @@ impl AccelaScreen {
             Column::new()
                 .spacing(10)
                 .push(text("PATHS").size(13).class(style::Text::Muted))
-                .push(
-                    text("Set these once. Persistent settings come in a later phase.")
-                        .size(12)
-                        .class(style::Text::Muted),
-                )
                 .push(
                     Row::new()
                         .spacing(10)
@@ -706,6 +837,7 @@ impl AccelaScreen {
         .width(Length::Fill)
         .class(style::Container::TopBar);
 
+        let dirty = self.settings_dirty();
         let mut toolbar = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
@@ -719,6 +851,23 @@ impl AccelaScreen {
         if let Some(msg) = &self.tool_message {
             toolbar = toolbar.push(text(msg.clone()).size(11).class(style::Text::Muted));
         }
+        toolbar = toolbar
+            .push(
+                Button::new(text("Discard").size(12))
+                    .padding([6, 14])
+                    .class(style::Button::Ghost)
+                    .on_press_maybe(dirty.then_some(Message::Accela(Event::DiscardSettings))),
+            )
+            .push(
+                Button::new(text(if dirty { "Save *" } else { "Save" }).size(12))
+                    .padding([6, 14])
+                    .class(if dirty {
+                        style::Button::Primary
+                    } else {
+                        style::Button::Ghost
+                    })
+                    .on_press_maybe(dirty.then_some(Message::Accela(Event::SaveSettings))),
+            );
 
         let mut tabs_row = Row::new().spacing(4);
         for tab in [
@@ -772,38 +921,44 @@ impl AccelaScreen {
 
     fn downloads_tab<'a>(&'a self, s: &'a AccelaSettings) -> Element<'a> {
         let mut col = Column::new()
-            .spacing(10)
+            .spacing(12)
             .push(text("DOWNLOAD SETTINGS").size(13).class(style::Text::Muted))
             .push(toggle_row(
                 "Limit Downloads to Steam Libraries",
                 "library_mode",
                 s.library_mode,
+                "Detect Steam libraries and let you choose where to install games.",
             ))
             .push(toggle_row(
                 "Skip single-choice selection",
                 "auto_skip_single_choice",
                 s.auto_skip_single_choice,
+                "Automatically skip selection when only one option exists.",
             ))
             .push(int_input_row(
                 "Maximum concurrent downloads",
                 "max_downloads",
                 s.max_downloads,
+                "Set maximum concurrent downloads (0-255).",
             ))
             .push(text("POST-PROCESSING").size(13).class(style::Text::Muted))
             .push(toggle_row(
                 "Generate Steam Achievements",
                 "generate_achievements",
                 s.generate_achievements,
+                "Generate achievement files for your games after downloads.",
             ))
             .push(toggle_row(
                 "Remove Steam DRM with Steamless",
                 "use_steamless",
                 s.use_steamless,
+                "Remove DRM from game executables after downloading.",
             ))
             .push(toggle_row(
                 "Apply Goldberg Automatically",
                 "auto_apply_goldberg",
                 s.auto_apply_goldberg,
+                "Automatically apply Goldberg after downloads.",
             ));
 
         if cfg!(target_os = "linux") {
@@ -811,6 +966,7 @@ impl AccelaScreen {
                 "Create Application Shortcuts (Linux only)",
                 "create_application_shortcuts",
                 s.create_application_shortcuts,
+                "Create desktop shortcuts and install icons from SteamGridDB.",
             ));
         }
 
@@ -925,6 +1081,7 @@ impl AccelaScreen {
                 "GreenLuma Wrapper Mode",
                 "slssteam_mode",
                 s.slssteam_mode,
+                "Integrate games with Steam using GreenLuma. Games appear in your Steam library automatically.",
             ));
         } else {
             col = col.push(
@@ -939,22 +1096,34 @@ impl AccelaScreen {
                 "SLSsteam / GreenLuma Config Management",
                 "sls_config_management",
                 s.sls_config_management,
+                "Allow ACCELA to manage SLSsteam/GreenLuma configuration files.",
             ))
             .push(text("STEAM SETTINGS").size(13).class(style::Text::Muted))
             .push(toggle_row(
                 "Prompt Steam Restart",
                 "prompt_steam_restart",
                 s.prompt_steam_restart,
+                "Show prompt to restart Steam after Steam-integrated downloads.",
             ))
             .push({
-                // Special toggle: writes/removes steam.cfg as side-effect.
-                let label = "Block Steam Updates (writes steam.cfg)";
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(crate::gui::widget::checkbox(label, s.block_steam_updates, |b| {
-                        Message::Accela(Event::SetBlockSteamUpdates(b))
-                    }))
+                Column::new()
+                    .spacing(2)
+                    .push(crate::gui::widget::checkbox(
+                        "Block Steam Updates",
+                        s.block_steam_updates,
+                        |b| Message::Accela(Event::SetBlockSteamUpdates(b)),
+                    ))
+                    .push(
+                        Row::new()
+                            .push(iced::widget::Space::new().width(Length::Fixed(20.0)))
+                            .push(
+                                text(
+                                    "Prevent Steam from automatically updating itself (writes steam.cfg in the Steam install folder).",
+                                )
+                                .size(11)
+                                .class(style::Text::Muted),
+                            ),
+                    )
             });
 
         Container::new(col)
@@ -1027,28 +1196,51 @@ impl AccelaScreen {
     }
 }
 
-fn toggle_row<'a>(label: &'a str, key: &'static str, value: bool) -> Element<'a> {
-    crate::gui::widget::checkbox(label, value, move |b| {
+fn toggle_row<'a>(
+    label: &'a str,
+    key: &'static str,
+    value: bool,
+    tooltip: &'a str,
+) -> Element<'a> {
+    let cb = crate::gui::widget::checkbox(label, value, move |b| {
         Message::Accela(Event::SetSettingBool(key.to_string(), b))
-    })
-    .into()
+    });
+    Column::new()
+        .spacing(2)
+        .push(cb)
+        .push(
+            Row::new()
+                .push(iced::widget::Space::new().width(Length::Fixed(20.0)))
+                .push(text(tooltip).size(11).class(style::Text::Muted)),
+        )
+        .into()
 }
 
-fn int_input_row<'a>(label: &'a str, key: &'static str, value: u32) -> Element<'a> {
-    Row::new()
-        .spacing(10)
-        .align_y(Alignment::Center)
-        .push(text(label).size(12).width(Length::Fill))
+fn int_input_row<'a>(
+    label: &'a str,
+    key: &'static str,
+    value: u32,
+    tooltip: &'a str,
+) -> Element<'a> {
+    Column::new()
+        .spacing(2)
         .push(
-            TextInput::new("", &value.to_string())
-                .on_input(move |s| {
-                    let parsed: i64 = s.parse().unwrap_or(0);
-                    Message::Accela(Event::SetSettingInt(key.to_string(), parsed))
-                })
-                .padding(6)
-                .size(12)
-                .width(Length::Fixed(80.0)),
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text(label).size(12).width(Length::Fill))
+                .push(
+                    TextInput::new("", &value.to_string())
+                        .on_input(move |s| {
+                            let parsed: i64 = s.parse().unwrap_or(0);
+                            Message::Accela(Event::SetSettingInt(key.to_string(), parsed))
+                        })
+                        .padding(6)
+                        .size(12)
+                        .width(Length::Fixed(80.0)),
+                ),
         )
+        .push(text(tooltip).size(11).class(style::Text::Muted))
         .into()
 }
 

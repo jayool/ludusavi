@@ -1116,6 +1116,7 @@ impl App {
                         )
                     }
                     AE::SettingsLoaded(Ok(settings)) => {
+                        self.accela_screen.settings_saved = Some(settings.clone());
                         self.accela_screen.settings = Some(settings);
                         Task::none()
                     }
@@ -1129,90 +1130,90 @@ impl App {
                         Task::none()
                     }
                     AE::SetSettingBool(key, value) => {
-                        self.accela_screen.update_setting(&key, crate::gui::accela::SettingValue::Bool(value));
-                        let python = self.accela_screen.python_path.clone();
-                        let accela = self.accela_screen.accela_path.clone();
-                        let adapter = crate::gui::accela::default_adapter_path();
-                        Task::perform(
-                            crate::gui::accela::run_set_setting(
-                                python,
-                                adapter,
-                                accela,
-                                key,
-                                serde_json::Value::Bool(value),
-                            ),
-                            |result| Message::Accela(AE::SettingSaved(result)),
-                        )
+                        self.accela_screen
+                            .update_setting(&key, crate::gui::accela::SettingValue::Bool(value));
+                        Task::none()
                     }
                     AE::SetSettingString(key, value) => {
-                        self.accela_screen.update_setting(
-                            &key,
-                            crate::gui::accela::SettingValue::Str(value.clone()),
-                        );
-                        let python = self.accela_screen.python_path.clone();
-                        let accela = self.accela_screen.accela_path.clone();
-                        let adapter = crate::gui::accela::default_adapter_path();
-                        Task::perform(
-                            crate::gui::accela::run_set_setting(
-                                python,
-                                adapter,
-                                accela,
-                                key,
-                                serde_json::Value::String(value),
-                            ),
-                            |result| Message::Accela(AE::SettingSaved(result)),
-                        )
+                        self.accela_screen
+                            .update_setting(&key, crate::gui::accela::SettingValue::Str(value));
+                        Task::none()
                     }
                     AE::SetSettingInt(key, value) => {
-                        self.accela_screen.update_setting(
-                            &key,
-                            crate::gui::accela::SettingValue::Int(value),
-                        );
-                        let python = self.accela_screen.python_path.clone();
-                        let accela = self.accela_screen.accela_path.clone();
-                        let adapter = crate::gui::accela::default_adapter_path();
-                        Task::perform(
-                            crate::gui::accela::run_set_setting(
-                                python,
-                                adapter,
-                                accela,
-                                key,
-                                serde_json::Value::Number(value.into()),
-                            ),
-                            |result| Message::Accela(AE::SettingSaved(result)),
-                        )
+                        self.accela_screen
+                            .update_setting(&key, crate::gui::accela::SettingValue::Int(value));
+                        Task::none()
                     }
                     AE::SetBlockSteamUpdates(value) => {
                         self.accela_screen.update_setting(
                             "block_steam_updates",
                             crate::gui::accela::SettingValue::Bool(value),
                         );
+                        Task::none()
+                    }
+                    AE::SaveSettings => {
+                        let changes = self.accela_screen.pending_changes();
+                        if changes.is_empty() {
+                            return Task::none();
+                        }
                         let python = self.accela_screen.python_path.clone();
                         let accela = self.accela_screen.accela_path.clone();
                         let adapter = crate::gui::accela::default_adapter_path();
-                        let p1 = python.clone();
-                        let a1 = accela.clone();
-                        let ad1 = adapter.clone();
-                        let task_set = Task::perform(
-                            crate::gui::accela::run_set_setting(
-                                p1,
-                                ad1,
-                                a1,
-                                "block_steam_updates".to_string(),
-                                serde_json::Value::Bool(value),
-                            ),
-                            |result| Message::Accela(AE::SettingSaved(result)),
-                        );
-                        let task_apply = Task::perform(
-                            crate::gui::accela::run_apply_steam_updates_block(
-                                python, adapter, accela, value,
-                            ),
-                            |result| Message::Accela(AE::ToolFinished(result)),
-                        );
-                        Task::batch(vec![task_set, task_apply])
+                        self.accela_screen.tool_message = Some("Saving...".to_string());
+                        let count = changes.len();
+                        let p = python.clone();
+                        let a = accela.clone();
+                        let ad = adapter.clone();
+                        Task::perform(
+                            async move {
+                                for change in &changes {
+                                    if let Err(e) = crate::gui::accela::run_set_setting(
+                                        p.clone(),
+                                        ad.clone(),
+                                        a.clone(),
+                                        change.key.clone(),
+                                        change.value.clone(),
+                                    )
+                                    .await
+                                    {
+                                        return Err(format!("{}: {e}", change.key));
+                                    }
+                                    if let Some(enabled) = change.side_effect {
+                                        if change.key == "block_steam_updates" {
+                                            if let Err(e) =
+                                                crate::gui::accela::run_apply_steam_updates_block(
+                                                    p.clone(),
+                                                    ad.clone(),
+                                                    a.clone(),
+                                                    enabled,
+                                                )
+                                                .await
+                                            {
+                                                return Err(format!("steam.cfg: {e}"));
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(count)
+                            },
+                            |result| Message::Accela(AE::SettingsBatchSaved(result)),
+                        )
                     }
-                    AE::SettingSaved(Ok(())) => Task::none(),
-                    AE::SettingSaved(Err(e)) => {
+                    AE::DiscardSettings => {
+                        if let Some(saved) = self.accela_screen.settings_saved.clone() {
+                            self.accela_screen.settings = Some(saved);
+                            self.accela_screen.tool_message = Some("Changes discarded.".to_string());
+                        }
+                        Task::none()
+                    }
+                    AE::SettingsBatchSaved(Ok(n)) => {
+                        if let Some(cur) = self.accela_screen.settings.clone() {
+                            self.accela_screen.settings_saved = Some(cur);
+                        }
+                        self.accela_screen.tool_message = Some(format!("Saved {n} setting(s)."));
+                        Task::none()
+                    }
+                    AE::SettingsBatchSaved(Err(e)) => {
                         self.accela_screen.tool_message = Some(format!("Save failed: {e}"));
                         Task::none()
                     }
