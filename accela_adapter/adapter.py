@@ -120,7 +120,22 @@ def _install_qthread_compat_patches() -> None:
     TaskRunner.run = sync_run
 
     def sync_steamless_start(self):
+        emit(
+            {
+                "event": "progress",
+                "phase": "postprocess",
+                "message": "[adapter] sync_steamless_start invoked",
+            }
+        )
+
         def do_run():
+            emit(
+                {
+                    "event": "progress",
+                    "phase": "postprocess",
+                    "message": "[adapter] do_run firing for SteamlessTask.run()",
+                }
+            )
             try:
                 self.run()
             finally:
@@ -390,9 +405,18 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
     GUI stuck at 0% with an empty log.
     """
     from core.tasks.download_depots_task import DownloadDepotsTask
+    from core.tasks.steamless_task import SteamlessTask
     from utils.helpers import resource_path
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
+
+    emit(
+        {
+            "event": "progress",
+            "phase": "download",
+            "message": f"[adapter] SteamlessTask.start = {SteamlessTask.start!r}",
+        }
+    )
 
 
     game_data = payload.get("game_data")
