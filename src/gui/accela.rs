@@ -845,7 +845,7 @@ impl AccelaScreen {
             toolbar = toolbar.push(text(msg.clone()).size(11).class(style::Text::Muted));
         }
         toolbar = toolbar.push(
-            Button::new(text(if dirty { "Save *" } else { "Save" }).size(12))
+            Button::new(text("Save").size(12))
                 .padding([6, 14])
                 .class(if dirty {
                     style::Button::Primary
