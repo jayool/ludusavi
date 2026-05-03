@@ -306,24 +306,16 @@ def _manage_registry_inline(filename: str) -> str:
 
 def handle_download_depots(payload: Dict[str, Any]) -> None:
     """Run DownloadDepotsTask with the user's depot selection, stream
-    progress events to stdout, then run CLITaskManager post-processing.
+    progress events to stdout, then run CLITaskManager post-processing."""
+    emit({"event": "progress", "phase": "download", "message": "[adapter] handler entered"})
 
-    Emitted events while running:
-        {"event":"progress","phase":"download","message":"..."}
-        {"event":"progress","phase":"download","percentage":42}
-        {"event":"progress","phase":"postprocess","message":"..."}
-        {"event":"download_done","game_name":"...","dest":"..."}
-        {"event":"error","message":"..."}
-
-    This handler blocks on a QEventLoop until the task completes.
-    Stdin is not read while running, so cancellation is not supported in
-    this iteration.
-    """
     from PyQt6.QtCore import QEventLoop
     from core.tasks.download_depots_task import DownloadDepotsTask
     from utils.task_runner import TaskRunner
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
+
+    emit({"event": "progress", "phase": "download", "message": "[adapter] modules imported"})
 
     game_data = payload.get("game_data")
     selected_depots = payload.get("depots") or []
@@ -338,6 +330,14 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
     if not dest_path:
         emit_error("download_depots: 'dest' (string) is required")
         return
+
+    emit(
+        {
+            "event": "progress",
+            "phase": "download",
+            "message": f"[adapter] payload OK: {len(selected_depots)} depot(s) -> {dest_path}",
+        }
+    )
 
     # Wrap str() depot ids — selection from the GUI may come as ints.
     selected_depots = [str(d) for d in selected_depots]
@@ -405,8 +405,12 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
         )
     )
 
+    emit({"event": "progress", "phase": "download", "message": "[adapter] starting worker"})
+
     runner = TaskRunner()
     worker = runner.run(download_task.run, game_data, selected_depots, dest_path)
+
+    emit({"event": "progress", "phase": "download", "message": "[adapter] entering QEventLoop"})
 
     loop = QEventLoop()
     error_holder: list = [None]
