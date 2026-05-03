@@ -777,7 +777,6 @@ impl AccelaScreen {
                             .size(12)
                             .class(style::Text::Muted),
                         )
-                        .push(iced::widget::Space::new().width(Length::Fill))
                         .push(
                             Button::new(text("Select all").size(11))
                                 .padding([4, 10])
@@ -823,7 +822,6 @@ impl AccelaScreen {
                 Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(iced::widget::Space::new().width(Length::Fill))
                     .push(
                         Button::new(
                             text(format!("Download {} depot(s)", selected_count)).size(13),
