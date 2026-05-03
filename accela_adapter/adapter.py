@@ -51,11 +51,13 @@ def bootstrap(accela_path: Path) -> None:
     # ACCELA's utils.helpers.resource_path() locates bundled binaries
     # (DepotDownloader.dll, Goldberg/, Steamless/, etc.) by looking at
     # sys._MEIPASS first (PyInstaller convention) and falling back to
-    # the directory of sys.argv[0]. Since we're running from the adapter
-    # folder, neither would point at ACCELA's bin/. Forcing _MEIPASS to
-    # the bin/ folder makes resource_path resolve to <bin>/deps/... which
-    # is where ACCELA's own deps live in the source distribution.
-    sys._MEIPASS = str(accela_path)
+    # the directory of sys.argv[0]. In the source distribution, deps/
+    # lives at bin/src/deps/ (next to main.py), not at bin/deps/. When
+    # ACCELA runs normally via `python src/main.py`, sys.argv[0]'s
+    # directory is bin/src/ and resource_path resolves correctly. Since
+    # we run from the adapter folder, we point _MEIPASS at bin/src so
+    # resource_path("deps/...") returns bin/src/deps/...
+    sys._MEIPASS = str(src_dir)
 
     # ACCELA stores settings under QSettings("Tachibana Labs", "ACCELA").
     # We initialise a headless QCoreApplication with the same names so
