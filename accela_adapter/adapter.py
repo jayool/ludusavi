@@ -96,9 +96,28 @@ def _install_qthread_compat_patches() -> None:
     """
     import traceback
 
-    from PyQt6.QtCore import QTimer
+    from PyQt6.QtCore import QObject, Qt, pyqtSignal
     from utils.task_runner import TaskRunner, Worker
     from core.tasks.steamless_task import SteamlessTask
+
+    # Helper QObject whose `fire` signal we use to dispatch a no-arg
+    # callable into the main thread's event queue with QueuedConnection.
+    # QTimer.singleShot(0, ...) does NOT fire inside our nested QEventLoop
+    # (likely because we only have QCoreApplication, not QApplication,
+    # and singleShot's internal timer dispatcher gets bypassed by nested
+    # loops). A QueuedConnection signal does post a regular event onto
+    # the thread's queue, which loop.exec() drains.
+    class _Dispatcher(QObject):
+        fire = pyqtSignal()
+
+    # Keep dispatchers alive so the queued connections aren't dropped.
+    _dispatchers: list = []
+
+    def _post_to_main_thread(callable_):
+        d = _Dispatcher()
+        d.fire.connect(callable_, Qt.ConnectionType.QueuedConnection)
+        _dispatchers.append(d)
+        d.fire.emit()
 
     def sync_run(self, target_func, *args, **kwargs):
         self.worker = Worker(target_func, *args, **kwargs)
@@ -114,28 +133,13 @@ def _install_qthread_compat_patches() -> None:
                 self.cleanup_complete.emit()
 
         TaskRunner._active_runners.append(self)
-        QTimer.singleShot(0, do_work)
+        _post_to_main_thread(do_work)
         return self.worker
 
     TaskRunner.run = sync_run
 
     def sync_steamless_start(self):
-        emit(
-            {
-                "event": "progress",
-                "phase": "postprocess",
-                "message": "[adapter] sync_steamless_start invoked",
-            }
-        )
-
         def do_run():
-            emit(
-                {
-                    "event": "progress",
-                    "phase": "postprocess",
-                    "message": "[adapter] do_run firing for SteamlessTask.run()",
-                }
-            )
             try:
                 self.run()
             finally:
@@ -144,7 +148,7 @@ def _install_qthread_compat_patches() -> None:
                 # here, emit it manually so loop.quit() callbacks fire.
                 self.finished.emit()
 
-        QTimer.singleShot(0, do_run)
+        _post_to_main_thread(do_run)
 
     SteamlessTask.start = sync_steamless_start
 
@@ -405,18 +409,8 @@ def handle_download_depots(payload: Dict[str, Any]) -> None:
     GUI stuck at 0% with an empty log.
     """
     from core.tasks.download_depots_task import DownloadDepotsTask
-    from core.tasks.steamless_task import SteamlessTask
-    from utils.helpers import resource_path
     from utils.settings import get_settings
     from managers.cli_manager import CLITaskManager
-
-    emit(
-        {
-            "event": "progress",
-            "phase": "download",
-            "message": f"[adapter] SteamlessTask.start = {SteamlessTask.start!r}",
-        }
-    )
 
 
     game_data = payload.get("game_data")
