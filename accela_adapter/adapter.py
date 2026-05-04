@@ -576,6 +576,131 @@ def handle_get_steam_libraries(_payload: Dict[str, Any]) -> None:
     emit({"event": "steam_libraries", "libraries": list(libs) if libs else []})
 
 
+def handle_restart_steam(_payload: Dict[str, Any]) -> None:
+    """Kill and relaunch Steam, mirroring ACCELA's
+    ``JobQueueManager._perform_steam_restart`` (job_queue_manager.py:207-273)
+    minus the GUI dialogs. Runs synchronously on this thread; the caller
+    shows progress in its own UI.
+
+    Emits a single ``steam_restarted`` event with ``ok: true|false`` and an
+    optional ``note`` describing the path taken or the failure reason.
+    """
+    import os
+    import sys
+    import time
+
+    try:
+        from core import steam_helpers
+    except Exception as e:
+        emit({"event": "steam_restarted", "ok": False, "note": f"import failed: {e!r}"})
+        return
+
+    try:
+        if sys.platform == "linux":
+            steam_helpers.kill_steam_process()
+            time.sleep(1)
+            result = steam_helpers.start_steam()
+            if result == "SUCCESS":
+                emit({"event": "steam_restarted", "ok": True, "note": "Steam restarted."})
+                return
+            if result == "NEEDS_USER_PATH":
+                # ACCELA falls back to a GUI dialog asking the user to
+                # locate Steam. We don't have a GUI here, so surface the
+                # condition and let Iced show the message.
+                emit({
+                    "event": "steam_restarted",
+                    "ok": False,
+                    "note": "Steam path could not be auto-detected.",
+                })
+                return
+            emit({"event": "steam_restarted", "ok": False, "note": "Failed to start Steam."})
+            return
+
+        # Windows path: prefer DLLInjector.exe if present, fall back to
+        # plain steam.exe launch when user32.dll wrapper is in place.
+        steam_path = steam_helpers.find_steam_install()
+        if not steam_path:
+            emit({
+                "event": "steam_restarted",
+                "ok": False,
+                "note": "Could not find Steam installation path.",
+            })
+            return
+
+        steam_helpers.kill_steam_process()
+        time.sleep(1)
+
+        injector_path = os.path.join(steam_path, "DLLInjector.exe")
+        if os.path.exists(injector_path):
+            # DLLInjector requires admin rights (its manifest is marked
+            # ``requireAdministrator``). Plain ``subprocess.Popen`` would
+            # fail with WinError 740 because we inherit Ludusavi's
+            # non-elevated token. Use ShellExecuteW with the ``runas``
+            # verb to trigger a UAC prompt for this child only.
+            import ctypes
+            import ctypes.wintypes as wt
+
+            shell32 = ctypes.windll.shell32
+            shell32.ShellExecuteW.argtypes = [
+                wt.HWND,
+                wt.LPCWSTR,
+                wt.LPCWSTR,
+                wt.LPCWSTR,
+                wt.LPCWSTR,
+                ctypes.c_int,
+            ]
+            shell32.ShellExecuteW.restype = ctypes.c_void_p
+
+            SW_SHOWNORMAL = 1
+            ret = shell32.ShellExecuteW(
+                None, "runas", injector_path, None, steam_path, SW_SHOWNORMAL
+            )
+            # Success when the return value is > 32. <= 32 is a SE_ERR_*
+            # error code; UAC denial commonly surfaces as 5 (access
+            # denied) or 1223 (cancelled).
+            ret_int = int(ret) if ret is not None else 0
+            if ret_int > 32:
+                emit({
+                    "event": "steam_restarted",
+                    "ok": True,
+                    "note": "Steam restarted via DLLInjector (UAC accepted).",
+                })
+            else:
+                if ret_int in (5, 1223):
+                    note = "DLLInjector launch was cancelled (UAC declined)."
+                elif ret_int == 2:
+                    note = "DLLInjector.exe not found at runtime."
+                else:
+                    note = (
+                        f"Could not launch DLLInjector.exe (ShellExecute error {ret_int}). "
+                        "Check that SLSsteam is installed correctly."
+                    )
+                emit({"event": "steam_restarted", "ok": False, "note": note})
+            return
+
+        user32_path = os.path.join(steam_path, "user32.dll")
+        if os.path.exists(user32_path):
+            steam_helpers.start_steam()
+            emit({
+                "event": "steam_restarted",
+                "ok": True,
+                "note": "Steam restarted (user32.dll wrapper detected).",
+            })
+            return
+
+        # Vanilla Steam: no SLSsteam wrappers detected. Just launch steam.exe.
+        if steam_helpers.start_steam() == "SUCCESS":
+            emit({"event": "steam_restarted", "ok": True, "note": "Steam restarted."})
+        else:
+            emit({
+                "event": "steam_restarted",
+                "ok": False,
+                "note": "Could not launch steam.exe.",
+            })
+    except Exception as e:
+        emit({"event": "steam_restarted", "ok": False, "note": f"{e!r}"})
+
+
 def handle_run_tool(payload: Dict[str, Any]) -> None:
     """Run a Tools-tab action. kind selects which one."""
     kind = payload.get("kind")
@@ -671,6 +796,7 @@ HANDLERS = {
     "run_tool": handle_run_tool,
     "download_depots": handle_download_depots,
     "get_steam_libraries": handle_get_steam_libraries,
+    "restart_steam": handle_restart_steam,
 }
 
 

@@ -50,8 +50,18 @@ pub enum Event {
     PickCustomDest,
     DownloadDestPicked(Option<PathBuf>),
     DownloadEvent(serde_json::Value),
+    /// User accepted the post-download "Restart Steam?" prompt.
+    RequestSteamRestart,
+    /// User declined the post-download "Restart Steam?" prompt.
+    DismissSteamRestartPrompt,
+    /// Adapter finished the restart attempt — Ok(note) or Err(reason).
+    SteamRestartFinished(Result<String, String>),
     OpenSettings,
     SettingsLoaded(Result<AccelaSettings, String>),
+    /// Background settings fetch on tab entry. Unlike `SettingsLoaded`,
+    /// this never mutates `view_state` or surfaces errors — if the load
+    /// fails we silently fall back to default behavior (auto-skip off).
+    BackgroundSettingsLoaded(Result<AccelaSettings, String>),
     SwitchSettingsTab(SettingsTab),
     SetSettingBool(String, bool),
     SetSettingString(String, String),
@@ -165,6 +175,7 @@ pub enum ViewState {
         percentage: u32,
         messages: VecDeque<String>,
         status: DownloadStatus,
+        steam_restart: SteamRestartState,
     },
     Settings,
 }
@@ -173,6 +184,26 @@ pub enum ViewState {
 pub enum DownloadStatus {
     InProgress,
     Done,
+    Failed(String),
+}
+
+/// Tracks the state of the post-download "Restart Steam?" prompt that
+/// mirrors ACCELA's `_prompt_for_steam_restart` (job_queue_manager.py:192).
+/// Only relevant when the download finishes successfully AND the user has
+/// `prompt_steam_restart` enabled.
+#[derive(Debug, Clone, Default)]
+pub enum SteamRestartState {
+    /// Prompt not relevant: download still in flight, setting off, or
+    /// user already dismissed.
+    #[default]
+    Hidden,
+    /// Download succeeded; prompt is visible with Yes/No buttons.
+    Asked,
+    /// User said yes; the adapter is performing the restart.
+    Restarting,
+    /// Restart finished successfully with this note.
+    Done(String),
+    /// Restart attempt failed with this reason.
     Failed(String),
 }
 
@@ -451,7 +482,15 @@ impl AccelaScreen {
                 percentage,
                 messages,
                 status,
-            } => self.downloading_view(game_name, appid, *percentage, messages, status),
+                steam_restart,
+            } => self.downloading_view(
+                game_name,
+                appid,
+                *percentage,
+                messages,
+                status,
+                steam_restart,
+            ),
             ViewState::Settings => self.settings_view(),
         }
     }
@@ -1045,6 +1084,7 @@ impl AccelaScreen {
         percentage: u32,
         messages: &'a VecDeque<String>,
         status: &'a DownloadStatus,
+        steam_restart: &'a SteamRestartState,
     ) -> Element<'a> {
         let back_enabled = !matches!(status, DownloadStatus::InProgress);
         let header = Container::new(
@@ -1111,7 +1151,7 @@ impl AccelaScreen {
             log_col = log_col.push(text(msg.clone()).size(11).class(style::Text::Muted));
         }
 
-        let content = Column::new()
+        let mut content = Column::new()
             .spacing(16)
             .padding([24, 24])
             .push(title_row)
@@ -1138,6 +1178,10 @@ impl AccelaScreen {
                 .class(style::Container::GamesTable),
             );
 
+        if let Some(card) = self.steam_restart_card(steam_restart) {
+            content = content.push(card);
+        }
+
         Column::new()
             .push(header)
             .push(
@@ -1146,6 +1190,70 @@ impl AccelaScreen {
                     .height(Length::Fill),
             )
             .into()
+    }
+
+    /// Renders the post-download "Restart Steam?" prompt and its
+    /// follow-up states. Returns `None` when there is nothing to show
+    /// (download still in flight, setting off, user dismissed).
+    fn steam_restart_card<'a>(
+        &'a self,
+        state: &'a SteamRestartState,
+    ) -> Option<Element<'a>> {
+        let body: Element = match state {
+            SteamRestartState::Hidden => return None,
+            SteamRestartState::Asked => Column::new()
+                .spacing(10)
+                .push(
+                    text(
+                        "Steam-integrated changes were created. Restart Steam now to apply them?",
+                    )
+                    .size(12)
+                    .class(style::Text::Muted),
+                )
+                .push(
+                    Row::new()
+                        .spacing(8)
+                        .push(
+                            Button::new(text("Restart Steam").size(12))
+                                .padding([6, 14])
+                                .class(style::Button::Primary)
+                                .on_press(Message::Accela(Event::RequestSteamRestart)),
+                        )
+                        .push(
+                            Button::new(text("Not now").size(12))
+                                .padding([6, 14])
+                                .class(style::Button::Ghost)
+                                .on_press(Message::Accela(Event::DismissSteamRestartPrompt)),
+                        ),
+                )
+                .into(),
+            SteamRestartState::Restarting => text("Restarting Steam...").size(13).into(),
+            SteamRestartState::Done(note) => {
+                let label = if note.is_empty() {
+                    "✓ Steam restarted.".to_string()
+                } else {
+                    format!("✓ {note}")
+                };
+                text(label).size(13).class(style::Text::Green).into()
+            }
+            SteamRestartState::Failed(reason) => text(format!("✗ Steam restart failed: {reason}"))
+                .size(13)
+                .class(style::Text::Failure)
+                .into(),
+        };
+
+        Some(
+            Container::new(
+                Column::new()
+                    .spacing(8)
+                    .push(text("STEAM").size(13).class(style::Text::Muted))
+                    .push(body),
+            )
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into(),
+        )
     }
 
     fn settings_view(&self) -> Element<'_> {
@@ -1923,6 +2031,36 @@ pub async fn run_get_steam_libraries(
                 .into_iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect())
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_restart_steam(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({"cmd": "restart_steam"}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("steam_restarted") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let note = event
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if ok {
+                Ok(note)
+            } else {
+                Err(if note.is_empty() {
+                    "Steam restart failed.".to_string()
+                } else {
+                    note
+                })
+            }
         }
         Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),

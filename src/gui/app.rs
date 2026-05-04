@@ -1037,6 +1037,37 @@ impl App {
                     }
                     AE::ZipProcessed(Ok(detail)) => {
                         self.accela_screen.selected_depots.clear();
+                        // Auto-skip the depot picker when the user has the
+                        // setting on AND the manifest has exactly one
+                        // depot — no decision to make. Mirrors ACCELA
+                        // task_manager.py:172.
+                        let auto_skip = self
+                            .accela_screen
+                            .settings
+                            .as_ref()
+                            .map(|s| s.auto_skip_single_choice)
+                            .unwrap_or(false);
+                        if auto_skip && detail.depots.len() == 1 {
+                            let only_id = detail.depots.keys().next().cloned().unwrap();
+                            self.accela_screen.selected_depots.insert(only_id.clone());
+                            self.accela_screen.pending_download_detail = Some(detail);
+                            self.accela_screen.pending_download_depots = vec![only_id];
+
+                            let python = self.accela_screen.python_path.clone();
+                            let accela = self.accela_screen.accela_path.clone();
+                            let adapter = crate::gui::accela::default_adapter_path();
+
+                            self.accela_screen.view_state =
+                                crate::gui::accela::ViewState::Loading(
+                                    "Detecting Steam libraries...".to_string(),
+                                );
+                            return Task::perform(
+                                crate::gui::accela::run_get_steam_libraries(
+                                    python, adapter, accela,
+                                ),
+                                |result| Message::Accela(AE::SteamLibrariesLoaded(result)),
+                            );
+                        }
                         self.accela_screen.view_state =
                             crate::gui::accela::ViewState::Depots(detail);
                         Task::none()
@@ -1166,6 +1197,22 @@ impl App {
                             Some(d) => d,
                             None => return Task::none(),
                         };
+                        // Auto-skip the library picker when the setting is
+                        // on and Steam reports exactly one library — no
+                        // decision to make. Mirrors ACCELA
+                        // task_manager.py:238.
+                        let auto_skip = self
+                            .accela_screen
+                            .settings
+                            .as_ref()
+                            .map(|s| s.auto_skip_single_choice)
+                            .unwrap_or(false);
+                        if auto_skip && libs.len() == 1 {
+                            let only = libs.into_iter().next().unwrap();
+                            return Task::done(Message::Accela(AE::DownloadDestPicked(
+                                Some(std::path::PathBuf::from(only)),
+                            )));
+                        }
                         self.accela_screen.view_state =
                             crate::gui::accela::ViewState::PickingDest {
                                 game_name: detail.game_name.clone().unwrap_or_default(),
@@ -1221,6 +1268,7 @@ impl App {
                                 percentage: 0,
                                 messages: std::collections::VecDeque::new(),
                                 status: crate::gui::accela::DownloadStatus::InProgress,
+                                steam_restart: crate::gui::accela::SteamRestartState::Hidden,
                             };
 
                         let stream = crate::gui::accela::run_download_stream(
@@ -1235,16 +1283,26 @@ impl App {
                             .map(|event| Message::Accela(AE::DownloadEvent(event)))
                     }
                     AE::DownloadEvent(event) => {
-                        use crate::gui::accela::{DownloadStatus, ViewState};
+                        use crate::gui::accela::{DownloadStatus, SteamRestartState, ViewState};
                         let event_type = event
                             .get("event")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
+                        // Capture the setting up-front because we cannot
+                        // borrow `self.accela_screen` immutably while
+                        // mutably borrowing `view_state` below.
+                        let prompt_restart = self
+                            .accela_screen
+                            .settings
+                            .as_ref()
+                            .map(|s| s.prompt_steam_restart)
+                            .unwrap_or(false);
                         if let ViewState::Downloading {
                             percentage,
                             messages,
                             status,
+                            steam_restart,
                             ..
                         } = &mut self.accela_screen.view_state
                         {
@@ -1272,6 +1330,9 @@ impl App {
                                     *status = DownloadStatus::Done;
                                     *percentage = 100;
                                     messages.push_back("✓ Download complete.".to_string());
+                                    if prompt_restart {
+                                        *steam_restart = SteamRestartState::Asked;
+                                    }
                                 }
                                 "error" => {
                                     let msg = event
@@ -1283,6 +1344,42 @@ impl App {
                                 }
                                 _ => {}
                             }
+                        }
+                        Task::none()
+                    }
+                    AE::RequestSteamRestart => {
+                        use crate::gui::accela::{SteamRestartState, ViewState};
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        if let ViewState::Downloading { steam_restart, .. } =
+                            &mut self.accela_screen.view_state
+                        {
+                            *steam_restart = SteamRestartState::Restarting;
+                        }
+                        Task::perform(
+                            crate::gui::accela::run_restart_steam(python, adapter, accela),
+                            |result| Message::Accela(AE::SteamRestartFinished(result)),
+                        )
+                    }
+                    AE::DismissSteamRestartPrompt => {
+                        use crate::gui::accela::{SteamRestartState, ViewState};
+                        if let ViewState::Downloading { steam_restart, .. } =
+                            &mut self.accela_screen.view_state
+                        {
+                            *steam_restart = SteamRestartState::Hidden;
+                        }
+                        Task::none()
+                    }
+                    AE::SteamRestartFinished(result) => {
+                        use crate::gui::accela::{SteamRestartState, ViewState};
+                        if let ViewState::Downloading { steam_restart, .. } =
+                            &mut self.accela_screen.view_state
+                        {
+                            *steam_restart = match result {
+                                Ok(note) => SteamRestartState::Done(note),
+                                Err(reason) => SteamRestartState::Failed(reason),
+                            };
                         }
                         Task::none()
                     }
@@ -1312,6 +1409,17 @@ impl App {
                         self.accela_screen.status = Status::Error(format!("get_settings: {e}"));
                         Task::none()
                     }
+                    AE::BackgroundSettingsLoaded(Ok(settings)) => {
+                        // Only populate if nothing has been loaded in the
+                        // meantime (e.g. user opened Settings explicitly
+                        // before our background fetch returned).
+                        if self.accela_screen.settings.is_none() {
+                            self.accela_screen.settings_saved = Some(settings.clone());
+                            self.accela_screen.settings = Some(settings);
+                        }
+                        Task::none()
+                    }
+                    AE::BackgroundSettingsLoaded(Err(_)) => Task::none(),
                     AE::SwitchSettingsTab(tab) => {
                         self.accela_screen.settings_tab = tab;
                         Task::none()
@@ -3185,6 +3293,7 @@ impl App {
                 // stale Settings/Depots view from a previous visit. Keep
                 // the Downloading view alive so an in-progress download
                 // can be observed when the user returns.
+                let mut accela_settings_load: Option<Task<Message>> = None;
                 if matches!(screen, Screen::Accela)
                     && !matches!(self.screen, Screen::Accela)
                 {
@@ -3200,8 +3309,34 @@ impl App {
                         self.accela_screen.pending_download_depots.clear();
                         self.accela_screen.tool_message = None;
                     }
+                    // Background-load ACCELA settings the first time the
+                    // user enters this tab in a session, so behaviors that
+                    // depend on settings (auto_skip_single_choice,
+                    // prompt_steam_restart) can consult them without a
+                    // round-trip in the middle of a user action. Silent on
+                    // failure — defaults apply.
+                    let python = self.accela_screen.python_path.clone();
+                    let accela = self.accela_screen.accela_path.clone();
+                    if self.accela_screen.settings.is_none()
+                        && !python.trim().is_empty()
+                        && !accela.trim().is_empty()
+                    {
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        accela_settings_load = Some(Task::perform(
+                            crate::gui::accela::run_get_settings(python, adapter, accela),
+                            |result| {
+                                Message::Accela(
+                                    crate::gui::accela::Event::BackgroundSettingsLoaded(result),
+                                )
+                            },
+                        ));
+                    }
                 }
-                self.switch_screen(screen)
+                let switch_task = self.switch_screen(screen);
+                match accela_settings_load {
+                    Some(load) => Task::batch([switch_task, load]),
+                    None => switch_task,
+                }
             }
             Message::ToggleGameListEntryTreeExpanded { name, keys } => {
                 match self.screen {
