@@ -1,0 +1,322 @@
+Ludusavi Fork — Checklist
+________________
+📦 CORE — Sistema de sync
+✅ Completado
+* Identidad de dispositivo (device.rs) — UUID único por dispositivo (PC, Steam Deck, etc.), persistido en disco. Se usa como clave en el game-list.json para mapear qué ruta de saves corresponde a cada máquina.
+* Estructura game-list.json (game_list.rs) — Formato del fichero JSON que se sube al cloud con los metadatos de cada juego: rutas por dispositivo, timestamps de sync, tamaño de los saves, UUID del último dispositivo que sincronizó, y mapa de nombres de dispositivos (device_names).
+* Lógica de conflictos (conflict.rs) — Compara el timestamp local con el del cloud para determinar si hay que subir, bajar, o si ya está en sync. Trunca a segundos para evitar falsos positivos por diferencias de precisión entre filesystems (Windows trunca nanosegundos al leer mtime).
+* Operaciones ZIP, upload, download, rclone (operations.rs) — Crea ZIPs de los saves, los sube/baja al cloud via rclone, lee/escribe el game-list.json, y resuelve rutas esperadas de saves sin necesidad de que existan ficheros localmente. Incluye resolve_game_path_from_manifest para encontrar la ruta de un juego directamente desde el manifiesto de Ludusavi.
+* sync-games.json (sync_config.rs) — Persiste el Save Mode (NONE/LOCAL/CLOUD/SYNC) y el flag Auto Sync por juego. Escrito por la GUI, leído por el daemon al arrancar y al detectar cambios en tiempo real.
+* Registro de juegos tras backup en GUI (bridge.rs) — Cuando el usuario hace backup, registra automáticamente el juego en el game-list.json del cloud con su ruta local y metadatos, y sube el ZIP.
+* Auto-registro de rutas via manifiesto — Linux/Proton — Cuando el daemon arranca en la Deck y un juego no tiene ruta registrada, usa el manifiesto para encontrar automáticamente la ruta del prefijo Proton. Probado borrando el UUID del game-list explícitamente.
+* Auto-registro de rutas via manifiesto — Windows nativo — Igual que en Linux pero resolviendo rutas nativas de Windows (AppData, Documents, etc.). Probado borrando el UUID del game-list explícitamente.
+* Copia local del game-list.json — El daemon escribe ludusavi-game-list.json en app_dir() tras cada operación de sync para que la GUI pueda leerlo sin acceder al cloud.
+* Persistencia del mod time (daemon-state.json) — El daemon persiste el último ModTime conocido del game-list.json en disco. Al reiniciar, el polling parte del estado real post-arranque y no redetecta cambios propios del startup como si fueran nuevos.
+* Nombres de dispositivos en game-list — device_names: HashMap<String, String> en GameListFile mapea UUID → nombre legible. El daemon actualiza este mapa al arrancar incondicionalmente, no solo cuando hay juegos SYNC nuevos por registrar. La GUI muestra "Jayo-PC" en lugar de UUIDs en Games, GameDetail y AllDevices.
+* Fix chicken-and-egg para usuarios nuevos — El daemon lee sync-games.json al arrancar, crea entradas vacías en el game-list para los juegos configurados, auto-registra rutas via manifiesto, y escribe el game-list al cloud desde cero. Un usuario nuevo solo necesita configurar modos en la GUI, sin hacer ningún backup previo.
+* Limpieza de ZIPs huérfanos al cambiar modo — delete_game_zip_from_cloud en operations.rs. Cuando el usuario cambia el modo de CLOUD o SYNC a LOCAL o NONE desde GameDetail y confirma el modal, el ZIP del cloud se borra automáticamente via rclone deletefile.
+* Optimización de rendimiento — resolve_game_path_lite — Versión ligera de resolve_game_path_from_manifest que solo resuelve placeholders del manifiesto sin hacer scan del sistema ni llamar a Launchers::scan/SteamShortcuts::scan. Usada en view() de GameDetail (save location card) y en la suscripción de 5s (cálculo de status LOCAL). El manifiesto se pasa como referencia en lugar de recargarse de disco en cada llamada. La función pesada sigue usándose solo en el daemon (auto_register_paths).
+* Limpieza masiva del Ludusavi original (Tandas 1–8.6) — Eliminación quirúrgica del código upstream que el fork no usa, desplegada en ocho tandas:
+   * Tanda 1 — CLI: borrado del binario CLI completo y todo su árbol de subcomandos (backup, restore, wrap, api, manifest, cloud, find, schema, complete), shell completions, y parseo de flags. La GUI pasa a ser el único entrypoint del binario.
+   * Tanda 2 — wrap/report: launcher wrapping (wrap.rs + subcommand asociado) y sistema de reports upstream (formato textual, salida JSON) eliminados.
+   * Tanda 3 — Cloud upstream en GUI: upload/download buttons en pantalla Other, sync conflict UI heredada y lógica del antiguo Cloud screen — todo reemplazado por el sistema propio del fork (game-list.json + bridge.rs + daemon).
+   * Tanda 4 — Trunk cleanup: pantallas originales Backup/Restore/CustomGames eliminadas, flujos de scan-with-confirm, ValidateBackups, GameAction, GameNotes, SelectAll/DeselectAll, sistema de comentarios de backup, sistema de redirect, sistema de undo/redo para campos que ya no existen.
+   * Tanda 5/5b/5c/5d — Bugfixes detectados en testing: preservación de mtime al crear ZIPs (clave para que Windows no detecte falsos cambios al volver a leer), styling consistente entre modales, fix del path resolver para placeholders <storeUserId> mid-path y para zero-or-more (** glob).
+   * Tanda 6 — Aesthetic clean-up: helpers cli_* en lang.rs borrados, dependencias sin uso detectadas con cargo machete y eliminadas.
+   * Tanda 7 — Deep surgery: Retention policy (7.1), Custom Redirects (7.2) y BackupFilter (7.3) eliminados. La retention queda hardcoded a 1 full + 0 diff. El campo ScannedFile.redirected sobrevive como residuo en este punto y se elimina finalmente en T8.6-A.
+   * Tanda 8.1 — Assets y raíz: assets/flatpak borrado entero, assets/linux/.metainfo eliminado, .desktop renombrado a ludusavi-sync.desktop, root files heredados (tasks.py, crowdin.yml, CONTRIBUTING.md, CHANGELOG.md) eliminados.
+   * Tanda 8.2 — i18n entero: 24 ficheros .ftl borrados (ar-SA, cs-CZ, de-DE, en-US, eo-UY, es-ES, fi-FI, fil-PH, fr-FR, it-IT, ja-JP, ko-KR, nl-NL, no-NO, pl-PL, pt-BR, ru-RU, sv-SE, th-TH, tr-TR, uk-UA, vi-VN, zh-CN, zh-TW). Dependencias fluent/intl-memoizer/unic-langid eliminadas. Enum Language, BUNDLE static, set_language, FluentBundle/FluentResource y uso de regex para parseo eliminados. translate() es ahora un match en inglés hardcoded (~140 entradas), translate_args usa una struct LangArgs propia con sustitución por template. −5960 líneas en un commit.
+   * Tanda 8.3 — docs/help/ reescritos: 9 docs upstream borrados (backup-automation, backup-exclusions, backup-retention, command-line, environment-variables, filter, game-launch-wrapping, redirects, transfer-between-operating-systems). 14 docs reescritos en clave Ludusavi Sync. 3 docs nuevos: save-modes.md, daemon.md, multi-device.md. README rebrand completo (ya no menciona Crowdin, Playnite, CLI ni features eliminados).
+   * Tanda 8.4 — Restos de CLI/schema: docs/cli.md (490 líneas, dump del --help del CLI eliminado en T1), docs/demo-cli.gif, y docs/schema/ entero (api-input.yaml, api-output.yaml, general-output.yaml, config.yaml de 1099 líneas con campos ya inexistentes: language, redirects, backup.filter, backup.retention).
+   * Tanda 8.5 — Cargo.toml rebrand: version 0.1.0 (reset desde 0.30.0), author "jayool", description "Game save sync tool", repository quitado, bloque [package.metadata.binstall] entero (config muerta — apuntaba a releases del repo upstream) eliminado. default-run = "ludusavi" añadido para que cargo run funcione sin --bin.
+   * Tanda 8.6 — Auditoría final: barrido sistemático buscando residuo no detectado en tandas previas. Resultado:
+      * 8.6-C: 6 métodos en lang.rs sin llamadores (field_language, redirect_source/target_placeholder, redirects_label, full_retention, differential_retention) y sus 6 entradas hardcoded en el match de translate(). Plus 2 comentarios stale referenciando redirects/retention.
+      * 8.6-A: campo ScannedFile.redirected eliminado entero (residuo de T7.2 que quedaba siempre = None pero con métodos ramificando sobre él). Métodos alt() y alt_readable() borrados, readable() simplificado. UI badges "redirecting to"/"redirected from" en file_tree.rs eliminados. Test overall_change_when_game_is_fully_redirected borrado.
+      * 8.6-D: 5 tests zombi de retention/diff backups (can_forget_excess_backups_with/without_locks, can_plan_differential_backup_with_registry_*) borrados. Theme expected en 2 tests de config actualizado de Light a Dark.
+      * 8.6-B: feature upstream nunca expuesto en GUI eliminado: campos locked y comment en FullBackup/DifferentialBackup, métodos set_backup_locked/set_backup_comment, modify_backup. forget_excess_backups simplificado de ~50 líneas a 8 (sin filtrado por locked: "deja el último full y borra los diffs").
+Total estimado: ~8000+ líneas eliminadas a lo largo de las ocho tandas. Tests al final: 156/156 verdes.
+🔮 Para más adelante
+* Versionado del game-list.json — Sin campo version, si se cambia el formato del JSON en el futuro, dispositivos con versiones distintas del daemon serían incompatibles.
+* Manejo de ZIPs corruptos al descomprimir — Si extract_zip_to_directory falla a mitad (ZIP incompleto por upload interrumpido, corrupción en transferencia), el usuario se queda sin saves porque ya se ha borrado el directorio original. Solución: extraer a directorio temporal y hacer swap atómico al final.
+* Test de integridad post-upload — Tras subir el ZIP, verificar que el upload fue correcto (hash, tamaño). Rclone tiene flags para eso.
+* Límite de tamaño del ZIP — Algunos juegos (sobre todo emuladores con save states) pueden generar GBs. Sin límites ni warnings, un usuario con plan gratis de Google Drive podría llenar la cuota sin enterarse.
+* Soporte de backup/restore del registro de Windows — ~450 juegos del manifest solo guardan en HKEY_CURRENT_USER (Genshin Impact, varios Bethesda antiguos, juegos asiáticos), nunca en ficheros. Actualmente se muestran como "not_managed" y resolve_expected_save_path devuelve None porque el for loop de game.files.keys() no itera. El motor de scan original sigue vivo en src/scan/registry.rs (Hives/Keys/Entries, serialize a .reg/.yaml, SHA1 para diff) y src/scan/registry/win.rs (lee HKCU/HKLM via winreg crate, scan_registry, try_read_registry_key). BackupLayout también sabe load/save hives. Lo que falta para conectarlo al pipeline ZIP+rclone+daemon:
+   * Backup: tras scan_registry() para juegos con game.registry no vacío, escribir un .reg dentro del ZIP (o en folder temporal antes de zipear). Estimación 1-2h.
+   * Restore: tras extract_zip_to_directory, importar el .reg con regashii (ya en deps) o reg import.
+   * Daemon polling del registro: notify crate no monitoriza HKCU. Implementar polling cada ~30s con SHA1 cache para detectar cambios reales sin tormenta de syncs.
+   * GUI en GameDetail para juegos solo-registry: mensaje claro tipo "This game uses the Windows registry", botón "Open in regedit" en lugar del Open actual de filesystem. resolve_expected_save_path puede devolver Some con un marcador (registry://HKEY_CURRENT_USER/...) o un Result distinguible.
+* Fuzzy search en buscador de Games table — el buscador actual hace substring match. Cambiarlo a fuzzy match (con el crate fuzzy-matcher ya en deps) permite encontrar "The Elder Scrolls V: Skyrim" tecleando "skyr", "elder scr" o incluso "scryim" con typo. La infraestructura existe en src/scan/game_filter.rs (FilterComponent::qualifies). Reactivación ~30-50 líneas: reemplazar el filtro substring por una llamada a FilterComponent.
+________________
+🔄 DAEMON
+✅ Completado
+* Save Modes completos — El daemon lee sync-games.json y actúa según el modo de cada juego:
+   * NONE: ignora el juego completamente, no lo vigila ni actúa sobre él.
+   * LOCAL + auto sync ON: file watcher detecta cambios → crea ZIP en config.backup.path/<game>.zip. Nunca toca el cloud.
+   * LOCAL + auto sync OFF: no actúa automáticamente. El usuario usa el botón Backup en GameDetail.
+   * CLOUD + auto sync ON: file watcher detecta cambios → crea ZIP + sube al cloud. No descarga nunca.
+   * CLOUD + auto sync OFF: no actúa automáticamente. El usuario usa el botón Backup en GameDetail.
+   * SYNC: bidireccional. Sube si local es más nuevo, descarga si cloud es más nuevo. Auto sync siempre ON implícitamente.
+* File watcher con debounce 10s — Vigila los directorios de saves en tiempo real. Espera 10 segundos de silencio antes de actuar. Sin timeout máximo — si el juego guarda continuamente, el daemon espera hasta que haya silencio antes de actuar.
+* Solo vigila juegos que lo necesitan — El file watcher incluye únicamente juegos con modo SYNC, o LOCAL/CLOUD con auto sync ON. LOCAL/CLOUD con auto sync OFF y NONE nunca entran en el watcher.
+* Upload/Download automático al arrancar — Al iniciar, compara timestamps locales con el cloud y actúa: descarga si el cloud es más nuevo, sube si local es más nuevo. Respeta los modos: CLOUD con auto sync OFF no actúa al arrancar.
+* No subir si ya está en sync — Antes de cada upload llama a determine_sync_type. Si el resultado no es RequiresUpload, salta el upload. Evita uploads falsos después de descargas.
+* Polling cada 30s con ModTime — Consulta cada 30 segundos si el game-list.json en el cloud ha cambiado comparando el ModTime via rclone lsjson, sin descargar el fichero completo. Solo descarga si ha cambiado.
+* Daemon reacciona a cambios en sync-games.json en tiempo real — El worker loop compara el mtime de sync-games.json cada segundo. Si cambia (el usuario guarda cambios en GameDetail), el daemon se reinicia automáticamente con la nueva configuración.
+* Re-registro del watcher tras descargas — Después de cada descarga, vuelve a registrar el directorio en el file watcher, ya que extract_zip_to_directory borra y recrea el directorio y inotify/Windows pierden el track.
+* Retry cuando cloud vacío — Si el daemon arranca y no hay game-list en el cloud, reintenta cada 30s indefinidamente.
+* Estado de sync escrito a disco (daemon-status.json) — El daemon escribe el estado de sync de cada juego para que la GUI pueda leerlo sin acceder al cloud.
+* Logging a fichero — Logs en ~/.config/ludusavi/daemon.log (Linux) y %APPDATA%\ludusavi\daemon.log (Windows). Simultáneamente a stdout cuando se ejecuta desde terminal.
+* Sin ventana en Windows — #![cfg_attr(target_os = "windows", windows_subsystem = "windows")] en daemon_main.rs.
+* Arranque automático como servicio — Windows — Task Scheduler, sin permisos de administrador, sin ventana de consola.
+* Arranque automático como servicio — SteamOS — systemd --user, arranca incluso en Game Mode.
+* auto_register_paths filtrado por SYNC — Solo actúa sobre juegos configurados como SYNC en sync-games.json local. Para CLOUD, LOCAL y NONE no registra rutas ni escribe entradas en game-list.json. Como consecuencia, juegos en LOCAL o CLOUD no tienen entrada en game-list.json del cloud, y el worker loop los maneja directamente desde sync-games.json.
+* Fix worker loop para LOCAL sin entrada en game-list.json — El worker loop comprueba el modo ANTES de buscar en game-list.json. LOCAL y NONE se manejan sin necesitar una entrada en el cloud.
+* watched_paths para LOCAL sin game-list.json — Para juegos en LOCAL + auto sync ON que no tienen entrada en game-list.json, el daemon resuelve la ruta directamente via manifiesto al construir watched_paths. Evita el bucle de retry infinito.
+* managed_games filtrado por modos que necesitan file watcher — managed_games solo incluye juegos que realmente entran en watched_paths (SYNC, LOCAL + auto sync ON, CLOUD + auto sync ON). LOCAL + auto sync OFF y NONE no entran en managed_games, evitando el bucle de retry cuando el único juego configurado no necesita file watcher.
+* Tracking de errores de rclone en daemon-status.json — Cuando upload o download fallan (rclone sin internet, token expirado, etc.), el daemon escribe error en daemon-status.json para ese juego via write_sync_status_with_errors. La GUI lo muestra como dot rojo. Cuando la operación tiene éxito, el error se elimina y el estado vuelve a synced.
+* Fix game-list.json ausente en cloud — Cuando el game-list.json no existe en el cloud (borrado manualmente, primera vez, etc.), el daemon usa la copia local ludusavi-game-list.json como fallback tanto para construir watched_paths en run_daemon como en el worker loop. Evita el bucle de retry infinito.
+* Fix merge en write_game_list_local — Cuando el daemon escribe la copia local del game-list tras una operación, hace merge con el fichero existente en lugar de sobreescribir. Conserva los juegos que están en local pero no en el cloud (juegos custom añadidos manualmente en modo NONE que nunca han subido al cloud). También preserva device_names locales que no están en el cloud. Evita que los juegos custom desaparezcan de la tabla al reiniciarse el daemon.
+* Notificaciones del sistema en eventos clave — En 5 sitios (worker loop main, check_downloads de startup, check_downloads_and_rewatch del polling). Eventos cubiertos: Conflict, RequiresUpload Ok/Err, RequiresDownload Ok/Err.
+* Safety backup antes de restore/download destructivo — Modal de confirmación, snapshot del directorio antes de restaurar, botón Restore/Delete del safety backup en GameDetail, sección dedicada SAFETY BACKUP. Aplica tanto a Restore en LOCAL como a download destructivo en CLOUD/SYNC.
+* Conflict resolution manual — Banner de conflicto en GameDetail con tres acciones: Keep local (fuerza upload), Keep cloud (fuerza download) y Keep both (snapshot permanente del local + descarga del cloud, con modal de confirmación previo por los efectos en disco).
+🔮 Para más adelante
+* No subir mientras el juego está corriendo — Comprobar proceso activo con sysinfo antes de upload. Requiere mapear game_id → nombre del ejecutable. Evita corrupción real de saves cuando el juego está escribiendo en el momento de hacer ZIP.
+* Recursión en run_daemon — El daemon se reinicia via llamada recursiva, lo que apila frames en el stack indefinidamente. Refactorizar a un loop externo con watched_paths mutable.
+* Push notifications en red local via mDNS — Alternativa al polling de 30s que notificaría al otro dispositivo instantáneamente.
+* Polling con API nativa del cloud — Usar la API de Google Drive/Dropbox en lugar de rclone lsjson. Más eficiente porque devuelve 304 Not Modified sin descargar nada si no hay cambios.
+* Detección temprana de rclone ausente — Al arrancar el daemon o al hacer la primera operación, comprobar si rclone está instalado y configurado. Mensaje claro al usuario en lugar de errores crípticos hasta que mire logs.
+* Logs rotation — daemon.log crece indefinidamente. Si el daemon lleva meses corriendo en un Steam Deck, puede ocupar bastante.
+________________
+🔄 FLUJOS END-TO-END
+✅ Probados y confirmados
+Flujos básicos (producción PC ↔ Steam Deck, Google Drive):
+* PC → Deck (sin saves en Deck) — Daemon en PC sube ZIP. Daemon en Deck arranca, auto-registra ruta Proton, descarga automáticamente.
+* Deck → PC (ambos daemons corriendo) — Deck juega, daemon sube ZIP, PC descarga via polling en ~30s. Sin upload falso post-descarga gracias a determine_sync_type.
+* Deck → PC (PC arranca después) — Saves en Deck más nuevos. PC descarga automáticamente al arrancar el daemon.
+* PC y Deck con saves — PC más nuevo — PC sube, Deck descarga al arrancar.
+* PC y Deck con saves — Deck más nueva — Deck sube, PC descarga al arrancar.
+* PC juega con ambos daemons corriendo — PC detecta cambios, sube al cloud, Deck descarga via polling en ~30s.
+* Deck juega con ambos daemons corriendo — Deck detecta cambios, sube al cloud, PC descarga via polling en ~30s.
+* Sin descargas redundantes al reiniciar — last_known_mod_time persistido en disco evita re-descargar saves ya sincronizados.
+* Sin descarga falsa por nanosegundos — El daemon detecta InSync aunque los timestamps difieran en nanosegundos por precisión del filesystem de Windows.
+* Arranque automático en Windows — Task Scheduler, probado con reinicio real.
+* Arranque automático en SteamOS (Game Mode) — systemd, probado con reinicio real.
+Flujos de Save Modes:
+* NONE — Juego ignorado completamente por el daemon. No aparece en el file watcher ni en ninguna operación.
+* LOCAL + auto sync ON — Daemon resuelve ruta via manifiesto, vigila directorio, crea ZIP local automáticamente al detectar cambios.
+* LOCAL + auto sync OFF — Backup manual crea ZIP local. Restore extrae ZIP local. Daemon en standby. Nada en el cloud.
+* CLOUD + auto sync ON — Daemon vigila directorio, sube ZIP al cloud automáticamente al detectar cambios. No descarga del cloud.
+* CLOUD + auto sync OFF — Backup manual sube ZIP al cloud y crea game-list.json. Restore descarga del cloud y extrae. Daemon en standby.
+* SYNC — Daemon detecta cambios, sube al cloud automáticamente. Bidireccional: sube si local más nuevo, descarga si cloud más nuevo.
+Flujos de usuario nuevo:
+* Nuevo usuario sin backup previo — Daemon arranca, lee sync-games.json, crea game-list desde cero, auto-registra rutas, sube ZIP. Sin intervención manual.
+* Retry cuando cloud vacío — Daemon reintenta cada 30s hasta que se configura algún juego.
+* Daemon reacciona a cambios de modo en GUI en tiempo real — Al guardar cambios en GameDetail, el daemon se reinicia y aplica la nueva configuración en <2 segundos.
+Transiciones de modo:
+* LOCAL → CLOUD — ZIP local migrado al cloud, ZIP local borrado, modal de confirmación.
+* CLOUD → LOCAL — ZIP del cloud descargado a local, ZIP del cloud borrado, modal de confirmación.
+🔮 Pendiente de probar
+* Flujo completo SYNC entre PC y Deck en producción con los nuevos Save Modes.
+* Ciclo SYNC → NONE → SYNC → NONE limpio — Verificar que no queden entradas fantasma en game-list local tras ciclos repetidos de cambio de modo a NONE.
+* Add game + Remove custom game end-to-end — Añadir un juego custom, cambiar su modo a LOCAL/CLOUD/SYNC, verificar que el daemon lo gestiona correctamente, eliminarlo, verificar que se borra de todos lados.
+* Performance tras resolve_game_path_lite — Abrir GameDetail de un juego no configurado, cambiar modo rápido. Debe ir instantáneo.
+________________
+🛠️ INSTALACIÓN
+✅ Completado
+* CI/GitHub Actions — Compila ludusavi y ludusavi-daemon para Windows x64/x32, Linux y Mac en cada push/PR. Actions actualizadas: checkout@v5, upload-artifact@v6, setup-python@v6.
+* Scripts Linux — systemd — install-service-linux.sh instala el daemon como servicio de usuario de systemd. uninstall-service-linux.sh lo elimina. Line endings corregidos con .gitattributes.
+* Scripts Windows — Task Scheduler — install-service-windows.ps1 registra el daemon como tarea programada al iniciar sesión, sin permisos de administrador, sin ventana de consola. uninstall-service-windows.ps1 la elimina.
+* ludusavi-daemon.service — Fichero de unidad de systemd para Linux. Configura el daemon para arrancar después de la red y reiniciarse automáticamente si falla.
+* Botones Start/Stop daemon en Settings — Permiten arrancar y parar el daemon desde la GUI sin entrar en el gestor de servicios del SO.
+* Smart enabling de los 4 botones DAEMON — Install/Uninstall/Start/Stop con tooltips. Cada botón se habilita/deshabilita según el estado real del servicio (instalado/no instalado, corriendo/parado).
+* default-run = "ludusavi" en Cargo.toml — El crate tiene dos binarios (ludusavi GUI + ludusavi-daemon). Sin default-run, cargo run requería --bin. Añadido en Tanda 8.5 junto al rebrand de metadata.
+🔮 Para más adelante
+* Integración con plugin Decky Ludusavi — El plugin decky-ludusavi permite hacer backups manuales desde Game Mode sin salir al modo escritorio. Compatible con el fork (acepta binarios en PATH). Permitiría registrar juegos nuevos en el game-list desde Game Mode.
+* First run / onboarding — Un usuario nuevo que instala y abre la GUI ahora mismo va directo a Settings vacío. Falta wizard de configuración inicial de cloud y de roots.
+* Export/Import de configuración — Para cambiar de PC o hacer backup de la propia config (sync-games.json, cloud config).
+* Roots auto-detection — botón "Detect installed stores" en Settings → ROOTS que escanea rutas típicas (Steam, Epic, GOG Galaxy, Heroic, Lutris) y propone añadirlos. find_missing_roots() en resource/config.rs ya está implementado. Modal::ConfirmAddMissingRoots y Modal::NoMissingRoots ya viven en gui/modal.rs (no se borraron en Tanda 3). Falta solo el botón + handler. Encaja como primer paso del wizard de onboarding.
+________________
+🖥 GUI
+✅ Completado
+Estructura base:
+* Sidebar vertical — Logo, nav items (Games, This device, All devices, Settings), daemon pill en el footer con dot verde/gris que se actualiza cada 5s. Tabs Backup/Restore/Custom games eliminados (state backend mantenido para que el scan de Games siga funcionando). Sección ADVANCED del sidebar también eliminada. Tras la integración de ACCELA, una entrada nueva "📦 ACCELA" se inserta entre All devices y Settings.
+* Tema oscuro por defecto — Default del enum Theme movido de Light a Dark. Paleta: #0f1117 fondo, #171b26 surface, #4f8ef7 accent, #3ecf8e verde, #2a2f42 bordes.
+* Sistema check de actualizaciones eliminado — Quitado todo el sistema heredado del Ludusavi original que avisaba de nuevas versiones: Modal::AppUpdate, Message::CheckAppRelease, Request::CheckAppUpdate, fichero src/metadata.rs borrado completo, campo release en cache y config, evento CheckRelease. ~10 matches exhaustivos limpiados.
+* Sistema tipográfico 13/12/11 unificado — Aplicado globalmente en todas las pantallas (Settings, GameDetail, ThisDevice, AllDevices, sidebar, modales): 13 importante, 12 secundario, 11 terciario, 15-16 super-headers fuera del sistema. Casos especiales: badge "THIS DEVICE" 10→11, "Sync" del logo 10→11, nombre device en ThisDevice 14→13, labels de card en mayúsculas (ROOTS, MANIFEST, SAVE MODE, DEVICE...) a 13, descripciones a 12. Descripciones movidas al titular (no al pie). Container extra con padding quitado en CLOUD/RCLONE y editor Manifest para alinear textos con otras cards. Editor Manifest con tamaños armonizados (PATH, Checked, Updated, fechas). PickList Remote con padding ajustado.
+* Padding de inputs y botones unificados — input_small pasa de padding([3,5]) a padding([5,5]) para dar más aire al texto. Afecta a todos los inputs de Settings y editor de Roots. Añadida función choose_file_small() que faltaba en button.rs. Editor de Roots y Manifest usan botones _small en lugar de versiones grandes. PickLists (Store, URL/FILE, Remote) con .text_size(12).padding([5,5]) para alinear con input_small.
+* Sistema 13/12/11 en modales — AddGame + modales cloud (FTP/SMB/WebDAV) usan input_small con padding [5,5] y labels size 12 Muted. Añadido soporte de ModalField al whitelist de input_small con soporte de .secure(true) para password. Títulos de modal mantienen size(16) (super-header).
+Pantalla Games:
+* Tabla con dot de estado — Nombre del juego, badge de modo (-/LOCAL/CLOUD/SYNC), columna Auto Sync (On/Off/-), Last Synced From (nombre del dispositivo), Last Synced (relativo). Datos reales del game-list.json leídos cada 5s (suscripción que lee daemon-status.json + ludusavi-game-list.json sin acceder al cloud).
+* Last Synced From y Last Synced solo para SYNC — Las columnas muestran datos solo para SYNC. Para CLOUD, LOCAL y NONE muestran "—" porque solo tienen sentido en sincronización bidireccional entre dispositivos.
+* Buscador en tiempo real.
+* Menú ⋯ con acciones según modo — NONE (vacío); LOCAL + auto sync OFF (Backup, Restore); LOCAL + auto sync ON (Sync now, Backup, Restore); CLOUD + auto sync OFF (Backup, Restore); CLOUD + auto sync ON (Sync now, Backup, Restore); SYNC (Sync now, Backup, Restore). Todas las acciones destructivas muestran modal de confirmación. Force upload/download eliminados porque en modo CLOUD/SYNC el código real confirmaba que hacían lo mismo que Backup/Restore (SyncBackupGame y ForceUploadGame ambos llamaban a upload_game directo; SyncRestoreGame y ForceDownloadGame eran idénticos). Los handlers han sido eliminados completamente.
+* Ancho del menú ⋯ reducido de 160 a 120px — Ahora acorde con que la opción más larga es "Sync now" en vez de "Force download". Padding [6, 12], text size default 13.
+* Botón "+ Add game" — Permite registrar manualmente juegos que no están en el manifest de Ludusavi. Modal con dos campos: nombre y save location (con botón Browse...). Validaciones: nombre/path no vacíos, nombre no duplicado en game-list ni sync-games.json, nombre no presente en el manifest de Ludusavi. Al confirmar: crea entrada en game-list local con path_by_device del device actual y añade entrada a sync-games.json en modo NONE. No se sube al cloud hasta que el usuario cambie el modo a CLOUD/SYNC.
+* Tres fuentes de juegos en tabla Games — entries (juegos del backup scan), cloud_available (juegos en game-list registrados en otros devices), y custom_games (juegos añadidos manualmente no presentes en el manifest). Cada fuente pinta las filas con el menú ⋯ y badges correspondientes.
+* Badge "☁ Available" — Solo para juegos registrados en otros devices distintos del actual (registered_elsewhere). Evita que juegos custom recién añadidos aparezcan con badge "Available". Misma condición aplicada al banner "This game is synced from another device" en GameDetail.
+* Dot de estado con cuatro colores — Verde (synced), amarillo (pending_backup o pending_restore), rojo (error), gris (not_managed o sin datos). Funciona para todos los modos.
+Pantalla GameDetail:
+* Status card con descripción del estado actual — Estados: synced, pending_backup, pending_restore, not_managed, error. Textos descriptivos según el modo.
+* Selector de Save Mode (NONE/LOCAL/CLOUD/SYNC).
+* Auto Sync toggle — Visible solo para LOCAL y CLOUD.
+* Save Location — Ruta detectada via manifiesto, visible para todos los modos. Resuelve via manifiesto cuando el juego no tiene entrada en game-list (modos LOCAL y NONE).
+* Botón "Open" — Abre el directorio de saves directamente desde GameDetail.
+* Sección Devices — UUID + nombre del dispositivo + badge "THIS DEVICE".
+* Botón Save changes — Azul cuando hay cambios pendientes, gris si no.
+* Topbar con botones según modo y auto sync — Idénticos al menú ⋯: NONE (sin botones); LOCAL + auto sync OFF (Backup, Restore); LOCAL + auto sync ON (Sync now, Backup, Restore); CLOUD + auto sync OFF (Backup, Restore); CLOUD + auto sync ON (Sync now, Backup, Restore); SYNC (Sync now, Backup, Restore). Todas las acciones destructivas muestran modal de confirmación.
+* Botones Backup/Restore con sistema propio de ZIPs — No usan el sistema nativo de Ludusavi. Si el juego no tiene ruta registrada, la resuelven automáticamente via el manifiesto.
+* Indicador de progreso inline en topbar — sync_in_progress: Option<String> en App. Al lanzar Backup/Restore/Upload/Download muestra "⏳ Backing up..." etc. en la topbar junto a los botones. Se limpia automáticamente cuando llega ShowTimedNotification.
+* Migración de backup al cambiar de modo — LOCAL→CLOUD/SYNC: backup local existente se sube al cloud antes de borrarse. CLOUD/SYNC→LOCAL: backup del cloud se descarga localmente antes de borrarse del cloud. Modal de confirmación en ambos casos. Las operaciones de rclone se ejecutan en tokio::task::spawn_blocking para no congelar la GUI, mostrando "⏳ Uploading to cloud..." o "⏳ Downloading from cloud..." durante la operación.
+* Banner "☁ This game is synced from another device" — Para juegos en cloud no configurados localmente. Botón "Enable Sync" escribe SYNC directamente en sync-games.json sin pasar por pending_game_detail ni requerir confirmación. El daemon detecta el cambio en <2s. El banner usa el modo guardado (no el pendiente) y se oculta cuando hay un cambio de modo sin confirmar.
+* Limpieza de game-list al cambiar a LOCAL/NONE — Al confirmar el modal, además de borrar el ZIP del cloud, se elimina la entrada completa del juego en game-list.json del cloud Y se actualiza la copia local inmediatamente, así el banner desaparece sin esperar al daemon. El handler to_none tiene limpieza robusta: si el cloud existe se limpia ambos lados, si está vacío se limpia solo local. Logging con prefijo [to_none] para trazar el flujo.
+* Modales de confirmación para acciones destructivas — Backup, Restore muestran modal antes de ejecutar. Cambio de modo CLOUD/SYNC → LOCAL/NONE advierte que se borrará el ZIP del cloud (texto correcto según origen: "cloud backup" para SYNC/CLOUD→NONE, "local backup" para LOCAL→NONE). Modal LOCAL → CLOUD/SYNC advierte de migración. Diseño: fondo surface con borde accent azul, título grande separado de descripción en text_muted, tamaño adaptado al contenido con Length::Shrink.
+* Sección FILES oculta — Código construido pero no renderizado (.push(files_card) comentado, #[allow(unused_variables)] arriba del let files_card). Lanza scan bajo demanda solo al expandir FILES si el juego no tiene entry escaneado. Flecha expand/collapse (KeyboardArrowRight/KeyboardArrowDown) en el header. Click en toda la fila expande/colapsa. Los toggles/checkboxes del tree no están wired al daemon (create_zip_from_folder no consulta toggled_paths), por eso la sección está oculta hasta que se implemente.
+* Scan automático al entrar GameDetail eliminado — Causaba parpadeo de barra de progreso. Investigación git mostró que se añadió como workaround del timing de expand_game ya resuelto. Ahora el scan se lanza solo al expandir FILES si el juego no tiene entry escaneado, y solo del juego individual (no del manifest entero).
+* Status calculado en GUI para LOCAL y NONE — La suscripción de 5s calcula el status directamente sin depender del daemon. Para LOCAL compara mtime del ZIP local con mtime de los saves. Para NONE siempre devuelve "not_managed". Evita que la status card y los dots muestren datos obsoletos cuando el daemon está en standby.
+* Botón "Remove game" para juegos custom — Visible solo para juegos que no están en el manifest. Modal de confirmación. Al confirmar: borra entrada de sync-games.json, del game-list local y cloud, ZIP local y cloud, y vuelve a Games. Mostrado en sección "DANGER ZONE" al final del GameDetail.
+Pantalla This Device:
+* Información del dispositivo — Nombre del dispositivo, UUID, botón Open logs.
+* Estado del daemon — Dot verde/gris, último sync, juegos monitorizados.
+* Cloud storage — Provider/remote/path, estado de rclone.
+Pantalla All Devices:
+* Lista de todos los devices del game-list — Nombre legible (no UUID), badge "THIS DEVICE", número de juegos y lista, último sync desde ese device. This device aparece primero.
+* Filtra por SYNC local — Solo muestra devices para juegos en modo SYNC. CLOUD/LOCAL/NONE no aparecen porque conceptualmente no participan en multi-device sync.
+Pantalla Settings (Other rediseñado):
+* Eliminado: tema, idioma, check updates, Scan, Backup, upload/download cloud, Synchronize automatically, Backup exclusions, Redirects.
+* Mantenido: rclone/cloud config, Roots, Manifest.
+* Añadido: sección LOCAL (backup path), sección DAEMON (Install/Uninstall/Start/Stop service), sección SAFETY con toggle System notifications.
+* Renombrado a "⚙ Settings" en sidebar.
+* Botones Install/Uninstall service — Ejecutan el script real via std::process::Command con output() (bloqueante, captura exit code). En Windows: powershell.exe -ExecutionPolicy Bypass -File install-service-windows.ps1 -ExePath <ruta daemon>. En Linux: bash install-service-linux.sh. Muestra "✓ Service installed" o el error de stderr en la notificación flotante.
+Otras features:
+* Bloqueo de UI cuando daemon está parado — Helper widget::daemon_required_tooltip. Lista de sitios cubiertos por el bloqueo.
+* Botón Retry en modal de error de manifest.
+* Toggle System notifications en Settings → SAFETY card.
+* Notificaciones nativas del sistema (Windows toast, libnotify Linux) — Para eventos importantes que ocurren mientras la GUI está cerrada. El daemon notifica al SO cuando completa operaciones relevantes.
+🔮 Para más adelante
+* Toggles del FileTree wired al daemon — Actualmente create_zip_from_folder en sync/operations.rs usa walkdir sin consultar config.backup.toggled_paths. Los checkboxes del tree guardan estado en config pero no afectan al ZIP. La sección FILES está oculta hasta que esto se implemente. Aplicable también a extract_zip_to_directory para respetar toggles en restore.
+* Save Location editable en GameDetail — Por ahora solo lectura. Requiere editar el game-list y subir al cloud.
+* Estado online/offline de devices — No tenemos esta información disponible actualmente.
+* Modal de "Updating manifest" al inicio del programa con diseño antiguo — Sin armonizar con el resto de modales.
+* Bug: GUI no refresca daemon-status.json automáticamente — Tras una operación que cambia el status (Keep Local, Keep Cloud, etc), la GUI sigue mostrando el estado anterior hasta que se cierra y reabre. La subscription debería detectar el cambio en el fichero y refrescar.
+* Notificaciones nativas dicen "Windows PowerShell" — Hay que registrar un AppUserModelID propio para que las toasts aparezcan con el nombre de la app (opción A apuntada).
+* Badges scanned/changed (New/Different/Removed) — el motor de scan ya calcula los cambios entre el backup actual y el último guardado, pero la GUI no los muestra. Reactivar exposición en tres sitios: (1) tabla Games con resumen [+3] [~5] [-1] por juego, (2) modal de confirmación de Backup con "5 nuevos, 3 modificados, 0 borrados", (3) FileTree con badge de color por fichero. ScanChange enum y gui/badge.rs siguen vivos. Empezar por #2 (modal) que es 30 min de trabajo, los demás cuando se reactive FileTree.
+* Duplicate detection visualization — DuplicateDetector en scan/duplicate.rs detecta colisiones entre juegos (dos entradas del manifest reclaman el mismo fichero). Crítico cuando llegue EMULADORES. Activar badge "Duplicated" en tabla Games y FileTree cuando la sección FILES esté visible.
+* Sort/filter options en tabla Games — picker para ordenar por nombre/status/last-synced/size, y filtro por status (pending_backup, error, etc.). SortKey enum ya existe en resource/config.rs. Útil cuando el catálogo crezca a 100+ juegos.
+* Dashboard de stats en pantalla This Device — total juegos por modo (NONE/LOCAL/CLOUD/SYNC), errores activos, uso cloud aproximado, último sync activity. Implementación from-scratch iterando sync_games_config + daemon-status.json (NO reutiliza OperationStatus de scan, que es transitorio durante backups).
+________________
+🎮 EMULADORES
+🔮 Para más adelante
+* Manifiesto de emuladores embebido — Crear un fichero YAML con rutas de saves de los emuladores más comunes (RetroArch, Dolphin, PCSX2, DuckStation, PPSSPP, Ryujinx, mGBA, melonDS, Cemu). Paths por plataforma: Windows nativo, Steam Deck con EmuDeck, Linux nativo, Flatpak. Granularidad por emulador (no por juego individual). Integración en "Add game" con opción "Add emulator" que rellena la ruta automáticamente. Toggle "Include save states (opcional)" por emulador que tenga la carpeta separada. El daemon trata el emulador como un juego más con su path_by_device. RPCS3 y emuladores de 3DS/Switch (por la inestabilidad de forks) se dejan para más adelante.
+* Differential backups para save states grandes — emuladores (PCSX2, Yuzu/Ryujinx, RPCS3) generan save states multi-GB. Subir el ZIP completo al cloud cada vez es brutal en bandwidth. Sistema diferencial (full + diffs sucesivos) reduce drásticamente. La implementación upstream FullBackup/DifferentialBackup en scan/layout.rs NO es reutilizable directamente (formato distinto al ZIP-per-game del fork) pero sirve como referencia conceptual. Implementación from-scratch ~30-50h.
+* Backup format selection (Zstd como default, Stored para save states) — para emuladores cuyos save states ya están comprimidos internamente, re-comprimir con Deflate es CPU desperdiciada. Stored (sin compresión) sería instantáneo. Para saves normales, cambiar default a Zstd da mejor ratio que Deflate. NO exponer como UI selectable (overkill para gamers); decidir por tipo de juego o per-game con heurística. BackupFormat/ZipCompression enums dormidos en config.rs.
+________________
+🎯 INTEGRACIÓN ACCELA
+ACCELA es un programa Python/PyQt6 (de otro autor, no es parte del fork) que permite descargar depots de Steam vía la API de morrenus (hubcapmanifest.com), parsear su contenido y aplicar post-procesado para uso en QA/dev/preservation. Ludusavi Sync expone una pestaña que dispara las funciones de ACCELA en headless y rendea la UI nativa en Iced. Single source of truth = ACCELA: su QSettings ("Tachibana Labs" / "ACCELA") es donde viven los ajustes; Ludusavi solo lee y escribe ahí.
+Estado actual: pestaña funcional end-to-end (búsqueda → selección de depots → descarga real con progress + log → post-procesado). Phase 5 pendiente: rescan automático de roots tras descarga para que el juego aparezca en la tabla Games sin reiniciar.
+✅ Completado
+Adapter Python (accela_adapter/)
+* Bridge headless con protocolo JSON-lines — Script Python (~600 líneas) que importa los módulos de ACCELA y expone un protocolo de stdin/stdout. Inicializa QCoreApplication con los mismos org/app names que ACCELA, así QSettings resuelve al mismo store. No requiere ventana de Qt: solo el event loop core para los signals/slots de los tasks.
+* Comandos implementados: search (vía morrenus_api.search_games), fetch_manifest (descarga ZIP de morrenus), process_zip (parsea Lua + extrae depots/DLCs/manifests), get_settings (dump del SETTINGS_SPEC con coercion bool/int/str), set_setting (QSettings.setValue + sync), get_morrenus_stats (vía morrenus_api.get_user_stats), apply_steam_updates_block (replica el side-effect de copiar/borrar steam.cfg en Steam install), run_tool (register_protocol/unregister_protocol/run_slscheevo/run_steamless), download_depots (Phase 4, ver más abajo), get_steam_libraries.
+* SETTINGS_SPEC: 13 settings funcionales surfaced (los cosméticos de ACCELA — Audio/Style/Effects — quedan fuera por ser irrelevantes en Ludusavi).
+* 5 monkey-patches sobre internals de ACCELA (necesarios porque QThread + QEventLoop no funciona en headless sin GUI; los signals nunca llegaban al main thread):
+   * sys._MEIPASS apunta a bin/src/ (no a bin/) para que resource_path() resuelva deps/DepotDownloader.dll, Steamless.CLI.dll, etc.
+   * CLITaskManager._run_steamless reemplazado por versión síncrona que llama a SteamlessTask().run() directamente en main thread.
+   * CLITaskManager._run_application_shortcuts ídem.
+   * CLITaskManager._run_achievement_generation ídem.
+   * _create_applist_file parcheado para arreglar bug propio de ACCELA (signature mismatch entre definición y call site de find_next_applist_number).
+* JsonLogger — clase que reemplaza el logger interno de ACCELA y traduce cada llamada (info/warning/error/progress) a un evento JSON sobre stdout, consumido en streaming desde Iced.
+* CREATE_NO_WINDOW al spawnar python — flag 0x08000000 cuando target_os = windows, así no parpadea ventana de consola por cada subprocess.
+Pestaña ACCELA en sidebar
+* Sidebar entry — "📦 ACCELA" entre "All devices" y "Settings".
+* Inputs persistentes para paths — ACCELA bin (folder picker) y Python interpreter (file picker), con botones FolderOpen al lado. Persisten en config.yaml bajo accela: { binPath, pythonPath } con skip_serializing_if = String::is_empty. Default vacío, así que configs antiguas no se ensucian hasta que el usuario configura.
+Buscador y resultados
+* Búsqueda en morrenus — Input + botón Search (también funciona pulsando Enter). Botón solo activo cuando los 3 campos requeridos (paths + query) están llenos y no hay búsqueda en curso. Estado Searching/Idle/Error visible bajo el input.
+* Lista de resultados con header image — Cada fila: imagen del juego (130×60, descargada async desde Steam CDN), AppID, nombre, fecha de upload. Las imágenes se cachean en memoria por game_id. Filas envueltas en Container con clase GameListEntry para separación visual.
+Vista de depots (doble-click + drag & drop)
+* Doble-click en resultado — Detección por timestamp + game_id (threshold 400 ms). Dispara fetch_manifest → process_zip → muestra GameDetail con depots y DLCs.
+* Vista intermedia "Loading..." — Etiqueta dinámica según fase ("Fetching manifest for AppID X..." → "Parsing manifest (ZIP filename)..."), con botón "← Back to results".
+* Vista de depots — Header con nombre del juego + AppID. Card de depots con depot_id + descripción (incluye tags [WINDOWS]/[DECK], idioma) + tamaño formateado. Card separada para DLCs si existen. ACCELA distingue depot vs DLC mirando si la llamada addappid() en el Lua incluye una clave criptográfica como tercer argumento (depot) o no (DLC).
+* Drag & drop de ZIP — Subscription a iced::window::Event::FileDropped. Al soltar un .zip sobre la ventana (en cualquier pestaña), Ludusavi cambia automáticamente a la pestaña ACCELA y dispara process_zip directamente con el path local — saltándose fetch_manifest.
+Settings de ACCELA en 4 sub-pestañas
+* Botón "⚙ Settings" en la topbar de la pestaña ACCELA, esquina superior derecha (mismo patrón que Backup/Restore en GameDetail). Abre vista Settings con cuatro sub-pestañas: Downloads / Integrations / Steam / Tools.
+* Downloads tab — 6 toggles + 1 spinbox (max_downloads): library_mode, auto_skip_single_choice, max_downloads, generate_achievements, use_steamless, auto_apply_goldberg, create_application_shortcuts (solo Linux).
+* Integrations tab — API keys (morrenus + sgdb) en TextInput con toggle Show/Hide. Card de stats refrescable: usuario, daily usage, expiración, total calls, status active/blocked.
+* Steam tab — slssteam_mode (solo Windows; en Linux es automático), sls_config_management, prompt_steam_restart, block_steam_updates (este último con side-effect: Save dispara también apply_steam_updates_block).
+* Tools tab — Configure Achievements (lanza SLScheevo en terminal externa), Remove DRM (file picker .exe + Steamless), Open SLSsteam installer (Message::OpenUrl), Register/Remove Registry Entries (solo Windows; replica _manage_registry sin QMessageBox).
+* Tooltips por cada setting — Línea de explicación en text muted bajo cada toggle/input, copiada literal del Settings nativo de ACCELA.
+* Save explícito (no auto-save) — Toggles solo mutan estado en memoria. Botón "Save" en la topbar (Ghost por defecto, Primary azul cuando dirty). Al confirmar dispara batch de set_setting por cada campo cambiado + apply_steam_updates_block si block_steam_updates fue tocado. Back descarta cambios automáticamente — al reabrir Settings, OpenSettings re-fetcha desde QSettings.
+* Mensajes de estado en toolbar — "Saving..." / "Saved N setting(s)." / "Save failed: ...".
+Flujo de descarga completo (Phase 4)
+* Comando download_depots en el adapter — invoca DownloadDepotsTask con los depot IDs seleccionados y emite eventos JSON sobre stdout en streaming: progress (percent), log (línea), done (ok/fail). En Iced se consume vía iced::futures::channel::mpsc::Receiver + tokio::process::Command para alimentar la vista en tiempo real sin bloquear la GUI.
+* Vista de selección de depots — checkboxes por depot (con tags [WINDOWS]/[DECK] e idioma), tamaño formateado, botón "Download selected" deshabilitado mientras no haya ninguno marcado.
+* Picker de destino con auto-detección de Steam libraries — comando get_steam_libraries en el adapter parsea libraryfolders.vdf y devuelve la lista de bibliotecas configuradas en Steam; el picker las ofrece como botones sugeridos además del file picker manual.
+* Vista downloading — progress bar real, log inline scrollable, post-procesado encadenado al final (Steamless si use_steamless, achievements si generate_achievements, steam_appid.txt / config.vdf según auto_apply_goldberg).
+* Estados terminales — Done (verde, "Download complete") / Failed: <reason> (rojo, error completo visible en el log).
+* Round-trip de game_data completo — GameDetail guarda raw: serde_json::Value con el payload entero del manifest parseado, así download_depots recibe la misma estructura que ACCELA original espera (sin re-derivar campos).
+UX polish post-Phase 4
+* Indicador de descarga en sidebar — la etiqueta de la pestaña ACCELA muestra "📦 ACCELA · 45%" durante una descarga en curso y "✓" / "✗" al terminar. Visible desde cualquier pestaña, así que el usuario puede irse a Games o Settings sin perder visibilidad del progreso.
+* Reset de la vista al re-entrar a la pestaña ACCELA — view_state vuelve a Search al cambiar de pestaña (idéntico patrón al de Games), excepto si hay una descarga Downloading activa: en ese caso se preserva para no perder el progreso al navegar.
+* Headers alineados con filas de datos — en results y depots, los headers se envuelven en Container con padding [8,10] para empatar con la indentación de las filas. Antes los headers quedaban desplazados a la izquierda respecto a los datos por culpa del padding asimétrico.
+* Botón Settings en topbar (esquina superior derecha) — mismo patrón que Backup/Restore en GameDetail. Save aparece como Primary (azul) solo cuando hay cambios pendientes; en idle es Ghost. Sin asterisco ni indicador extra: el color basta.
+🔮 Para más adelante
+* Phase 5 — Rescan automático tras descarga — Cuando ACCELA termina la descarga, el juego está en steamapps/common/. Ludusavi debería re-escanear los roots configurados (al menos el Steam root) y detectar el juego nuevo, así aparece en la pestaña Games sin reiniciar. Es la siguiente fase natural y pequeña: disparar scan_game sobre el path destino al recibir done: ok de download_depots.
+* Auto-detección del path de ACCELA — Ahora mismo el usuario lo pega manualmente. find_accela_install() que busque en localizaciones típicas: %LOCALAPPDATA%\ACCELA, %APPDATA%\ACCELA, registry uninstall keys. Caer al manual si no encuentra.
+* Cache local de header images en disco — Las imágenes se re-fetchean cada arranque. Cachearlas en app_dir()/accela_image_cache/<game_id>.jpg con expiración de 30 días reduciría arranques fríos a casi instantáneos para búsquedas repetidas.
+* Settings/Effects tab — La 5ª pestaña de ACCELA (CRT overlay) está fuera del scope inicial; podría añadirse si en algún momento se decide que merece la pena.
+* Persistencia de visibility de API keys — El toggle Show/Hide es estado puramente in-memory; al cerrar Settings se pierde. Si molesta, guardar en config local (no en QSettings de ACCELA, que es compartido y puede confundir).
+
+________________
+
+
+🧹 LIMPIEZA POSTERIOR (mayo 2026) — Tanda 9.2 + refactor ScanInfo
+✅ Completado
+* Tanda 9.1 — Borrado de 23 tests zombi en layout.rs (validate, plan_*, restorable_files, migrate, scan_for_restoration). Las funciones que testeaban quedaron sin callers tras Tanda 9.
+* Tanda 9.2 — Eliminada la cadena entera de back_up/plan_*/execute_backup/forget_excess/find_irrelevant del impl GameLayout (1300+ líneas). Borrado GameLayout entero. Borrado bridge.rs entero (sin callers vivos en runtime; los 4 handlers de gui/app.rs llaman directamente a upload_game). Bloque if !preview { back_up(...) } eliminado en gui/app.rs. Field syncable_games de Operation::Backup eliminado.
+* Refactor ScanInfo — Eliminados los campos available_backups: Vec<Backup>, backup: Option<Backup> y has_backups: bool de ScanInfo (siempre vec![]/None/false en runtime). Eliminado el parámetro previous: Option<&LatestBackup> de scan_game_for_backup. is_downgraded_backup y is_downgraded_restore borrados (sin callers). scan_kind() simplificado a constante Backup.
+* Eliminados todos los tipos huérfanos en layout.rs: GameLayout, LatestBackup, Backup enum, FullBackup, DifferentialBackup, BackupInclusion, BackupKind, IndividualMapping*. Lo único vivo: escape_folder_name (lo usa manifest.rs) y un BackupLayout shell de 30 líneas con new + restorable_game_set (siempre vacío) que TitleFinder::new espera como parámetro.
+* layout.rs final: 58 líneas (desde 3173 originales upstream → −98%).
+
+Bugs reales encontrados y arreglados durante el refactor:
+* GameSyncConfig::default() devolvía auto_sync = false mientras que el default de serde para JSON sin el campo era true. Visible en la UI: tras seleccionar un modo LOCAL/CLOUD por primera vez para un juego, el toggle "Auto Sync" aparecía ON al principio y se ponía OFF al cambiar de modo. Fix: impl Default manual unificado a true.
+* Race condition en read/write_game_list_to_cloud — ambas usaban /tmp/ludusavi-game-list-temp.json hardcoded. Dos operaciones concurrentes se pisaban entre sí. Fix: tempfile::NamedTempFile con prefix/suffix únicos. tempfile movido de dev-deps a deps.
+* write_sync_status_with_errors destruía el flag rclone_missing — sobreescribía daemon-status.json con solo {"games": map} sin preservar las claves top-level que write_rclone_missing_flag había escrito. La GUI dejaba de ver el flag tras el primer tick del worker loop. Fix: leer JSON existente y mergear solo la clave "games", preservar el resto.
+
+Refactor de testabilidad:
+* auto_register_paths recibe Manifest como parámetro en lugar de cargarlo internamente con Manifest::load(). Permite inyectar manifests en memoria con Manifest::load_from_string en tests.
+
+Total estimado tras Tandas 1-9.2: ~10000+ líneas eliminadas. Tests: 269 verdes (de 126 iniciales).
+
+________________
+
+
+🧪 SUITE DE TESTS
+✅ Completado
+Suite total: ~270 tests, corre en ~20s.
+
+* 115 tests heredados del upstream (path.rs, manifest.rs, scan.rs, preview.rs, launchers, registry, duplicate, title, saves, lang, config) — protegen el motor de detección que el fork sigue usando.
+* 142 tests del fork:
+   * sync/conflict.rs (13): determine_sync_type, todas las ramas + edge case nanosegundos Windows
+   * sync/game_list.rs (13): round-trip JSON, merge local+cloud, device_names, backwards-compat
+   * sync/sync_config.rs (14): round-trip, modificaciones, camelCase serialization, regresión auto_sync default
+   * sync/device.rs (3): UUID v4 shape, unicidad, round-trip JSON
+   * sync/operations.rs (79): classify_error con 13 patrones reales de rclone, ZIP round-trip + preservación mtime + atomic swap + scan, rclone harness :local: para upload/download/lsjson/deletefile, safety_backup edge cases, 8 tests E2E PC↔Deck con SimulatedDevice
+   * sync/daemon.rs (24): puras (normalize_path), FS (save_last_mod_time, write_rclone_missing_flag, write_game_list_local merge, calculate_game_status 6 ramas, write_sync_status_with_errors + regresión rclone_missing), auto_register_paths con manifest inyectado (6)
+   * tests/daemon_smoke.rs (4): smoke del binario real con XDG_CONFIG_HOME + E2E watcher→debounce→upload (~16s)
+
+🔮 Para más adelante
+* Tests E2E del worker loop para 3 escenarios pendientes: cloud polling → download (~35s), reacción a sync-games.json (~12s), retry cuando cloud vacío (~35s). Comparten infraestructura con el test E2E ya existente.
+* Tests GUI (gui/app.rs, 4000+ líneas, 0 tests). Requiere refactor mayor para extraer la lógica de los handlers de Iced.
+* Tests de create_safety_backup con dir > 500MB (verificar el skip por tamaño).
+* Refactor del worker loop del daemon para extraer polling/debounce a funciones puras testeables sin filesystem real (eliminaría la lentitud actual de los tests E2E).
+
+________________
+
+
+🛠️ INSTALACIÓN — actualización de mayo 2026
+✅ Añadido al CI
+* .github/workflows/main.yaml: añadido rclone install al job test para los 3 OS:
+   * Linux: sudo apt-get install -y ... rclone
+   * Windows: choco install rclone -y --no-progress
+   * macOS: brew install rclone
+* Necesario para que los tests rclone (Fases 3-4 + auto_register_paths + smoke daemon E2E) pasen en CI. Sin esto, los tests se auto-saltan con skip_if_no_rclone() y la cobertura real en CI baja drásticamente.
+
