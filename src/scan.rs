@@ -34,7 +34,6 @@ use crate::{
         },
         manifest::{Game, GameFileEntry, IdSet, Os, Store},
     },
-    scan::layout::LatestBackup,
 };
 #[cfg(target_os = "windows")]
 use crate::scan::registry::RegistryItem;
@@ -420,7 +419,6 @@ pub fn scan_game_for_backup(
     wine_prefix: Option<&StrictPath>,
     ignored_paths: &ToggledPaths,
     #[cfg_attr(not(target_os = "windows"), allow(unused))] ignored_registry: &ToggledRegistry,
-    previous: Option<&LatestBackup>,
     steam_shortcuts: &SteamShortcuts,
     only_constructive_backups: bool,
 ) -> ScanInfo {
@@ -430,7 +428,6 @@ pub fn scan_game_for_backup(
     let mut found_registry_keys = HashMap::new();
     #[allow(unused)]
     let mut dumped_registry = None;
-    let has_backups = previous.is_some();
     let mut paths_to_check = HashSet::<(StrictPath, Option<bool>)>::new();
     // Add a dummy root for checking paths without `<root>`.
     let mut roots_to_check: Vec<Root> = vec![Root::new(SKIP, Store::Other)];
@@ -553,17 +550,9 @@ pub fn scan_game_for_backup(
             }
         }
     }
-    let previous_files: HashMap<&StrictPath, &String> = previous
-        .as_ref()
-        .map(|previous| {
-            previous
-                .scan
-                .found_files
-                .iter()
-                .map(|(scan_key, x)| (x.original_path(scan_key), &x.hash))
-                .collect()
-        })
-        .unwrap_or_default();
+    // El fork no usa el sistema de backup-layout heredado, así que nunca hay
+    // backup previo con el que comparar. Cualquier fichero detectado es "New".
+    let previous_files: HashMap<&StrictPath, &String> = HashMap::new();
     for (path, case_sensitive) in paths_to_check {
         log::trace!("[{name}] checking: {path:?}");
         let paths = match case_sensitive {
@@ -652,7 +641,9 @@ pub fn scan_game_for_backup(
     }
     #[cfg(target_os = "windows")]
     {
-        let previous_registry = previous.and_then(|x| x.registry_content.clone());
+        // El fork no compara contra registro previo (sin backup-layout) — todas
+        // las claves halladas se consideran nuevas.
+        let previous_registry: Option<registry::Hives> = None;
         let mut current_registry = registry::Hives::default();
         for key in game.registry.keys() {
             if key.trim().is_empty() {
@@ -728,9 +719,6 @@ pub fn scan_game_for_backup(
         game_name: name.to_string(),
         found_files,
         found_registry_keys,
-        available_backups: vec![],
-        backup: None,
-        has_backups,
         dumped_registry,
         only_constructive_backups,
     }
@@ -901,7 +889,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -924,7 +911,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -951,7 +937,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -985,7 +970,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1012,7 +996,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1051,7 +1034,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1082,7 +1064,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1112,7 +1093,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1138,7 +1118,6 @@ mod tests {
                 Some(&StrictPath::new(format!("{}/tests/wine-prefix", repo()))),
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1164,7 +1143,6 @@ mod tests {
                 Some(&StrictPath::new(format!("{}/tests/wine-prefix", repo()))),
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1197,7 +1175,6 @@ mod tests {
                 None,
                 &ignored,
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1242,7 +1219,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1296,7 +1272,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),
@@ -1337,7 +1312,6 @@ mod tests {
                 None,
                 &ToggledPaths::default(),
                 &ToggledRegistry::default(),
-                None,
                 &Default::default(),
                 ONLY_CONSTRUCTIVE,
             ),

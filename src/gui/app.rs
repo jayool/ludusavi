@@ -5,7 +5,6 @@ use std::{
 
 use iced::{keyboard, widget::scrollable, Alignment, Length, Subscription, Task};
 
-use ludusavi::sync::bridge::register_game_after_backup;
 
 use crate::{
     cloud::{Rclone, Remote},
@@ -387,7 +386,6 @@ impl App {
                 launchers,
             } => {
                 log::info!("beginning backup with {} steps", subjects.len());
-                let preview = self.operation.preview();
                 let single = self.operation.games().is_some_and(|x| x.is_single());
 
                 if self.operation_should_cancel.load(std::sync::atomic::Ordering::Relaxed) {
@@ -419,7 +417,10 @@ impl App {
 
                 let config = std::sync::Arc::new(self.config.clone());
                 let roots = std::sync::Arc::new(config.expanded_roots());
-                let layout = std::sync::Arc::new(*layout);
+                // El BackupLayout (formato upstream full+diff) ya no se usa en este flujo.
+                // El parámetro `layout` se mantiene en el Message por compat hasta que
+                // refactoricemos BackupPhase::Start, pero aquí no lo necesitamos.
+                let _ = layout;
                 let launchers = std::sync::Arc::new(launchers);
                 let steam_shortcuts = std::sync::Arc::new(steam);
                 let _games_specified = self.operation.games_specified();
@@ -429,7 +430,6 @@ impl App {
                     let config = config.clone();
                     let roots = roots.clone();
                     let launchers = launchers.clone();
-                    let layout = layout.clone();
                     let steam_shortcuts = steam_shortcuts.clone();
                     let cancel_flag = self.operation_should_cancel.clone();
                     self.operation_steps.push(OperationStep {
@@ -443,13 +443,10 @@ impl App {
                                     return (None, None);
                                 }
 
-                                let previous = layout.latest_backup(
-                                    &key,
-                                    SCAN_KIND,
-                                    &config.restore.toggled_paths,
-                                    config.backup.only_constructive,
-                                );
-
+                                // El sistema de backup-layout heredado de upstream
+                                // (full + differential backups) ya no se usa: el fork
+                                // sube ZIPs directamente al cloud via sync/operations.rs.
+                                // No hay "previous backup" que comparar — pasamos None.
                                 let scan_info = scan_game_for_backup(
                                     &game,
                                     &key,
@@ -459,7 +456,6 @@ impl App {
                                     None,
                                     &config.backup.toggled_paths,
                                     &config.backup.toggled_registry,
-                                    previous.as_ref(),
                                     &steam_shortcuts,
                                     config.backup.only_constructive,
                                 );
@@ -467,17 +463,10 @@ impl App {
                                     return (Some(scan_info), None);
                                 }
 
-                                let backup_info = if !preview {
-                                    layout.game_layout(&key).back_up(
-                                        &scan_info,
-                                        &chrono::Utc::now(),
-                                        &config.backup.format,
-                                        config.backup.only_constructive,
-                                    )
-                                } else {
-                                    None
-                                };
-                                (Some(scan_info), backup_info)
+                                // No hay back_up real: este flujo solo escanea para
+                                // poblar la tabla Games. El upload de ZIPs lo hace
+                                // sync/operations.rs::upload_game cuando corresponde.
+                                (Some(scan_info), None)
                             },
                             move |(scan_info, backup_info)| {
                                 Message::Backup(BackupPhase::GameScanned { scan_info, backup_info })
@@ -499,7 +488,7 @@ impl App {
                 self.progress.step();
                 let full = self.operation.full();
 
-                if let Some(mut scan_info) = scan_info {
+                if let Some(scan_info) = scan_info {
                     log::trace!(
                         "step {} / {}: {}",
                         self.progress.current,
@@ -508,14 +497,10 @@ impl App {
                     );
                     self.operation.remove_active_game(&scan_info.game_name);
                     if scan_info.can_report_game() {
-                        if let Some(backup_info) = backup_info.as_ref() {
-                            if scan_info.needs_cloud_sync() {
-                                self.operation.add_syncable_game(scan_info.game_name.clone());
-                            }
-                            // Puente EmuSync: registra el juego en el game-list.json del cloud
-                            register_game_after_backup(&self.config, &scan_info);
-                            scan_info.clear_processed_changes(backup_info, SCAN_KIND);
-                        }
+                        // En el fork no hay back_up real desde este flujo (es solo scan).
+                        // backup_info es siempre None aquí; el bloque que registraba el
+                        // juego en el game-list del cloud se eliminó porque ese registro
+                        // lo hace upload_game directamente cuando corresponde.
 
                         let duplicates = self.backup_screen.duplicate_detector.add_game(
                             &scan_info,
@@ -529,7 +514,6 @@ impl App {
                             &self.config.backup.sort,
                             &self.backup_screen.duplicate_detector,
                             &duplicates,
-                            None,
                             &self.config,
                             SCAN_KIND,
                         );

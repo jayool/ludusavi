@@ -145,3 +145,177 @@ impl GameMetaData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn ts(secs: i64) -> DateTime<Utc> {
+        Utc.timestamp_opt(secs, 0).unwrap()
+    }
+
+    // game_zip_file_name ----------------------------------------------------------
+
+    #[test]
+    fn game_zip_file_name_uses_game_id() {
+        assert_eq!(game_zip_file_name("Stardew Valley"), "game-Stardew Valley.zip");
+        assert_eq!(game_zip_file_name(""), "game-.zip");
+    }
+
+    // GameMetaData::set_path / get_path ------------------------------------------
+
+    #[test]
+    fn set_path_creates_entry_with_no_mtime() {
+        let mut g = GameMetaData::new("game1", "Game 1");
+        g.set_path("device-A", "/home/user/saves/game1");
+        assert_eq!(g.get_path("device-A"), Some("/home/user/saves/game1"));
+        assert_eq!(g.get_last_sync_mtime("device-A"), None);
+    }
+
+    #[test]
+    fn set_path_updates_existing_path_preserving_mtime() {
+        let mut g = GameMetaData::new("game1", "Game 1");
+        g.set_path("device-A", "/old/path");
+        g.set_last_sync_mtime("device-A", ts(123));
+        // Cambiar el path tras un sync no debe perder el mtime registrado.
+        g.set_path("device-A", "/new/path");
+        assert_eq!(g.get_path("device-A"), Some("/new/path"));
+        assert_eq!(g.get_last_sync_mtime("device-A"), Some(ts(123)));
+    }
+
+    #[test]
+    fn set_last_sync_mtime_no_op_when_device_not_registered() {
+        let mut g = GameMetaData::new("game1", "Game 1");
+        // Sin set_path previo, set_last_sync_mtime debe ser no-op (no panic).
+        g.set_last_sync_mtime("device-unknown", ts(123));
+        assert_eq!(g.get_last_sync_mtime("device-unknown"), None);
+    }
+
+    #[test]
+    fn get_path_returns_none_for_unknown_device() {
+        let g = GameMetaData::new("game1", "Game 1");
+        assert_eq!(g.get_path("nope"), None);
+    }
+
+    // GameListFile::upsert_game --------------------------------------------------
+
+    #[test]
+    fn upsert_game_inserts_new() {
+        let mut list = GameListFile::default();
+        list.upsert_game(GameMetaData::new("game1", "Game 1"));
+        assert_eq!(list.games.len(), 1);
+        assert!(list.get_game("game1").is_some());
+    }
+
+    #[test]
+    fn upsert_game_updates_existing_in_place() {
+        let mut list = GameListFile::default();
+        list.upsert_game(GameMetaData::new("game1", "Game 1"));
+        list.upsert_game(GameMetaData::new("game2", "Game 2"));
+        // Re-upsert con datos modificados de game1.
+        let mut updated = GameMetaData::new("game1", "Game 1");
+        updated.storage_bytes = 9999;
+        list.upsert_game(updated);
+        assert_eq!(list.games.len(), 2);
+        assert_eq!(list.get_game("game1").unwrap().storage_bytes, 9999);
+    }
+
+    // GameListFile::get_device_name ----------------------------------------------
+
+    #[test]
+    fn get_device_name_returns_friendly_name() {
+        let mut list = GameListFile::default();
+        list.device_names
+            .insert("uuid-aaa".into(), "Jayo-PC".into());
+        assert_eq!(list.get_device_name("uuid-aaa"), "Jayo-PC");
+    }
+
+    #[test]
+    fn get_device_name_falls_back_to_uuid_when_unknown() {
+        let list = GameListFile::default();
+        assert_eq!(list.get_device_name("uuid-unknown"), "uuid-unknown");
+    }
+
+    // Round-trip JSON ------------------------------------------------------------
+
+    #[test]
+    fn round_trip_full_game_list() {
+        let mut list = GameListFile::default();
+        list.device_names
+            .insert("uuid-pc".into(), "Jayo-PC".into());
+        let mut g = GameMetaData::new("game1", "Game 1");
+        g.set_path("uuid-pc", "/home/jayo/saves/game1");
+        g.set_last_sync_mtime("uuid-pc", ts(1_700_000_000));
+        g.last_synced_from = Some("uuid-pc".into());
+        g.last_sync_time_utc = Some(ts(1_700_000_010));
+        g.latest_write_time_utc = Some(ts(1_700_000_005));
+        g.storage_bytes = 12345;
+        list.upsert_game(g);
+
+        let json = serde_json::to_string(&list).unwrap();
+        let parsed: GameListFile = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.games.len(), 1);
+        let parsed_g = parsed.get_game("game1").unwrap();
+        assert_eq!(parsed_g.name, "Game 1");
+        assert_eq!(parsed_g.get_path("uuid-pc"), Some("/home/jayo/saves/game1"));
+        assert_eq!(parsed_g.get_last_sync_mtime("uuid-pc"), Some(ts(1_700_000_000)));
+        assert_eq!(parsed_g.last_synced_from.as_deref(), Some("uuid-pc"));
+        assert_eq!(parsed_g.last_sync_time_utc, Some(ts(1_700_000_010)));
+        assert_eq!(parsed_g.storage_bytes, 12345);
+        assert_eq!(parsed.get_device_name("uuid-pc"), "Jayo-PC");
+    }
+
+    // Backwards-compat: JSON viejo sin device_names ------------------------------
+
+    #[test]
+    fn parses_legacy_json_without_device_names_field() {
+        let legacy = r#"{
+            "games": [
+                {
+                    "id": "game1",
+                    "name": "Game 1",
+                    "path_by_device": {},
+                    "last_synced_from": null,
+                    "last_sync_time_utc": null,
+                    "latest_write_time_utc": null,
+                    "storage_bytes": 0
+                }
+            ]
+        }"#;
+        let parsed: GameListFile = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.games.len(), 1);
+        assert!(parsed.device_names.is_empty());
+    }
+
+    // Backwards-compat: DevicePathEntry sin last_sync_mtime ----------------------
+
+    #[test]
+    fn parses_legacy_device_path_entry_without_last_sync_mtime() {
+        let legacy = r#"{
+            "id": "game1",
+            "name": "Game 1",
+            "path_by_device": {
+                "uuid-old": { "path": "/saves/game1" }
+            },
+            "last_synced_from": null,
+            "last_sync_time_utc": null,
+            "latest_write_time_utc": null,
+            "storage_bytes": 0
+        }"#;
+        let parsed: GameMetaData = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.get_path("uuid-old"), Some("/saves/game1"));
+        assert_eq!(parsed.get_last_sync_mtime("uuid-old"), None);
+    }
+
+    // GameListFile::get_game_mut -------------------------------------------------
+
+    #[test]
+    fn get_game_mut_allows_in_place_modification() {
+        let mut list = GameListFile::default();
+        list.upsert_game(GameMetaData::new("game1", "Game 1"));
+        list.get_game_mut("game1").unwrap().storage_bytes = 42;
+        assert_eq!(list.get_game("game1").unwrap().storage_bytes, 42);
+    }
+}

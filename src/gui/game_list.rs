@@ -12,9 +12,7 @@ use crate::{
         config::{Config, Sort},
         manifest::Manifest,
     },
-    scan::{
-        layout::GameLayout, BackupInfo, DuplicateDetector, ScanInfo, ScanKind,
-    },
+    scan::{BackupInfo, DuplicateDetector, ScanInfo, ScanKind},
 };
 
 #[derive(Default)]
@@ -22,7 +20,6 @@ pub struct GameListEntry {
     pub scan_info: ScanInfo,
     pub backup_info: Option<BackupInfo>,
     pub tree: Option<FileTree>,
-    pub game_layout: Option<GameLayout>,
     /// The `scan_info` gets mutated in response to things like toggling saves off,
     /// so we need a persistent flag to say if the game has been scanned yet.
     pub scanned: bool,
@@ -200,7 +197,6 @@ impl GameList {
                 sort,
                 &DuplicateDetector::default(),
                 &Default::default(),
-                None,
                 config,
                 scan_kind,
             );
@@ -228,7 +224,6 @@ impl GameList {
         sort: &Sort,
         duplicate_detector: &DuplicateDetector,
         duplicates: &HashSet<String>,
-        game_layout: Option<GameLayout>,
         config: &Config,
         scan_kind: ScanKind,
     ) {
@@ -241,7 +236,6 @@ impl GameList {
                 if scan_info.can_report_game() {
                     self.entries[i].scan_info = scan_info;
                     self.entries[i].backup_info = backup_info;
-                    self.entries[i].game_layout = game_layout;
                     self.entries[i].scanned = scanned || self.entries[i].scanned;
                     if self.expanded_games.contains(&game_name) {
                         self.entries[i].refresh_tree(duplicate_detector, config, scan_kind);
@@ -254,7 +248,6 @@ impl GameList {
                 let mut entry = GameListEntry {
                     scan_info,
                     backup_info,
-                    game_layout,
                     scanned,
                     ..Default::default()
                 };

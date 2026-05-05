@@ -135,8 +135,17 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         .collect();
 
     // Auto-registrar rutas para juegos sin ruta en este dispositivo
-    if let Err(e) = auto_register_paths(&config, &device, &sync_config) {
-        log::error!("[sync daemon] Error during path auto-registration: {e}");
+    let manifest_for_register = match Manifest::load() {
+        Ok(m) => Some(m.with_extensions(&config)),
+        Err(e) => {
+            log::warn!("[sync daemon] Could not load manifest for auto-register: {e:?}");
+            None
+        }
+    };
+    if let Some(manifest) = &manifest_for_register {
+        if let Err(e) = auto_register_paths(&config, &device, &sync_config, manifest) {
+            log::error!("[sync daemon] Error during path auto-registration: {e}");
+        }
     }
 
     // Releer el game-list después de auto-registro
@@ -563,6 +572,7 @@ fn auto_register_paths(
     config: &Config,
     device: &DeviceIdentity,
     sync_config: &crate::sync::sync_config::SyncGamesConfig,
+    manifest: &Manifest,
 ) -> Result<(), String> {
     let mut game_list = match read_game_list_from_cloud(config) {
         Some(gl) => gl,
@@ -602,21 +612,12 @@ fn auto_register_paths(
         unregistered.len()
     );
 
-    // El resto de la función no cambia
-    let manifest = match Manifest::load() {
-        Ok(m) => m.with_extensions(config),
-        Err(e) => {
-            log::warn!("[sync daemon] Could not load manifest: {e:?}");
-            return Ok(());
-        }
-    };
-
     let app_dir = app_dir();
     let roots = config.expanded_roots();
     let layout = BackupLayout::new(config.backup.path.clone());
-    let title_finder = TitleFinder::new(config, &manifest, layout.restorable_game_set());
+    let title_finder = TitleFinder::new(config, manifest, layout.restorable_game_set());
     let steam_shortcuts = SteamShortcuts::scan(&title_finder);
-    let launchers = Launchers::scan(&roots, &manifest, &unregistered, &title_finder, None);
+    let launchers = Launchers::scan(&roots, manifest, &unregistered, &title_finder, None);
 
     let mut _any_changes = false;
 
@@ -646,7 +647,6 @@ fn auto_register_paths(
             None,
             &ToggledPaths::default(),
             &ToggledRegistry::default(),
-            None,
             &steam_shortcuts,
             false,
         );
@@ -1162,8 +1162,22 @@ fn write_sync_status_with_errors(
         }));
     }
 
-    let json = serde_json::json!({ "games": map });
-    if let Ok(content) = serde_json::to_string(&json) {
+    // Preservar claves top-level del JSON existente (p.ej. `rclone_missing` que
+    // escribe write_rclone_missing_flag). Sin esto, cada tick del worker loop
+    // destruye flags que el daemon o la GUI han escrito por separado.
+    let mut full = if let Some(content) = path.read() {
+        serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if !full.is_object() {
+        full = serde_json::json!({});
+    }
+    full.as_object_mut()
+        .unwrap()
+        .insert("games".to_string(), serde_json::Value::Object(map));
+
+    if let Ok(content) = serde_json::to_string(&full) {
         if let Ok(path_buf) = path.as_std_path_buf() {
             let _ = std::fs::write(path_buf, content);
         }
@@ -1183,4 +1197,668 @@ fn get_sync_games_mtime() -> Option<std::time::SystemTime> {
     path.as_std_path_buf().ok()
         .and_then(|p| std::fs::metadata(p).ok())
         .and_then(|m| m.modified().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::{
+        game_list::{GameListFile, GameMetaData},
+        sync_config::{SaveMode, SyncGamesConfig},
+    };
+
+    fn sp(p: &std::path::Path) -> StrictPath {
+        StrictPath::new(p.to_string_lossy().to_string())
+    }
+
+    // normalize_path -----------------------------------------------------------
+
+    #[test]
+    fn normalize_path_lowercases_and_uses_forward_slashes() {
+        assert_eq!(
+            normalize_path(r"C:\Users\Foo\Documents"),
+            "c:/users/foo/documents"
+        );
+        assert_eq!(normalize_path("/Home/Bar"), "/home/bar");
+        assert_eq!(normalize_path(""), "");
+    }
+
+    // save_last_mod_time -------------------------------------------------------
+
+    #[test]
+    fn save_last_mod_time_writes_json_with_value() {
+        let dir = tempfile::tempdir().unwrap();
+        save_last_mod_time(&sp(dir.path()), &Some("2026-05-05T10:00:00Z".to_string()));
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-state.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            parsed["last_known_mod_time"].as_str(),
+            Some("2026-05-05T10:00:00Z")
+        );
+    }
+
+    #[test]
+    fn save_last_mod_time_writes_null_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        save_last_mod_time(&sp(dir.path()), &None);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-state.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed["last_known_mod_time"].is_null());
+    }
+
+    // write_rclone_missing_flag ------------------------------------------------
+
+    #[test]
+    fn write_rclone_missing_flag_creates_status_file() {
+        let dir = tempfile::tempdir().unwrap();
+        write_rclone_missing_flag(&sp(dir.path()), true);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["rclone_missing"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn write_rclone_missing_flag_preserves_existing_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        // Pre-populate with existing per-game status.
+        std::fs::write(
+            dir.path().join("daemon-status.json"),
+            r#"{"some-game":{"status":"synced"}}"#,
+        )
+        .unwrap();
+
+        write_rclone_missing_flag(&sp(dir.path()), true);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["rclone_missing"], serde_json::Value::Bool(true));
+        assert_eq!(parsed["some-game"]["status"], "synced");
+    }
+
+    #[test]
+    fn write_rclone_missing_flag_overwrites_corrupted_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("daemon-status.json"), "this is not json").unwrap();
+
+        write_rclone_missing_flag(&sp(dir.path()), false);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["rclone_missing"], serde_json::Value::Bool(false));
+    }
+
+    // write_game_list_local: merge ---------------------------------------------
+
+    fn make_game(id: &str) -> GameMetaData {
+        GameMetaData::new(id.to_string(), id.to_string())
+    }
+
+    #[test]
+    fn write_game_list_local_creates_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut list = GameListFile::default();
+        list.upsert_game(make_game("g1"));
+        write_game_list_local(&sp(dir.path()), &list);
+
+        let path = dir.path().join("ludusavi-game-list.json");
+        assert!(path.is_file());
+        let parsed: GameListFile = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(parsed.games.len(), 1);
+        assert_eq!(parsed.games[0].id, "g1");
+    }
+
+    #[test]
+    fn write_game_list_local_preserves_local_only_games() {
+        // Escenario clave: el daemon escribe el game-list local a partir de lo
+        // que vino del cloud, pero el usuario tiene un juego custom local que
+        // todavía no ha subido. NO debe perderse.
+        let dir = tempfile::tempdir().unwrap();
+        let mut existing = GameListFile::default();
+        existing.upsert_game(make_game("local-only-custom"));
+        existing.upsert_game(make_game("g1-old-cloud"));
+        std::fs::write(
+            dir.path().join("ludusavi-game-list.json"),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        // Cloud ahora tiene g1-old-cloud (actualizado) y g2-new (nuevo).
+        let mut from_cloud = GameListFile::default();
+        let mut g1 = make_game("g1-old-cloud");
+        g1.storage_bytes = 9999; // valor actualizado
+        from_cloud.upsert_game(g1);
+        from_cloud.upsert_game(make_game("g2-new"));
+
+        write_game_list_local(&sp(dir.path()), &from_cloud);
+
+        let merged: GameListFile = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("ludusavi-game-list.json")).unwrap(),
+        )
+        .unwrap();
+        // Los 3 juegos deben estar.
+        assert_eq!(merged.games.len(), 3);
+        assert!(merged.get_game("local-only-custom").is_some(), "custom local debe sobrevivir");
+        assert!(merged.get_game("g1-old-cloud").is_some());
+        assert_eq!(merged.get_game("g1-old-cloud").unwrap().storage_bytes, 9999, "cloud sobreescribe");
+        assert!(merged.get_game("g2-new").is_some(), "juego nuevo del cloud debe estar");
+    }
+
+    #[test]
+    fn write_game_list_local_preserves_local_only_device_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut existing = GameListFile::default();
+        existing.device_names.insert("uuid-deck".into(), "MyDeck".into());
+        existing.device_names.insert("uuid-pc".into(), "OldPC".into());
+        std::fs::write(
+            dir.path().join("ludusavi-game-list.json"),
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
+
+        // Cloud only knows uuid-pc (with a new name).
+        let mut from_cloud = GameListFile::default();
+        from_cloud.device_names.insert("uuid-pc".into(), "Jayo-PC".into());
+
+        write_game_list_local(&sp(dir.path()), &from_cloud);
+
+        let merged: GameListFile = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("ludusavi-game-list.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(merged.get_device_name("uuid-pc"), "Jayo-PC", "cloud sobreescribe");
+        assert_eq!(merged.get_device_name("uuid-deck"), "MyDeck", "local-only sobrevive");
+    }
+
+    // calculate_game_status ----------------------------------------------------
+
+    #[test]
+    fn calculate_status_none_mode_returns_not_managed() {
+        let game = make_game("g1");
+        let config = Config::default();
+        let sync = SyncGamesConfig::default(); // mode=None for "g1"
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "not_managed");
+    }
+
+    #[test]
+    fn calculate_status_local_no_path_pending_backup() {
+        let game = make_game("g1");
+        let config = Config::default();
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Local);
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "pending_backup");
+    }
+
+    #[test]
+    fn calculate_status_cloud_unset_directory_pending_backup() {
+        // Modo CLOUD pero el juego no tiene path para este device → UnsetDirectory
+        // que se mapea a "pending_backup".
+        let game = make_game("g1");
+        let config = Config::default();
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Cloud);
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "pending_backup");
+    }
+
+    #[test]
+    fn calculate_status_local_zip_newer_than_saves_pending_restore() {
+        // Crear un ZIP mas nuevo que los saves → status "pending_restore".
+        let backup_dir = tempfile::tempdir().unwrap();
+        let saves_dir = tempfile::tempdir().unwrap();
+
+        // Saves: 1 fichero con mtime fijado a T-1000.
+        let save_file = saves_dir.path().join("save.dat");
+        std::fs::write(&save_file, b"x").unwrap();
+        let save_mtime = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+        filetime::set_file_mtime(&save_file, save_mtime).unwrap();
+
+        // ZIP: fichero vacio con mtime fijado a T (mas nuevo).
+        let zip_path = backup_dir.path().join("g1.zip");
+        std::fs::write(&zip_path, b"zip").unwrap();
+        let zip_mtime = filetime::FileTime::from_unix_time(1_000_001_000, 0);
+        filetime::set_file_mtime(&zip_path, zip_mtime).unwrap();
+
+        let mut config = Config::default();
+        config.backup.path = sp(backup_dir.path());
+        let mut game = make_game("g1");
+        game.set_path("device-A", saves_dir.path().to_string_lossy().to_string());
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Local);
+
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "pending_restore");
+    }
+
+    #[test]
+    fn calculate_status_local_saves_newer_than_zip_pending_backup() {
+        let backup_dir = tempfile::tempdir().unwrap();
+        let saves_dir = tempfile::tempdir().unwrap();
+
+        let zip_path = backup_dir.path().join("g1.zip");
+        std::fs::write(&zip_path, b"zip").unwrap();
+        let zip_mtime = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+        filetime::set_file_mtime(&zip_path, zip_mtime).unwrap();
+
+        let save_file = saves_dir.path().join("save.dat");
+        std::fs::write(&save_file, b"x").unwrap();
+        let save_mtime = filetime::FileTime::from_unix_time(1_000_001_000, 0);
+        filetime::set_file_mtime(&save_file, save_mtime).unwrap();
+
+        let mut config = Config::default();
+        config.backup.path = sp(backup_dir.path());
+        let mut game = make_game("g1");
+        game.set_path("device-A", saves_dir.path().to_string_lossy().to_string());
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Local);
+
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "pending_backup");
+    }
+
+    #[test]
+    fn calculate_status_local_equal_mtimes_synced() {
+        let backup_dir = tempfile::tempdir().unwrap();
+        let saves_dir = tempfile::tempdir().unwrap();
+
+        let zip_path = backup_dir.path().join("g1.zip");
+        std::fs::write(&zip_path, b"zip").unwrap();
+        let mtime = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+        filetime::set_file_mtime(&zip_path, mtime).unwrap();
+
+        let save_file = saves_dir.path().join("save.dat");
+        std::fs::write(&save_file, b"x").unwrap();
+        filetime::set_file_mtime(&save_file, mtime).unwrap();
+
+        let mut config = Config::default();
+        config.backup.path = sp(backup_dir.path());
+        let mut game = make_game("g1");
+        game.set_path("device-A", saves_dir.path().to_string_lossy().to_string());
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Local);
+
+        let computed = calculate_game_status(&game, "device-A", &config, &sync);
+        assert_eq!(computed.status, "synced");
+    }
+
+    // write_sync_status_with_errors --------------------------------------------
+
+    #[test]
+    fn write_sync_status_writes_status_per_managed_game() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut list = GameListFile::default();
+        let mut g1 = make_game("g1");
+        g1.set_path("device-A", "/some/local/path");
+        list.upsert_game(g1);
+
+        let config = Config::default();
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Cloud);
+
+        let errors: std::collections::HashMap<String, ErrorInfo> =
+            std::collections::HashMap::new();
+        write_sync_status_with_errors(&sp(dir.path()), &list, "device-A", &config, &sync, &errors);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        // El JSON envuelve en {"games": {...}}.
+        assert!(parsed["games"]["g1"].is_object(), "games.g1 entry should exist");
+        assert!(parsed["games"]["g1"]["status"].is_string());
+    }
+
+    #[test]
+    fn write_sync_status_includes_error_info_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut list = GameListFile::default();
+        let mut g1 = make_game("g1");
+        g1.set_path("device-A", "/some/local/path");
+        list.upsert_game(g1);
+
+        let config = Config::default();
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("g1", SaveMode::Cloud);
+
+        let mut errors = std::collections::HashMap::new();
+        errors.insert(
+            "g1".to_string(),
+            ErrorInfo {
+                category: ErrorCategory::Network,
+                direction: OperationDirection::Upload,
+                message: "Cannot reach the cloud.".to_string(),
+            },
+        );
+
+        write_sync_status_with_errors(&sp(dir.path()), &list, "device-A", &config, &sync, &errors);
+
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let entry = &parsed["games"]["g1"];
+        assert_eq!(entry["status"], "error");
+        assert_eq!(entry["error_category"], "network");
+        assert_eq!(entry["error_direction"], "upload");
+        assert_eq!(entry["error_message"], "Cannot reach the cloud.");
+    }
+
+    /// Regresión: write_rclone_missing_flag(true) escribe el flag a top-level.
+    /// Si write_sync_status_with_errors corre después y NO preserva las claves
+    /// top-level existentes, el flag se pierde y la GUI deja de ver que rclone
+    /// está caído. El fix está en write_sync_status_with_errors: leer JSON
+    /// existente y mergear "games" en lugar de sobrescribir todo.
+    #[test]
+    fn write_sync_status_should_preserve_rclone_missing_flag() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. Daemon detecta rclone ausente → escribe el flag.
+        write_rclone_missing_flag(&sp(dir.path()), true);
+
+        // 2. Tick posterior del worker loop escribe status por-juego.
+        let list = GameListFile::default();
+        let config = Config::default();
+        let sync = SyncGamesConfig::default();
+        let errors = std::collections::HashMap::new();
+        write_sync_status_with_errors(&sp(dir.path()), &list, "device-A", &config, &sync, &errors);
+
+        // 3. El flag debería seguir ahí.
+        let content = std::fs::read_to_string(dir.path().join("daemon-status.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            parsed["rclone_missing"],
+            serde_json::Value::Bool(true),
+            "rclone_missing flag was lost after write_sync_status_with_errors"
+        );
+    }
+
+    // ============================================================================
+    // Tests de auto_register_paths
+    //
+    // El fix de testabilidad: la función ahora recibe el `Manifest` como parámetro
+    // en lugar de cargarlo de disco. Inyectamos manifests controlados via
+    // `Manifest::load_from_string`.
+    // ============================================================================
+
+    use crate::cloud::Remote;
+    use crate::resource::manifest::Manifest;
+    use crate::resource::ResourceFile;
+
+    fn skip_if_no_rclone() -> bool {
+        if which::which("rclone").is_err() {
+            eprintln!("[skip] rclone not in PATH");
+            return true;
+        }
+        false
+    }
+
+    /// Cloud simulado en tempdir local con remote ":local:" on-the-fly.
+    /// Mismo patrón que en sync/operations.rs.
+    struct CloudEnv {
+        cloud: tempfile::TempDir,
+        config: Config,
+    }
+
+    impl CloudEnv {
+        fn new() -> Self {
+            let cloud = tempfile::tempdir().unwrap();
+            let mut config = Config::default();
+            config.cloud.remote = Some(Remote::Custom { id: ":local".to_string() });
+            config.cloud.path = cloud.path().to_string_lossy().to_string();
+            if !config.apps.rclone.is_valid() {
+                let rclone_path = which::which("rclone").unwrap().to_string_lossy().to_string();
+                config.apps.rclone.path = StrictPath::new(rclone_path);
+            }
+            Self { cloud, config }
+        }
+    }
+
+    fn fixed_device(id: &str, name: &str) -> DeviceIdentity {
+        DeviceIdentity { id: id.to_string(), name: name.to_string() }
+    }
+
+    /// Manifest mínimo con un solo juego que tiene un único path bajo `<base>`.
+    /// `<base>` se sustituye por install_dir resuelto contra los roots configurados.
+    fn manifest_with_single_game(game_id: &str) -> Manifest {
+        let yaml = format!(
+            r#"
+{game_id}:
+  files:
+    "<base>/save.dat":
+      tags:
+        - save
+"#
+        );
+        Manifest::load_from_string(&yaml).expect("manifest yaml should parse")
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 1: cloud vacío → función no-op (devuelve Ok sin escribir nada).
+    // ----------------------------------------------------------------------------
+    #[test]
+    fn auto_register_no_op_when_cloud_empty() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "PC");
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("Stardew", SaveMode::Sync);
+
+        let manifest = manifest_with_single_game("Stardew");
+
+        // No hemos escrito game-list al cloud. La función debe salir sin error
+        // y NO debe crear el game-list (porque no hay nada que actualizar).
+        let result = auto_register_paths(&env.config, &device, &sync, &manifest);
+        assert!(result.is_ok(), "function should return Ok when cloud is empty");
+
+        // El cloud sigue sin tener game-list.
+        let cloud_file = env.cloud.path().join(crate::sync::game_list::GAME_LIST_FILE_NAME);
+        assert!(!cloud_file.exists(), "function should not create game-list when cloud was empty");
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 2: device_name diferente del registrado → se actualiza en cloud,
+    // incluso si NO hay juegos por registrar.
+    // ----------------------------------------------------------------------------
+    #[test]
+    fn auto_register_updates_device_name_when_changed() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "Jayo-PC-NEW");
+
+        // Pre-poblamos el cloud con un game-list que tiene un device_name viejo.
+        let mut list = GameListFile::default();
+        list.device_names.insert("uuid-pc".into(), "OldName".into());
+        crate::sync::operations::write_game_list_to_cloud(&env.config, &list).unwrap();
+
+        // Sin juegos SYNC en sync_config: solo el device_name se actualiza.
+        let sync = SyncGamesConfig::default();
+        let manifest = Manifest::load_from_string("{}").unwrap();
+
+        auto_register_paths(&env.config, &device, &sync, &manifest).unwrap();
+
+        let parsed = crate::sync::operations::read_game_list_from_cloud(&env.config).unwrap();
+        assert_eq!(
+            parsed.get_device_name("uuid-pc"),
+            "Jayo-PC-NEW",
+            "device_name should have been updated in cloud"
+        );
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 3: si el device_name ya coincide, no se reescribe el cloud (no hay
+    // nada que cambiar). Verificamos que el cloud sigue intacto leyendo su
+    // contenido.
+    // ----------------------------------------------------------------------------
+    #[test]
+    fn auto_register_skips_writing_when_nothing_to_register_and_name_matches() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "Jayo-PC");
+
+        // Cloud ya tiene el device_name correcto y un juego con path registrado.
+        let mut list = GameListFile::default();
+        list.device_names.insert("uuid-pc".into(), "Jayo-PC".into());
+        let mut g = GameMetaData::new("Stardew".to_string(), "Stardew".to_string());
+        g.set_path("uuid-pc", "/already/registered");
+        list.upsert_game(g);
+        crate::sync::operations::write_game_list_to_cloud(&env.config, &list).unwrap();
+
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("Stardew", SaveMode::Sync);
+        let manifest = manifest_with_single_game("Stardew");
+
+        auto_register_paths(&env.config, &device, &sync, &manifest).unwrap();
+
+        // El path registrado sigue siendo el mismo (no se sobreescribió).
+        let after = crate::sync::operations::read_game_list_from_cloud(&env.config).unwrap();
+        assert_eq!(
+            after.get_game("Stardew").unwrap().get_path("uuid-pc"),
+            Some("/already/registered"),
+            "registered path should not have been overwritten"
+        );
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 4: juego SYNC sin path y manifest NO conoce el juego → log warning,
+    // no se registra path, pero la función completa Ok y actualiza device_name.
+    // ----------------------------------------------------------------------------
+    #[test]
+    fn auto_register_skips_games_not_in_manifest() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "PC");
+
+        // Cloud arranca con device_name pero sin el juego.
+        let mut list = GameListFile::default();
+        list.device_names.insert("uuid-pc".into(), "PC".into());
+        crate::sync::operations::write_game_list_to_cloud(&env.config, &list).unwrap();
+
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("UnknownGame", SaveMode::Sync);
+
+        // Manifest vacío: no conoce "UnknownGame".
+        let manifest = Manifest::load_from_string("{}").unwrap();
+
+        let result = auto_register_paths(&env.config, &device, &sync, &manifest);
+        assert!(result.is_ok());
+
+        // El juego se añade al game-list pero sin path para uuid-pc.
+        let after = crate::sync::operations::read_game_list_from_cloud(&env.config).unwrap();
+        let entry = after.get_game("UnknownGame");
+        assert!(entry.is_some(), "game should be added to game-list as a stub");
+        assert_eq!(
+            entry.unwrap().get_path("uuid-pc"),
+            None,
+            "no path should be registered when manifest doesn't know the game"
+        );
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 5: solo se procesan juegos en modo SYNC. Juegos en LOCAL/CLOUD/NONE
+    // se ignoran completamente, aunque no tengan path registrado.
+    // ----------------------------------------------------------------------------
+    #[test]
+    fn auto_register_only_handles_sync_mode() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "PC");
+
+        let mut list = GameListFile::default();
+        list.device_names.insert("uuid-pc".into(), "PC".into());
+        crate::sync::operations::write_game_list_to_cloud(&env.config, &list).unwrap();
+
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode("LocalGame", SaveMode::Local);
+        sync.set_mode("CloudGame", SaveMode::Cloud);
+        sync.set_mode("NoneGame", SaveMode::None);
+        // No hay ningún juego en SYNC.
+
+        let manifest = Manifest::load_from_string("{}").unwrap();
+        auto_register_paths(&env.config, &device, &sync, &manifest).unwrap();
+
+        // No se debe haber añadido NINGÚN juego al game-list (todos eran no-SYNC).
+        let after = crate::sync::operations::read_game_list_from_cloud(&env.config).unwrap();
+        assert!(after.get_game("LocalGame").is_none());
+        assert!(after.get_game("CloudGame").is_none());
+        assert!(after.get_game("NoneGame").is_none());
+    }
+
+    // ----------------------------------------------------------------------------
+    // Caso 6: con un manifest cuyo path resuelve a una carpeta real bajo `<xdgData>`,
+    // scan_game_for_backup encuentra el fichero y registra el path. Cubre el camino
+    // happy: SYNC + manifest válido + saves físicamente en disco → registro.
+    //
+    // Linux-only: en otros OS el path resolver usa otras placeholders.
+    // ----------------------------------------------------------------------------
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn auto_register_registers_path_from_manifest() {
+        if skip_if_no_rclone() {
+            return;
+        }
+        let env = CloudEnv::new();
+        let device = fixed_device("uuid-pc", "PC");
+
+        let mut list = GameListFile::default();
+        list.device_names.insert("uuid-pc".into(), "PC".into());
+        crate::sync::operations::write_game_list_to_cloud(&env.config, &list).unwrap();
+
+        // Generamos un nombre único para el game y la carpeta de saves para que
+        // tests paralelos no colisionen.
+        let unique = format!(
+            "ludusavi-test-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        );
+        let game_id = unique.clone();
+
+        // Crear la carpeta real bajo XDG_DATA con un fichero dentro. scan recorre
+        // este directorio (vía el placeholder <xdgData>) y encuentra el save.
+        let xdg_data = crate::path::CommonPath::Data.get().expect("XDG data dir");
+        let game_dir = std::path::Path::new(&xdg_data).join(&unique);
+        std::fs::create_dir_all(&game_dir).unwrap();
+        std::fs::write(game_dir.join("save.dat"), b"test save data").unwrap();
+
+        // Cleanup al salir del test (incluso si hay panic).
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(game_dir.clone());
+
+        let mut sync = SyncGamesConfig::default();
+        sync.set_mode(&game_id, SaveMode::Sync);
+
+        let yaml = format!(
+            r#"
+{game_id}:
+  files:
+    "<xdgData>/{unique}/save.dat":
+      tags:
+        - save
+"#
+        );
+        let manifest = Manifest::load_from_string(&yaml).unwrap();
+
+        auto_register_paths(&env.config, &device, &sync, &manifest).unwrap();
+
+        let after = crate::sync::operations::read_game_list_from_cloud(&env.config).unwrap();
+        let entry = after.get_game(&game_id).expect("game should be in game-list");
+        let path = entry.get_path("uuid-pc").expect("path should be registered");
+        assert!(
+            path.contains(&unique),
+            "registered path {path:?} should contain the unique folder name"
+        );
+    }
 }

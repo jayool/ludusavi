@@ -253,7 +253,6 @@ pub enum Operation {
         games: Option<GameSelection>,
         errors: Vec<Error>,
         force_new_full_backup: bool,
-        syncable_games: HashSet<String>,
         active_games: HashMap<String, chrono::DateTime<chrono::Utc>>,
     },
 }
@@ -270,7 +269,6 @@ impl Operation {
             games,
             errors: vec![],
             force_new_full_backup: false,
-            syncable_games: HashSet::new(),
             active_games: HashMap::new(),
         }
     }
@@ -330,23 +328,6 @@ impl Operation {
             Operation::Backup {
                 force_new_full_backup, ..
             } => *force_new_full_backup = value,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn syncable_games(&self) -> Option<&HashSet<String>> {
-        match self {
-            Operation::Idle => None,
-            Operation::Backup { syncable_games, .. } => Some(syncable_games),
-        }
-    }
-
-    pub fn add_syncable_game(&mut self, title: String) {
-        match self {
-            Operation::Idle => {}
-            Operation::Backup { syncable_games, .. } => {
-                syncable_games.insert(title);
-            }
         }
     }
 

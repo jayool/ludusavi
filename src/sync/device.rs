@@ -65,3 +65,61 @@ impl DeviceIdentity {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// El formato es UUID-v4-shape: 8-4-4-4-12 hex chars con un '4' fijo
+    /// al inicio del tercer grupo (versión 4) y un nibble del cuarto grupo
+    /// en el rango 8-b (variant RFC 4122).
+    #[test]
+    fn generate_id_has_uuid_v4_shape() {
+        let id = DeviceIdentity::generate_id();
+        let parts: Vec<&str> = id.split('-').collect();
+        assert_eq!(parts.len(), 5, "expected 5 dash-separated groups in {id}");
+        assert_eq!(parts[0].len(), 8, "first group should be 8 chars");
+        assert_eq!(parts[1].len(), 4, "second group should be 4 chars");
+        assert_eq!(parts[2].len(), 4, "third group should be 4 chars");
+        assert_eq!(parts[3].len(), 4, "fourth group should be 4 chars");
+        assert_eq!(parts[4].len(), 12, "fifth group should be 12 chars");
+
+        // Versión 4 (UUID v4): el tercer grupo empieza con '4'.
+        assert!(parts[2].starts_with('4'), "expected v4 marker in {id}");
+        // Variant RFC 4122: el primer nibble del cuarto grupo está en 8..=b.
+        let variant = parts[3].chars().next().unwrap();
+        assert!(
+            matches!(variant, '8' | '9' | 'a' | 'b'),
+            "expected RFC 4122 variant 8/9/a/b, got {variant} in {id}"
+        );
+
+        // Todos los caracteres son hex lowercase.
+        for c in id.chars() {
+            assert!(
+                c == '-' || c.is_ascii_hexdigit() && !c.is_uppercase(),
+                "unexpected char {c:?} in {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn generate_id_produces_different_ids_on_consecutive_calls() {
+        let a = DeviceIdentity::generate_id();
+        // Pequeña pausa para garantizar nanos distintos en sistemas muy rápidos.
+        std::thread::sleep(std::time::Duration::from_micros(10));
+        let b = DeviceIdentity::generate_id();
+        assert_ne!(a, b, "two consecutive ids should differ");
+    }
+
+    #[test]
+    fn device_identity_round_trips_through_json() {
+        let original = DeviceIdentity {
+            id: "12345678-aaaa-4bbb-8ccc-ddddeeeeffff".into(),
+            name: "Jayo-PC".into(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: DeviceIdentity = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, original.id);
+        assert_eq!(parsed.name, original.name);
+    }
+}

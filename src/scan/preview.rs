@@ -4,7 +4,6 @@ use crate::{
     path::StrictPath,
     resource::config::{ToggledPaths, ToggledRegistry},
     scan::{
-        layout::Backup,
         registry::{self, RegistryItem},
         BackupInfo, ScanChange, ScanChangeCount, ScanKind, ScannedFile, ScannedRegistry,
     },
@@ -18,12 +17,6 @@ pub struct ScanInfo {
     /// and should be used in its raw form.
     pub found_files: HashMap<StrictPath, ScannedFile>,
     pub found_registry_keys: HashMap<RegistryItem, ScannedRegistry>,
-    /// Only populated by a restoration scan.
-    pub available_backups: Vec<Backup>,
-    /// Only populated by a restoration scan.
-    pub backup: Option<Backup>,
-    /// Cheaper version of `!available_backups.is_empty()`, always populated.
-    pub has_backups: bool,
     /// Full registry data, if any.
     pub dumped_registry: Option<registry::Hives>,
     /// Last known configuration.
@@ -170,12 +163,9 @@ impl ScanInfo {
                 .sum::<usize>()
     }
 
+    /// El fork solo hace backup scans (no restore scans con backup-layout).
     pub fn scan_kind(&self) -> ScanKind {
-        if self.backup.is_some() {
-            ScanKind::Restore
-        } else {
-            ScanKind::Backup
-        }
+        ScanKind::Backup
     }
 
     fn is_brand_new(&self) -> bool {
@@ -232,8 +222,6 @@ impl ScanInfo {
         } else if self.is_brand_new() {
             if self.all_ignored() {
                 ScanChange::Same
-            } else if self.has_backups {
-                ScanChange::Different
             } else {
                 ScanChange::New
             }
@@ -296,44 +284,6 @@ impl ScanInfo {
             .collect();
     }
 
-    /// Is the backup newer than the current live data?
-    pub fn is_downgraded_backup(&self, backup: chrono::DateTime<chrono::Utc>) -> bool {
-        if self.overall_change() == ScanChange::Same {
-            return false;
-        }
-
-        if self.backup.is_some() {
-            // It's a restore.
-            return false;
-        }
-
-        self.found_files.iter().all(|(scan_key, file)| {
-            let Ok(live) = file.effective(scan_key).get_mtime() else {
-                return true;
-            };
-            let live = chrono::DateTime::<chrono::Utc>::from(live);
-            live < backup
-        })
-    }
-
-    /// Is the backup older than the current live data?
-    pub fn is_downgraded_restore(&self) -> bool {
-        if self.overall_change() == ScanChange::Same {
-            return false;
-        }
-
-        let Some(backup) = self.backup.as_ref().map(|x| *x.when()) else {
-            return false;
-        };
-
-        self.found_files.iter().any(|(scan_key, file)| {
-            let Ok(live) = file.effective(scan_key).get_mtime() else {
-                return false;
-            };
-            let live = chrono::DateTime::<chrono::Utc>::from(live);
-            live > backup
-        })
-    }
 }
 
 #[cfg(test)]
