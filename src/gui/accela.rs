@@ -80,6 +80,88 @@ pub enum Event {
     /// the first time the user enters the Games or ACCELA tab with
     /// paths configured. Silent on failure.
     InstallsLoaded(Result<Vec<AccelaInstall>, String>),
+
+    // --- GameDetail ACCELA section --------------------------------
+    /// User clicked one of the Overview/Uninstall/Tools sub-tabs.
+    SwitchInstallSubTab(InstallSubTab),
+    /// Linux-only checkboxes inside the Uninstall sub-tab.
+    SetUninstallRemoveCompatdata(bool),
+    SetUninstallRemoveSaves(bool),
+    /// User clicked an action button (Uninstall / Fix Install / Apply
+    /// Goldberg / Remove Goldberg / Run Steamless). Stashes the
+    /// pending action so the inline confirmation row appears.
+    RequestInstallAction(InstallAction, AccelaInstall),
+    /// User clicked "Yes" on the inline confirmation row. Fires the
+    /// adapter command associated with the pending action.
+    ConfirmInstallAction,
+    /// User clicked "Cancel" on the inline confirmation row, or
+    /// switched tabs/games while a confirmation was pending.
+    CancelInstallAction,
+    /// Adapter finished an install-action command (success or failure).
+    InstallActionFinished(Result<String, String>),
+}
+
+/// Sub-tab inside the ACCELA section of GameDetail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InstallSubTab {
+    #[default]
+    Overview,
+    Uninstall,
+    Tools,
+}
+
+impl InstallSubTab {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::Uninstall => "Uninstall",
+            Self::Tools => "Tools",
+        }
+    }
+}
+
+/// One of the destructive/transformative actions exposed in the
+/// Uninstall + Tools sub-tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallAction {
+    Uninstall,
+    FixInstall,
+    ApplyGoldberg,
+    RemoveGoldberg,
+    RunSteamless,
+}
+
+impl InstallAction {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Uninstall => "Uninstall",
+            Self::FixInstall => "Fix Install",
+            Self::ApplyGoldberg => "Apply Goldberg",
+            Self::RemoveGoldberg => "Remove Goldberg",
+            Self::RunSteamless => "Remove DRM (Steamless)",
+        }
+    }
+
+    pub fn confirm_message(&self, game: &str) -> String {
+        match self {
+            Self::Uninstall => format!(
+                "Delete '{game}' install folder, ACF and any selected Linux extras?"
+            ),
+            Self::FixInstall => format!(
+                "Delete the appmanifest_*.acf for '{game}'? The game files stay; \
+                 Steam will stop tracking the install."
+            ),
+            Self::ApplyGoldberg => format!(
+                "Replace steam_api*.dll in '{game}' with the Goldberg emulator?"
+            ),
+            Self::RemoveGoldberg => format!(
+                "Restore the original steam_api*.dll backups (.valve files) in '{game}'?"
+            ),
+            Self::RunSteamless => format!(
+                "Run Steamless on every executable found inside '{game}'?"
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -341,6 +423,24 @@ pub struct AccelaScreen {
     /// True once we've attempted a background fetch in this session.
     /// Avoids duplicate launches if the user toggles tabs rapidly.
     pub installs_fetched: bool,
+
+    // --- GameDetail ACCELA section state --------------------------
+    /// Currently visible sub-tab inside the ACCELA section of
+    /// GameDetail. Single global value (not per-game) — the section
+    /// reopens on Overview when the user switches games.
+    pub install_subtab: InstallSubTab,
+    /// Linux-only checkboxes for `uninstall_game`. Reset when the
+    /// confirmation row is cancelled / completed.
+    pub install_remove_compatdata: bool,
+    pub install_remove_saves: bool,
+    /// Pending action waiting for inline confirmation. Some(...) means
+    /// the row "Are you sure? [Yes] [Cancel]" is visible in the section.
+    pub install_pending_action: Option<(InstallAction, AccelaInstall)>,
+    /// True while an install-action command is running on the adapter.
+    pub install_busy: bool,
+    /// Last install-action message ("✓ Uninstalled.", "✗ Failed: ..."),
+    /// shown in the section until the next action or tab switch.
+    pub install_message: Option<String>,
 }
 
 pub enum SettingValue {
@@ -1665,6 +1765,284 @@ impl AccelaScreen {
             .class(style::Container::GamesTable)
             .into()
     }
+
+    /// Returns the AccelaInstall entry for `game_name`, or None.
+    /// Used by GameDetail to know whether to show the ACCELA section.
+    pub fn install_for_game(&self, game_name: &str) -> Option<&AccelaInstall> {
+        self.installs.iter().find(|i| i.game_name == game_name)
+    }
+
+    /// Top-level render of the ACCELA section that GameDetail embeds
+    /// when a game has an `AccelaInstall` entry. Three sub-tabs
+    /// (Overview / Uninstall / Tools) plus optional confirmation row
+    /// and last-action message.
+    pub fn render_install_section<'a>(
+        &'a self,
+        install: &'a AccelaInstall,
+    ) -> Element<'a> {
+        let header = text("📦 ACCELA INSTALL").size(13).class(style::Text::Muted);
+
+        let tabs = Row::new().spacing(4).align_y(Alignment::Center);
+        let tabs = [
+            InstallSubTab::Overview,
+            InstallSubTab::Uninstall,
+            InstallSubTab::Tools,
+        ]
+        .iter()
+        .fold(tabs, |row, tab| {
+            let active = self.install_subtab == *tab;
+            let class = if active {
+                style::Button::Primary
+            } else {
+                style::Button::Ghost
+            };
+            row.push(
+                Button::new(text(tab.label()).size(12))
+                    .padding([5, 12])
+                    .class(class)
+                    .on_press(Message::Accela(Event::SwitchInstallSubTab(*tab))),
+            )
+        });
+
+        let content: Element = match self.install_subtab {
+            InstallSubTab::Overview => self.install_overview_view(install),
+            InstallSubTab::Uninstall => self.install_uninstall_view(install),
+            InstallSubTab::Tools => self.install_tools_view(install),
+        };
+
+        let mut col = Column::new()
+            .spacing(12)
+            .push(header)
+            .push(tabs)
+            .push(content);
+
+        if let Some((action, target)) = &self.install_pending_action {
+            // Inline confirmation row, visible only while a request is
+            // staged. Yes runs the action; Cancel clears the request.
+            let row = Container::new(
+                Column::new()
+                    .spacing(8)
+                    .push(
+                        text(action.confirm_message(&target.game_name))
+                            .size(12)
+                            .class(style::Text::Muted),
+                    )
+                    .push(
+                        Row::new()
+                            .spacing(8)
+                            .push(
+                                Button::new(text("Yes, do it").size(12))
+                                    .padding([6, 14])
+                                    .class(style::Button::Primary)
+                                    .on_press(Message::Accela(
+                                        Event::ConfirmInstallAction,
+                                    )),
+                            )
+                            .push(
+                                Button::new(text("Cancel").size(12))
+                                    .padding([6, 14])
+                                    .class(style::Button::Ghost)
+                                    .on_press(Message::Accela(
+                                        Event::CancelInstallAction,
+                                    )),
+                            ),
+                    ),
+            )
+            .width(Length::Fill)
+            .padding(12)
+            .class(style::Container::GamesTable);
+            col = col.push(row);
+        }
+
+        if self.install_busy {
+            col = col.push(
+                text("Working...").size(12).class(style::Text::Muted),
+            );
+        }
+
+        if let Some(msg) = &self.install_message {
+            let class = if msg.starts_with('✓') {
+                style::Text::Green
+            } else if msg.starts_with('✗') {
+                style::Text::Failure
+            } else {
+                style::Text::Muted
+            };
+            col = col.push(text(msg.clone()).size(12).class(class));
+        }
+
+        Container::new(col)
+            .width(Length::Fill)
+            .padding(16)
+            .class(style::Container::GamesTable)
+            .into()
+    }
+
+    fn install_overview_view<'a>(
+        &'a self,
+        install: &'a AccelaInstall,
+    ) -> Element<'a> {
+        let kv = |label: &'static str, value: String| -> Element {
+            Row::new()
+                .spacing(10)
+                .push(
+                    text(label)
+                        .size(12)
+                        .class(style::Text::Muted)
+                        .width(Length::Fixed(140.0)),
+                )
+                .push(text(value).size(12).width(Length::Fill))
+                .into()
+        };
+
+        let last_updated_display = if install.last_updated.is_empty()
+            || install.last_updated == "0"
+        {
+            "—".to_string()
+        } else {
+            install.last_updated.clone()
+        };
+
+        let buildid_display = if install.buildid.is_empty() {
+            "—".to_string()
+        } else {
+            install.buildid.clone()
+        };
+
+        let appid_display = if install.appid.is_empty() || install.appid == "0" {
+            "—".to_string()
+        } else {
+            install.appid.clone()
+        };
+
+        Column::new()
+            .spacing(6)
+            .push(kv("App ID", appid_display))
+            .push(kv("Source", "ACCELA".to_string()))
+            .push(kv("Install path", install.install_path.clone()))
+            .push(kv("Library", install.library_path.clone()))
+            .push(kv("Size on disk", install.size_display()))
+            .push(kv("Build ID", buildid_display))
+            .push(kv("Last updated", last_updated_display))
+            .into()
+    }
+
+    fn install_uninstall_view<'a>(
+        &'a self,
+        install: &'a AccelaInstall,
+    ) -> Element<'a> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(
+                text(
+                    "Removes the install folder and the appmanifest_*.acf so \
+                     Steam stops tracking the game. Cannot be undone.",
+                )
+                .size(12)
+                .class(style::Text::Muted),
+            );
+
+        // Linux-only checkboxes for compatdata + cloud saves.
+        if cfg!(target_os = "linux") {
+            col = col
+                .push(
+                    crate::gui::widget::checkbox(
+                        "Also remove Proton/Wine compatdata",
+                        self.install_remove_compatdata,
+                        |v| Message::Accela(Event::SetUninstallRemoveCompatdata(v)),
+                    ),
+                )
+                .push(
+                    crate::gui::widget::checkbox(
+                        "Also remove Steam cloud saves (this user)",
+                        self.install_remove_saves,
+                        |v| Message::Accela(
+                        Event::SetUninstallRemoveSaves(v),
+                    )),
+                );
+        }
+
+        let install_clone = install.clone();
+        col = col.push(
+            Row::new().push(
+                Button::new(text("Uninstall game").size(12))
+                    .padding([6, 14])
+                    .class(style::Button::Primary)
+                    .on_press(Message::Accela(Event::RequestInstallAction(
+                        InstallAction::Uninstall,
+                        install_clone,
+                    ))),
+            ),
+        );
+
+        col.into()
+    }
+
+    fn install_tools_view<'a>(
+        &'a self,
+        install: &'a AccelaInstall,
+    ) -> Element<'a> {
+        let row =
+            |label: &'static str,
+             desc: &'static str,
+             action: InstallAction|
+             -> Element<'a> {
+                let install_clone = install.clone();
+                Container::new(
+                    Column::new()
+                        .spacing(6)
+                        .push(
+                            Row::new()
+                                .spacing(10)
+                                .align_y(Alignment::Center)
+                                .push(
+                                    text(label).size(13).width(Length::Fill),
+                                )
+                                .push(
+                                    Button::new(text("Run").size(12))
+                                        .padding([5, 14])
+                                        .class(style::Button::Ghost)
+                                        .on_press(Message::Accela(
+                                            Event::RequestInstallAction(
+                                                action,
+                                                install_clone,
+                                            ),
+                                        )),
+                                ),
+                        )
+                        .push(
+                            text(desc).size(11).class(style::Text::Muted),
+                        ),
+                )
+                .padding([8, 0])
+                .into()
+            };
+
+        Column::new()
+            .spacing(8)
+            .push(row(
+                "Remove DRM (Steamless)",
+                "Run Steamless on every executable inside the install folder.",
+                InstallAction::RunSteamless,
+            ))
+            .push(row(
+                "Fix install (remove .acf)",
+                "Delete the appmanifest so Steam forgets about this install. \
+                 Game files stay.",
+                InstallAction::FixInstall,
+            ))
+            .push(row(
+                "Apply Goldberg",
+                "Replace steam_api*.dll with the Goldberg emulator + steam_appid.txt.",
+                InstallAction::ApplyGoldberg,
+            ))
+            .push(row(
+                "Remove Goldberg",
+                "Restore the original steam_api*.dll backups (.valve files).",
+                InstallAction::RemoveGoldberg,
+            ))
+            .into()
+    }
 }
 
 fn toggle_row<'a>(
@@ -2075,6 +2453,208 @@ pub async fn run_get_steam_libraries(
                 .into_iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect())
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_uninstall_game(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    install_path: String,
+    appmanifest_path: String,
+    library_path: String,
+    appid: String,
+    remove_compatdata: bool,
+    remove_saves: bool,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({
+        "cmd": "uninstall_game",
+        "install_path": install_path,
+        "appmanifest_path": appmanifest_path,
+        "library_path": library_path,
+        "appid": appid,
+        "remove_compatdata": remove_compatdata,
+        "remove_saves": remove_saves,
+    })
+    .to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("uninstall_done") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            if ok {
+                Ok("Uninstalled.".to_string())
+            } else {
+                let errors = event
+                    .get("errors")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|e| e.as_str().map(String::from))
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    })
+                    .unwrap_or_else(|| "unknown error".to_string());
+                Err(errors)
+            }
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_fix_install(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    appmanifest_path: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({
+        "cmd": "fix_install",
+        "appmanifest_path": appmanifest_path,
+    })
+    .to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("fix_install_done") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let note = event
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if ok {
+                Ok(if note.is_empty() {
+                    "ACF deleted.".to_string()
+                } else {
+                    note
+                })
+            } else {
+                Err(if note.is_empty() {
+                    "fix_install failed.".to_string()
+                } else {
+                    note
+                })
+            }
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_apply_goldberg(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    install_path: String,
+    appid: String,
+    game_name: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({
+        "cmd": "apply_goldberg",
+        "install_path": install_path,
+        "appid": appid,
+        "game_name": game_name,
+    })
+    .to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("goldberg_done") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let note = event
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if ok {
+                Ok("Goldberg applied.".to_string())
+            } else {
+                Err(if note.is_empty() {
+                    "apply_goldberg failed.".to_string()
+                } else {
+                    note
+                })
+            }
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_remove_goldberg(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    install_path: String,
+    appid: String,
+    game_name: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({
+        "cmd": "remove_goldberg",
+        "install_path": install_path,
+        "appid": appid,
+        "game_name": game_name,
+    })
+    .to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("goldberg_removed") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let note = event
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if ok {
+                Ok("Goldberg removed.".to_string())
+            } else {
+                Err(if note.is_empty() {
+                    "remove_goldberg failed.".to_string()
+                } else {
+                    note
+                })
+            }
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_steamless_for_game(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+    install_path: String,
+) -> Result<String, String> {
+    let cmd_json = serde_json::json!({
+        "cmd": "run_steamless_for_game",
+        "install_path": install_path,
+    })
+    .to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("steamless_done") => {
+            let ok = event.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            let note = event
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if ok {
+                Ok(if note.is_empty() {
+                    "Steamless ran.".to_string()
+                } else {
+                    note
+                })
+            } else {
+                Err(if note.is_empty() {
+                    "Steamless failed.".to_string()
+                } else {
+                    note
+                })
+            }
         }
         Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),

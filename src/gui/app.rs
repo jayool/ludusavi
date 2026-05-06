@@ -1562,6 +1562,154 @@ impl App {
                         self.accela_screen.installs_fetched = true;
                         Task::none()
                     }
+                    AE::SwitchInstallSubTab(tab) => {
+                        self.accela_screen.install_subtab = tab;
+                        self.accela_screen.install_message = None;
+                        self.accela_screen.install_pending_action = None;
+                        Task::none()
+                    }
+                    AE::SetUninstallRemoveCompatdata(v) => {
+                        self.accela_screen.install_remove_compatdata = v;
+                        Task::none()
+                    }
+                    AE::SetUninstallRemoveSaves(v) => {
+                        self.accela_screen.install_remove_saves = v;
+                        Task::none()
+                    }
+                    AE::RequestInstallAction(action, install) => {
+                        // Stash and show the inline confirmation row.
+                        self.accela_screen.install_pending_action =
+                            Some((action, install));
+                        self.accela_screen.install_message = None;
+                        Task::none()
+                    }
+                    AE::CancelInstallAction => {
+                        self.accela_screen.install_pending_action = None;
+                        Task::none()
+                    }
+                    AE::ConfirmInstallAction => {
+                        use crate::gui::accela::InstallAction;
+                        let pending = match self.accela_screen
+                            .install_pending_action
+                            .take()
+                        {
+                            Some(p) => p,
+                            None => return Task::none(),
+                        };
+                        let (action, install) = pending;
+                        let python = self.accela_screen.python_path.clone();
+                        let accela = self.accela_screen.accela_path.clone();
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        let remove_compatdata =
+                            self.accela_screen.install_remove_compatdata;
+                        let remove_saves =
+                            self.accela_screen.install_remove_saves;
+                        self.accela_screen.install_busy = true;
+                        self.accela_screen.install_message = None;
+                        match action {
+                            InstallAction::Uninstall => Task::perform(
+                                crate::gui::accela::run_uninstall_game(
+                                    python,
+                                    adapter,
+                                    accela,
+                                    install.install_path.clone(),
+                                    install.appmanifest_path.clone(),
+                                    install.library_path.clone(),
+                                    install.appid.clone(),
+                                    remove_compatdata,
+                                    remove_saves,
+                                ),
+                                |result| Message::Accela(
+                                    AE::InstallActionFinished(result),
+                                ),
+                            ),
+                            InstallAction::FixInstall => Task::perform(
+                                crate::gui::accela::run_fix_install(
+                                    python,
+                                    adapter,
+                                    accela,
+                                    install.appmanifest_path.clone(),
+                                ),
+                                |result| Message::Accela(
+                                    AE::InstallActionFinished(result),
+                                ),
+                            ),
+                            InstallAction::ApplyGoldberg => Task::perform(
+                                crate::gui::accela::run_apply_goldberg(
+                                    python,
+                                    adapter,
+                                    accela,
+                                    install.install_path.clone(),
+                                    install.appid.clone(),
+                                    install.game_name.clone(),
+                                ),
+                                |result| Message::Accela(
+                                    AE::InstallActionFinished(result),
+                                ),
+                            ),
+                            InstallAction::RemoveGoldberg => Task::perform(
+                                crate::gui::accela::run_remove_goldberg(
+                                    python,
+                                    adapter,
+                                    accela,
+                                    install.install_path.clone(),
+                                    install.appid.clone(),
+                                    install.game_name.clone(),
+                                ),
+                                |result| Message::Accela(
+                                    AE::InstallActionFinished(result),
+                                ),
+                            ),
+                            InstallAction::RunSteamless => Task::perform(
+                                crate::gui::accela::run_steamless_for_game(
+                                    python,
+                                    adapter,
+                                    accela,
+                                    install.install_path.clone(),
+                                ),
+                                |result| Message::Accela(
+                                    AE::InstallActionFinished(result),
+                                ),
+                            ),
+                        }
+                    }
+                    AE::InstallActionFinished(result) => {
+                        self.accela_screen.install_busy = false;
+                        match result {
+                            Ok(note) => {
+                                self.accela_screen.install_message =
+                                    Some(format!("✓ {note}"));
+                                // Successful action may have removed the
+                                // game from disk: re-fetch the list so
+                                // the Games table refreshes.
+                                self.accela_screen.installs_fetched = false;
+                                let python =
+                                    self.accela_screen.python_path.clone();
+                                let accela =
+                                    self.accela_screen.accela_path.clone();
+                                if !python.trim().is_empty()
+                                    && !accela.trim().is_empty()
+                                {
+                                    let adapter =
+                                        crate::gui::accela::default_adapter_path();
+                                    return Task::perform(
+                                        crate::gui::accela::run_list_accela_installs(
+                                            python, adapter, accela,
+                                        ),
+                                        |result| Message::Accela(
+                                            AE::InstallsLoaded(result),
+                                        ),
+                                    );
+                                }
+                                Task::none()
+                            }
+                            Err(reason) => {
+                                self.accela_screen.install_message =
+                                    Some(format!("✗ Failed: {reason}"));
+                                Task::none()
+                            }
+                        }
+                    }
                 }
             }
             Message::AddGameRequested => {
@@ -5637,6 +5785,7 @@ impl App {
                 };
 
                 let is_custom_game = !self.manifest.extended.0.contains_key(&game_name);
+                let accela_install = self.accela_screen.install_for_game(&game_name);
 
                 let content = Column::new()
                     .push(header)
@@ -5783,6 +5932,10 @@ impl App {
                                 )
                                 .push(save_button)
                                 // .push(files_card) // TODO: re-enable when toggles are wired to the daemon
+                                .push_if(accela_install.is_some(), || {
+                                    self.accela_screen
+                                        .render_install_section(accela_install.unwrap())
+                                })
                                 .push_if(is_custom_game, || {
                                     Container::new(
                                         Row::new()
