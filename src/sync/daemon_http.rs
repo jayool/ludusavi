@@ -21,7 +21,7 @@ use axum::{
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use tokio::net::TcpListener;
@@ -525,6 +525,65 @@ fn detect_service_installed() -> bool {
     {
         false
     }
+}
+
+// ============================================================================
+// POST /api/settings/safety — toggles SAFETY (Fase 2 — primer write endpoint)
+// ============================================================================
+//
+// Equivale a Message::ToggleSafetyBackupsEnabled y
+// Message::ToggleSystemNotificationsEnabled de la GUI Iced. Ambos se
+// pueden cambiar en el mismo POST (campos opcionales) o por separado.
+//
+// Side-effect: rota `sync-games.json` con los nuevos valores. El file
+// watcher del daemon HTTP detecta el cambio y emite `daemon_restarted`
+// — los clientes (plugin, futuras GUIs) refrescan.
+//
+// **Patrón establecido aquí** (replicado en todos los POST de Fase 2):
+//   1. Extractor `Json<T>` con todos los campos opcionales (PATCH-style:
+//      sólo se actualiza lo que viene).
+//   2. Cargar la config actual via `SyncGamesConfig::load()` /
+//      `Config::load()` etc., aplicar cambios, persistir con `save()`.
+//   3. Devolver el estado completo tras el cambio (echo) para que el
+//      cliente pueda reconciliar UI sin re-fetch.
+//   4. El watcher emite el evento SSE — no lo emitimos nosotros desde
+//      el handler. Single source of truth.
+
+#[derive(serde::Deserialize, Debug)]
+struct SafetyUpdateBody {
+    #[serde(default)]
+    safety_backups_enabled: Option<bool>,
+    #[serde(default)]
+    system_notifications_enabled: Option<bool>,
+}
+
+#[derive(serde::Serialize)]
+struct SafetyEchoResponse {
+    safety_backups_enabled: bool,
+    system_notifications_enabled: bool,
+}
+
+async fn settings_safety_handler(
+    Json(body): Json<SafetyUpdateBody>,
+) -> Result<Json<SafetyEchoResponse>, (StatusCode, Json<serde_json::Value>)> {
+    use crate::sync::sync_config::SyncGamesConfig;
+
+    // Defensive: si el body viene completamente vacío, no es 400 — sólo
+    // un no-op que devuelve el estado actual. Útil como "ping" para
+    // confirmar el endpoint.
+    let mut cfg = SyncGamesConfig::load();
+    if let Some(v) = body.safety_backups_enabled {
+        cfg.safety_backups_enabled = v;
+    }
+    if let Some(v) = body.system_notifications_enabled {
+        cfg.system_notifications_enabled = v;
+    }
+    cfg.save();
+
+    Ok(Json(SafetyEchoResponse {
+        safety_backups_enabled: cfg.safety_backups_enabled,
+        system_notifications_enabled: cfg.system_notifications_enabled,
+    }))
 }
 
 // ============================================================================
@@ -1101,6 +1160,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/accela-installs", get(accela_installs_handler))
         .route("/api/cloud", get(cloud_handler))
         .route("/api/settings", get(settings_handler))
+        .route("/api/settings/safety", post(settings_safety_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
@@ -1426,6 +1486,177 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // ------------------------------------------------------------------
+    // POST /api/settings/safety — primer endpoint write de Fase 2
+    // ------------------------------------------------------------------
+
+    /// Mutex que serializa los tests que mutan `CONFIG_DIR` para que
+    /// puedan correr en paralelo sin pisarse. Necesario porque
+    /// `app_dir()` consulta el global `CONFIG_DIR` y los tests apuntan
+    /// a tempdirs distintos.
+    static CONFIG_DIR_TEST_LOCK: std::sync::Mutex<()> =
+        std::sync::Mutex::new(());
+
+    /// RAII que apunta `CONFIG_DIR` a un tempdir y lo restaura al
+    /// dropear. Mantiene un `MutexGuard` para serializar tests que
+    /// muten el global.
+    struct ConfigDirGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        prev: Option<std::path::PathBuf>,
+        // Mantenemos el TempDir vivo hasta el drop para que el path
+        // siga existiendo durante el test.
+        _tmp: tempfile::TempDir,
+    }
+
+    impl ConfigDirGuard {
+        fn new(tmp: tempfile::TempDir) -> Self {
+            // Si el test fallara dejando el lock envenenado, lo
+            // recuperamos con `into_inner` — este lock sólo serializa,
+            // no protege state crítico.
+            let lock = CONFIG_DIR_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            let prev = crate::prelude::CONFIG_DIR
+                .lock()
+                .unwrap()
+                .replace(tmp.path().to_path_buf());
+            Self {
+                _lock: lock,
+                prev,
+                _tmp: tmp,
+            }
+        }
+    }
+
+    impl Drop for ConfigDirGuard {
+        fn drop(&mut self) {
+            *crate::prelude::CONFIG_DIR.lock().unwrap() = self.prev.take();
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_safety_post_requires_auth() {
+        let app = build_router(test_state("token"));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/settings/safety")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"safety_backups_enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn settings_safety_post_persists_both_fields() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/settings/safety")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"safety_backups_enabled":false,"system_notifications_enabled":false}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Echo response refleja el nuevo estado.
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["safety_backups_enabled"], false);
+        assert_eq!(json["system_notifications_enabled"], false);
+
+        // Persistido a disco — al reload tiene los nuevos valores.
+        let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+        assert!(!cfg.safety_backups_enabled);
+        assert!(!cfg.system_notifications_enabled);
+    }
+
+    #[tokio::test]
+    async fn settings_safety_post_partial_update_preserves_other_field() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // Primer POST: ambos a false.
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/settings/safety")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"safety_backups_enabled":false,"system_notifications_enabled":false}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Segundo POST: sólo safety_backups a true. system_notifications
+        // debe quedarse en false (no tocado).
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/settings/safety")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"safety_backups_enabled":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+        assert!(cfg.safety_backups_enabled);
+        assert!(!cfg.system_notifications_enabled);
+    }
+
+    #[tokio::test]
+    async fn settings_safety_post_empty_body_is_noop() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/settings/safety")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Estado por defecto preservado.
+        let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+        assert!(cfg.safety_backups_enabled);
+        assert!(cfg.system_notifications_enabled);
     }
 
     /// Helper de tests: escribe los 4 ficheros que `build_games_response`

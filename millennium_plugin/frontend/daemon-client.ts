@@ -289,6 +289,34 @@ export class DaemonClient {
     return (await res.json()) as T;
   }
 
+  /** POST con body JSON — patrón para todos los write endpoints de
+   *  Fase 2. Misma semántica de auth y errores que `fetchJSON`. */
+  private async postJSON<TBody, TResp>(path: string, body: TBody): Promise<TResp> {
+    const token = await this.getToken();
+    if (!token) {
+      throw new Error(
+        'Daemon token unavailable — el daemon no está corriendo o nunca ha arrancado.',
+      );
+    }
+    const res = await fetch(DAEMON_URL + path, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      if (res.status === 401) {
+        this.clearToken();
+      }
+      throw new Error(
+        `HTTP ${res.status} ${res.statusText} — ${await safeText(res)}`,
+      );
+    }
+    return (await res.json()) as TResp;
+  }
+
   getStatus(): Promise<DaemonStatus> {
     return this.fetchJSON('/api/status');
   }
@@ -326,6 +354,29 @@ export class DaemonClient {
    *  Fase 1 — la edición llega con POST endpoints en Fase 2. */
   getSettings(): Promise<ApiSettingsResponse> {
     return this.fetchJSON('/api/settings');
+  }
+
+  /**
+   * Cambia los toggles SAFETY (safety_backups_enabled,
+   * system_notifications_enabled). Ambos campos son opcionales — sólo
+   * se actualiza lo que viene en el body. Devuelve el estado completo
+   * tras el cambio (echo) para que el caller pueda reconciliar UI sin
+   * re-fetch.
+   *
+   * Side-effect: el daemon rota `sync-games.json`, lo que dispara
+   * `daemon_restarted` via SSE — la tab Settings refresca sola.
+   *
+   * Primer endpoint write de Fase 2; usa el patrón replicado en todos
+   * los siguientes (POST + body opcional + echo).
+   */
+  setSafety(body: {
+    safety_backups_enabled?: boolean;
+    system_notifications_enabled?: boolean;
+  }): Promise<ApiSettingsSafety> {
+    return this.postJSON<typeof body, ApiSettingsSafety>(
+      '/api/settings/safety',
+      body,
+    );
   }
 
   /**

@@ -1546,12 +1546,15 @@ function settingsDescription(doc: Document, text: string): HTMLElement {
   return el;
 }
 
-/** Helper de Settings: pill ON/OFF + descripción. Read-only — el
- *  toggle real (POST a /api/settings/safety) llega en Fase 2. */
+/** Helper de Settings: pill ON/OFF + descripción. Si se pasa
+ *  `onToggle`, el pill es clickable y llama el callback con el valor
+ *  invertido — la actualización del estado real (POST + refresh) la
+ *  hace el caller. Sin `onToggle` queda como display-only. */
 function settingsToggleRow(
   doc: Document,
   enabled: boolean,
   description: string,
+  onToggle?: (newValue: boolean) => Promise<void>,
 ): HTMLElement {
   const row = doc.createElement('div');
   row.style.cssText = 'display: flex; gap: 12px; align-items: center;';
@@ -1566,7 +1569,35 @@ function settingsToggleRow(
     enabled ? 'background: #4f8ef7' : 'background: #2a2f42',
     enabled ? 'color: white' : 'color: #9aa3b2',
     'flex-shrink: 0',
+    onToggle ? 'cursor: pointer; user-select: none' : '',
   ].join(';');
+  if (onToggle) {
+    pill.addEventListener('click', async () => {
+      // Optimistic UI: marcamos como "...pending" para que el usuario
+      // sepa que su click se registró. SSE refrescará la card con el
+      // valor real cuando el daemon escriba sync-games.json.
+      const original = pill.textContent;
+      pill.textContent = '…';
+      pill.style.opacity = '0.5';
+      try {
+        await onToggle(!enabled);
+        // No restauramos pill aquí — el SSE event `daemon_restarted`
+        // disparará un re-render completo de la tab Settings que ya
+        // muestra el nuevo valor. Si por alguna razón eso no llega,
+        // restauramos como fallback tras 2s.
+        setTimeout(() => {
+          if (pill.textContent === '…') {
+            pill.textContent = original;
+            pill.style.opacity = '1';
+          }
+        }, 2000);
+      } catch (e) {
+        console.error('[ludusavi-sync] toggle failed:', e);
+        pill.textContent = original;
+        pill.style.opacity = '1';
+      }
+    });
+  }
   row.appendChild(pill);
   const desc = doc.createElement('span');
   desc.textContent = description;
@@ -1687,6 +1718,9 @@ function renderSafetyCard(doc: Document, settings: ApiSettingsResponse): HTMLEle
       doc,
       settings.safety.safety_backups_enabled,
       'Safety backups before destructive operations',
+      async (newValue) => {
+        await daemon.setSafety({ safety_backups_enabled: newValue });
+      },
     ),
   );
   body.appendChild(
@@ -1694,6 +1728,9 @@ function renderSafetyCard(doc: Document, settings: ApiSettingsResponse): HTMLEle
       doc,
       settings.safety.system_notifications_enabled,
       'System notifications when daemon syncs in background',
+      async (newValue) => {
+        await daemon.setSafety({ system_notifications_enabled: newValue });
+      },
     ),
   );
   return card;
