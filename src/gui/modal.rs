@@ -676,6 +676,7 @@ impl Modal {
                                     | Self::ConfirmRestoreSafetyBackup { .. }
                                     | Self::ConfirmDeleteSafetyBackup { .. }
                                     | Self::ConfirmResolveConflictKeepBoth { .. }
+                                    | Self::ConfirmAccelaAction { .. }
                                     | Self::ConfigureFtpRemote { .. }
                                     | Self::ConfigureSmbRemote { .. }
                                     | Self::ConfigureWebDavRemote { .. }
