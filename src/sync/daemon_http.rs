@@ -40,12 +40,43 @@ fn token_path() -> StrictPath {
     app_dir().joined("daemon-token.txt")
 }
 
-/// Estado compartido del servidor. Por ahora sólo el token; en commits
-/// sucesivos se ampliará con event broadcaster (para SSE) y con
-/// referencias al estado del worker loop.
+/// Eventos que el daemon empuja a los frontends conectados via SSE.
+/// El plugin reacciona refrescando lo que necesite (un game específico,
+/// la lista entera, o todo).
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum DaemonEvent {
+    /// Un juego específico cambió (modo, status, sync time). El plugin
+    /// puede re-fetchear `/api/games/:name` (cuando exista) o
+    /// `/api/games` entero.
+    #[serde(rename = "game_updated")]
+    GameUpdated { name: String },
+    /// La lista de devices cambió. El plugin re-fetchea `/api/devices`.
+    #[serde(rename = "devices_updated")]
+    DevicesUpdated,
+    /// El daemon reinició su worker loop (cambio en sync-games.json,
+    /// nuevos juegos en cloud, rclone vuelto). El plugin re-fetchea
+    /// todo para evitar drift.
+    #[serde(rename = "daemon_restarted")]
+    DaemonRestarted,
+    /// rclone se ha caído o ha vuelto. Plugin actualiza badge global.
+    #[serde(rename = "rclone_status_changed")]
+    RcloneStatusChanged { missing: bool },
+}
+
+/// Capacidad del canal de broadcast. Si se llenan, los receivers más
+/// lentos pierden eventos antiguos (dropping the oldest). 64 da margen
+/// de sobra para ráfagas — un usuario con 50 juegos no genera más de
+/// unos pocos eventos por minuto.
+const EVENT_CHANNEL_CAPACITY: usize = 64;
+
+/// Estado compartido del servidor: el token (auth) y el broadcaster
+/// de eventos (SSE). `events.subscribe()` crea un receiver nuevo por
+/// cliente conectado; `events.send(...)` empuja a todos los suscriptores.
 #[derive(Clone)]
 struct AppState {
     token: Arc<String>,
+    events: tokio::sync::broadcast::Sender<DaemonEvent>,
 }
 
 /// Genera un token nuevo (40 hex chars, ~160 bits) usando sha1 sobre
@@ -469,6 +500,49 @@ async fn devices_handler() -> Json<ApiDevicesResponse> {
     Json(build_devices_response(&app_dir()))
 }
 
+// ============================================================================
+// /api/events — Server-Sent Events stream
+// ============================================================================
+//
+// Long-lived stream donde el daemon empuja eventos en tiempo real:
+// cuando un juego cambia de status, cuando el worker reinicia, cuando
+// rclone se cae, etc. Sustituye el polling actual de la GUI Iced
+// (que lee daemon-status.json cada 5s) por un push limpio.
+//
+// El plugin abre `EventSource('/api/events')` (validado en hello-world A
+// 2026-05-06). Cuando recibe un evento, refresca la parte relevante
+// de su UI fetcheando el endpoint correspondiente.
+//
+// La integración con el worker loop (cuándo se emiten eventos
+// concretos) llega en commits posteriores. Por ahora el endpoint está
+// expuesto y funcional; si nadie llama a `state.events.send(...)` el
+// stream sólo emite los keep-alives.
+
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
+use std::convert::Infallible;
+use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt as _};
+
+async fn events_handler(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let receiver = state.events.subscribe();
+    let stream = BroadcastStream::new(receiver).filter_map(|result| match result {
+        Ok(event) => SseEvent::default()
+            .json_data(&event)
+            .ok()
+            .map(Ok::<_, Infallible>),
+        // BroadcastStream emite Lagged cuando el cliente es más lento
+        // que la capacidad del canal y se han dropeado eventos. Lo
+        // ignoramos en lugar de cerrar el stream — el plugin puede
+        // re-fetchear el estado completo via /api/games si necesita
+        // recuperarse.
+        Err(_lagged) => None,
+    });
+    // KeepAlive::default() = comentario `:` cada 15s. CEF mantiene la
+    // conexión abierta indefinidamente con eso (validado en hello-world A).
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
 /// Construye el `Router` de axum con todos los endpoints + auth + CORS.
 fn build_router(state: AppState) -> Router {
     // CORS abierto a localhost en cualquier puerto. Los plugins de
@@ -484,6 +558,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/status", get(status_handler))
         .route("/api/games", get(games_handler))
         .route("/api/devices", get(devices_handler))
+        .route("/api/events", get(events_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
@@ -498,8 +573,10 @@ fn build_router(state: AppState) -> Router {
 /// Llamado desde el binario del daemon en paralelo al worker loop.
 pub fn run_http_server(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     let token = load_or_create_token()?;
+    let (events_tx, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAPACITY);
     let state = AppState {
         token: Arc::new(token),
+        events: events_tx,
     };
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -557,8 +634,10 @@ mod tests {
     }
 
     fn test_state(token: &str) -> AppState {
+        let (events, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAPACITY);
         AppState {
             token: Arc::new(token.to_string()),
+            events,
         }
     }
 
@@ -890,6 +969,107 @@ mod tests {
         assert_eq!(
             resp.devices[1].last_sync_time_utc.as_deref(),
             Some("2026-05-07T08:00:00+00:00")
+        );
+    }
+
+    #[tokio::test]
+    async fn events_endpoint_returns_200_and_event_stream_content_type() {
+        let token = "tok";
+        let app = build_router(test_state(token));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let ct = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            ct.contains("text/event-stream"),
+            "expected SSE content-type, got: {ct}"
+        );
+    }
+
+    #[tokio::test]
+    async fn events_endpoint_delivers_published_events() {
+        // Estado compartido entre el cliente HTTP y el publisher: el
+        // mismo state — porque AppState::clone duplica el Arc del
+        // sender y comparten el mismo canal de broadcast.
+        let token = "tok";
+        let state = test_state(token);
+        let publisher = state.events.clone();
+        let app = build_router(state);
+
+        // Lanzamos la request y, en paralelo, publicamos un evento
+        // tras un pequeño delay para asegurar que el subscriber esté
+        // listo. (Si publicamos antes de que oneshot llegue al
+        // handler, broadcast::send() no encuentra subscribers y se
+        // pierde silenciosamente.)
+        let publish = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            // ignoramos send result: si nadie esta escuchando, broadcast
+            // devuelve un Err transitorio que no nos importa aqui.
+            let _ = publisher.send(DaemonEvent::DaemonRestarted);
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/events")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Leemos el body en chunks hasta encontrar el JSON del evento
+        // o agotar 2s (timeout duro para que el test no se cuelgue si
+        // algo va mal).
+        use http_body_util::BodyExt;
+        let mut body = response.into_body();
+        let mut accumulated = Vec::new();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        let found = loop {
+            if tokio::time::Instant::now() >= deadline {
+                break false;
+            }
+            let frame = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                body.frame(),
+            )
+            .await;
+            match frame {
+                Ok(Some(Ok(frame))) => {
+                    if let Some(data) = frame.data_ref() {
+                        accumulated.extend_from_slice(data);
+                        if std::str::from_utf8(&accumulated)
+                            .map(|s| s.contains("daemon_restarted"))
+                            .unwrap_or(false)
+                        {
+                            break true;
+                        }
+                    }
+                }
+                Ok(Some(Err(_))) | Ok(None) => break false,
+                Err(_) => continue, // timeout del frame, intenta otra vez
+            }
+        };
+
+        publish.await.ok();
+        assert!(
+            found,
+            "did not see the published event in the SSE body within 2s. accumulated={}",
+            String::from_utf8_lossy(&accumulated)
         );
     }
 
