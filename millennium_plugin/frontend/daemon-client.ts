@@ -52,6 +52,66 @@ export interface ApiCloudResponse {
   rclone_state: RcloneState;
   /** URL para instalar rclone si está missing. */
   install_url: string;
+  /** Path al binario rclone configurado en config.apps.rclone.path.
+   *  Sólo expuesto desde la versión que añade /api/settings al
+   *  daemon — usado en la card CLOUD/RCLONE de la pantalla Settings. */
+  rclone_executable?: string;
+  /** Flags globales que el daemon pasa a rclone (p.ej.
+   *  "--fast-list --ignore-checksum"). Mismo motivo que arriba. */
+  rclone_arguments?: string;
+}
+
+// ----------------------------------------------------------------------
+// /api/settings — config completa relevante para Settings tab
+// ----------------------------------------------------------------------
+
+export interface ApiSettingsSecondaryManifestLocal {
+  kind: 'local';
+  path: string;
+  enabled: boolean;
+}
+
+export interface ApiSettingsSecondaryManifestRemote {
+  kind: 'remote';
+  url: string;
+  enabled: boolean;
+}
+
+export type ApiSettingsSecondaryManifest =
+  | ApiSettingsSecondaryManifestLocal
+  | ApiSettingsSecondaryManifestRemote;
+
+export interface ApiSettingsManifest {
+  primary_url: string;
+  primary_enabled: boolean;
+  secondary: ApiSettingsSecondaryManifest[];
+}
+
+export interface ApiSettingsRoot {
+  /** Store en camelCase: steam, epic, gog, gogGalaxy, heroic,
+   *  legendary, lutris, microsoft, origin, prime, uplay, otherHome,
+   *  otherWine, otherWindows, otherLinux, otherMac, other. */
+  store: string;
+  path: string;
+}
+
+export interface ApiSettingsSafety {
+  safety_backups_enabled: boolean;
+  system_notifications_enabled: boolean;
+}
+
+export interface ApiSettingsService {
+  /** True si la scheduled task / systemd service está instalada.
+   *  Sólo Windows por ahora — Linux/Mac devuelven false. */
+  installed: boolean;
+}
+
+export interface ApiSettingsResponse {
+  backup_path: string;
+  manifest: ApiSettingsManifest;
+  roots: ApiSettingsRoot[];
+  safety: ApiSettingsSafety;
+  service: ApiSettingsService;
 }
 
 export interface ApiDevice {
@@ -259,6 +319,13 @@ export class DaemonClient {
    *  Read-only en Fase 1 — el usuario configura cloud desde la GUI Iced. */
   getCloud(): Promise<ApiCloudResponse> {
     return this.fetchJSON('/api/cloud');
+  }
+
+  /** Config completa relevante para la pantalla Settings: backup_path,
+   *  manifest, roots, safety toggles, service installed. Read-only en
+   *  Fase 1 — la edición llega con POST endpoints en Fase 2. */
+  getSettings(): Promise<ApiSettingsResponse> {
+    return this.fetchJSON('/api/settings');
   }
 
   /**

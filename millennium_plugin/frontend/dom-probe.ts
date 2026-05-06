@@ -11,7 +11,13 @@
  */
 
 import { sleep } from '@steambrew/client';
-import { ApiCloudResponse, ApiDeviceRow, daemon, openAppDir } from './daemon-client';
+import {
+  ApiCloudResponse,
+  ApiDeviceRow,
+  ApiSettingsResponse,
+  daemon,
+  openAppDir,
+} from './daemon-client';
 import { describeGame, statusColor } from './game-format';
 import { relativeTime } from './time-format';
 
@@ -409,8 +415,8 @@ let pendingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 type SseStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
 /** Tabs del overlay. Mismo modelo que las pantallas de la GUI Iced
- *  (Screen::Games, Screen::ThisDevice, Screen::AllDevices). */
-type ActiveTab = 'games' | 'this-device' | 'all-devices';
+ *  (Screen::Games, Screen::ThisDevice, Screen::AllDevices, Screen::Other). */
+type ActiveTab = 'games' | 'this-device' | 'all-devices' | 'settings';
 
 /** Tab activa entre llamadas a showSyncOverlay. Se preserva si el
  *  usuario abre/cierra el overlay sin reiniciar Steam. */
@@ -424,6 +430,7 @@ const TABS: { id: ActiveTab; label: string }[] = [
   { id: 'games', label: 'Games' },
   { id: 'this-device', label: 'This Device' },
   { id: 'all-devices', label: 'All Devices' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 /**
@@ -470,6 +477,9 @@ async function renderActiveTab(
       break;
     case 'all-devices':
       await loadAndRenderAllDevices(doc, content);
+      break;
+    case 'settings':
+      await loadAndRenderSettings(doc, content);
       break;
   }
 }
@@ -1462,6 +1472,397 @@ function hideSyncOverlay(doc: Document) {
 }
 
 // ============================================================================
+// Tab "Settings" — 6 cards en paridad con Screen::Other de la GUI
+// ============================================================================
+
+/**
+ * Renderiza la tab "Settings" replicando las 6 cards de Screen::Other
+ * en la GUI Iced. Read-only en Fase 1 — los toggles, pickers y botones
+ * (Install service, Refresh manifest, Get rclone, etc.) se enchufan
+ * con POST endpoints en Fase 2.
+ *
+ * Cards (mismo orden que la GUI):
+ *  1. LOCAL          — backup path
+ *  2. CLOUD/RCLONE   — provider + remote + path + rclone executable +
+ *                      rclone arguments + estado del binario
+ *  3. DAEMON         — service installed + daemon running
+ *  4. SAFETY         — safety_backups + system_notifications toggles
+ *  5. ROOTS          — lista de (store, path)
+ *  6. MANIFEST       — primary URL + lista de secondary
+ *
+ * Pedimos /api/settings + /api/cloud en paralelo (cloud para la card
+ * CLOUD/RCLONE, settings para todo lo demás).
+ */
+async function loadAndRenderSettings(doc: Document, content: HTMLElement) {
+  content.innerHTML = '';
+  const loading = doc.createElement('div');
+  loading.textContent = 'Cargando...';
+  loading.style.cssText = 'color: #9aa3b2; font-size: 13px; padding: 12px;';
+  content.appendChild(loading);
+
+  const [settingsSettled, cloudSettled] = await Promise.allSettled([
+    daemon.getSettings(),
+    daemon.getCloud(),
+  ]);
+
+  if (settingsSettled.status === 'rejected') {
+    showFatalError(doc, content, settingsSettled.reason);
+    return;
+  }
+
+  content.innerHTML = '';
+  const settings = settingsSettled.value;
+
+  // 1. LOCAL
+  content.appendChild(renderLocalCard(doc, settings));
+
+  // 2. CLOUD/RCLONE — necesita /api/cloud. Si falló mostramos
+  //    placeholder en lugar de abortar render entero.
+  if (cloudSettled.status === 'fulfilled') {
+    content.appendChild(renderCloudRcloneCard(doc, cloudSettled.value));
+  } else {
+    content.appendChild(
+      renderCardError(doc, 'CLOUD / RCLONE', `${cloudSettled.reason}`),
+    );
+  }
+
+  // 3. DAEMON
+  content.appendChild(renderDaemonServiceCard(doc, settings));
+
+  // 4. SAFETY
+  content.appendChild(renderSafetyCard(doc, settings));
+
+  // 5. ROOTS
+  content.appendChild(renderRootsCard(doc, settings));
+
+  // 6. MANIFEST
+  content.appendChild(renderManifestCard(doc, settings));
+}
+
+/** Helper de Settings: row label:value alineado horizontal. */
+function settingsRow(
+  doc: Document,
+  label: string,
+  value: string,
+  opts?: { mono?: boolean; valueColor?: string },
+): HTMLElement {
+  const row = doc.createElement('div');
+  row.style.cssText = 'display: flex; gap: 12px; font-size: 12px; align-items: baseline;';
+  const labelEl = doc.createElement('span');
+  labelEl.textContent = `${label}:`;
+  labelEl.style.cssText = 'color: #9aa3b2; min-width: 140px; flex-shrink: 0;';
+  row.appendChild(labelEl);
+  const valEl = doc.createElement('span');
+  valEl.textContent = value || '—';
+  valEl.style.cssText = [
+    `color: ${opts?.valueColor ?? '#cfd6e3'}`,
+    opts?.mono ? 'font-family: monospace; font-size: 11px;' : '',
+    'overflow: hidden',
+    'text-overflow: ellipsis',
+    'word-break: break-all',
+  ].join(';');
+  row.appendChild(valEl);
+  return row;
+}
+
+/** Helper de Settings: línea de descripción gris bajo el label. */
+function settingsDescription(doc: Document, text: string): HTMLElement {
+  const el = doc.createElement('div');
+  el.textContent = text;
+  el.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 4px;';
+  return el;
+}
+
+/** Helper de Settings: pill ON/OFF + descripción. Read-only — el
+ *  toggle real (POST a /api/settings/safety) llega en Fase 2. */
+function settingsToggleRow(
+  doc: Document,
+  enabled: boolean,
+  description: string,
+): HTMLElement {
+  const row = doc.createElement('div');
+  row.style.cssText = 'display: flex; gap: 12px; align-items: center;';
+  const pill = doc.createElement('div');
+  pill.textContent = enabled ? 'ON' : 'OFF';
+  pill.style.cssText = [
+    'padding: 4px 12px',
+    'border-radius: 4px',
+    'font-size: 11px',
+    'font-weight: 600',
+    'letter-spacing: 0.05em',
+    enabled ? 'background: #4f8ef7' : 'background: #2a2f42',
+    enabled ? 'color: white' : 'color: #9aa3b2',
+    'flex-shrink: 0',
+  ].join(';');
+  row.appendChild(pill);
+  const desc = doc.createElement('span');
+  desc.textContent = description;
+  desc.style.cssText = 'font-size: 12px; color: #cfd6e3;';
+  row.appendChild(desc);
+  return row;
+}
+
+// --- Cards individuales -----------------------------------------------------
+
+function renderLocalCard(doc: Document, settings: ApiSettingsResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'LOCAL');
+  body.appendChild(
+    settingsDescription(doc, 'Local ZIP backups are stored in this directory.'),
+  );
+  body.appendChild(settingsRow(doc, 'Backup path', settings.backup_path, { mono: true }));
+  return card;
+}
+
+function renderCloudRcloneCard(doc: Document, cloud: ApiCloudResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'CLOUD / RCLONE');
+  body.appendChild(
+    settingsDescription(doc, 'Configure rclone and your cloud provider for save syncing.'),
+  );
+
+  // rclone executable + arguments.
+  body.appendChild(
+    settingsRow(doc, 'rclone executable', cloud.rclone_executable ?? '—', { mono: true }),
+  );
+  body.appendChild(
+    settingsRow(doc, 'rclone arguments', cloud.rclone_arguments ?? '—', { mono: true }),
+  );
+
+  // Provider / Remote / Path.
+  body.appendChild(settingsRow(doc, 'Provider', cloud.provider, { valueColor: '#ffffff' }));
+  body.appendChild(settingsRow(doc, 'Remote', cloud.remote_id));
+  body.appendChild(settingsRow(doc, 'Cloud path', cloud.path));
+
+  // rclone state — dot + texto coloreados según estado.
+  const stateRow = doc.createElement('div');
+  stateRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-top: 4px;';
+  const dot = doc.createElement('div');
+  let dotColor = '#9aa3b2';
+  let stateText = 'rclone not configured';
+  let textColor = '#9aa3b2';
+  if (cloud.rclone_state === 'missing') {
+    dotColor = '#ef4444';
+    stateText = 'rclone not found';
+  } else if (cloud.rclone_state === 'ok') {
+    dotColor = '#3ecf8e';
+    stateText = 'rclone configured';
+    textColor = '#3ecf8e';
+  }
+  dot.style.cssText = `background: ${dotColor}; width: 8px; height: 8px; border-radius: 50%;`;
+  stateRow.appendChild(dot);
+  const txt = doc.createElement('span');
+  txt.textContent = stateText;
+  txt.style.cssText = `font-size: 13px; color: ${textColor};`;
+  stateRow.appendChild(txt);
+  body.appendChild(stateRow);
+
+  return card;
+}
+
+function renderDaemonServiceCard(
+  doc: Document,
+  settings: ApiSettingsResponse,
+): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'DAEMON');
+  body.appendChild(
+    settingsDescription(doc, 'Install or uninstall the sync daemon as a system service.'),
+  );
+
+  // Service installed dot + texto.
+  const installedRow = doc.createElement('div');
+  installedRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const installDot = doc.createElement('div');
+  installDot.style.cssText = `background: ${
+    settings.service.installed ? '#3ecf8e' : '#9aa3b2'
+  }; width: 8px; height: 8px; border-radius: 50%;`;
+  installedRow.appendChild(installDot);
+  const installLabel = doc.createElement('span');
+  installLabel.textContent = settings.service.installed
+    ? 'Service installed'
+    : 'Service not installed';
+  installLabel.style.cssText = `font-size: 13px; color: ${
+    settings.service.installed ? '#3ecf8e' : '#9aa3b2'
+  };`;
+  installedRow.appendChild(installLabel);
+  body.appendChild(installedRow);
+
+  // Daemon running — siempre true en este punto (si el plugin no
+  // pudiera conectarse no estaríamos en esta render).
+  const runningRow = doc.createElement('div');
+  runningRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const runDot = doc.createElement('div');
+  runDot.style.cssText = 'background: #3ecf8e; width: 8px; height: 8px; border-radius: 50%;';
+  runningRow.appendChild(runDot);
+  const runLabel = doc.createElement('span');
+  runLabel.textContent = 'Daemon is running';
+  runLabel.style.cssText = 'font-size: 13px; color: #3ecf8e;';
+  runningRow.appendChild(runLabel);
+  body.appendChild(runningRow);
+
+  return card;
+}
+
+function renderSafetyCard(doc: Document, settings: ApiSettingsResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'SAFETY');
+  body.appendChild(
+    settingsDescription(
+      doc,
+      'Before overwriting your saves on download or restore, keep a local copy you can revert to. Applies to games under 500 MB.',
+    ),
+  );
+  body.appendChild(
+    settingsToggleRow(
+      doc,
+      settings.safety.safety_backups_enabled,
+      'Safety backups before destructive operations',
+    ),
+  );
+  body.appendChild(
+    settingsToggleRow(
+      doc,
+      settings.safety.system_notifications_enabled,
+      'System notifications when daemon syncs in background',
+    ),
+  );
+  return card;
+}
+
+function renderRootsCard(doc: Document, settings: ApiSettingsResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'ROOTS');
+  body.appendChild(
+    settingsDescription(
+      doc,
+      'Game roots are required to detect save file locations automatically.',
+    ),
+  );
+  if (settings.roots.length === 0) {
+    const empty = doc.createElement('div');
+    empty.textContent = 'No roots configured.';
+    empty.style.cssText = 'color: #6b7280; font-size: 12px;';
+    body.appendChild(empty);
+    return card;
+  }
+  for (const root of settings.roots) {
+    const row = doc.createElement('div');
+    row.style.cssText = 'display: flex; gap: 12px; font-size: 12px; align-items: baseline;';
+    const storeBadge = doc.createElement('span');
+    storeBadge.textContent = formatStoreLabel(root.store);
+    storeBadge.style.cssText = [
+      'color: #4f8ef7',
+      'min-width: 140px',
+      'flex-shrink: 0',
+      'font-weight: 500',
+    ].join(';');
+    row.appendChild(storeBadge);
+    const path = doc.createElement('span');
+    path.textContent = root.path;
+    path.style.cssText =
+      'color: #cfd6e3; font-family: monospace; font-size: 11px; word-break: break-all;';
+    row.appendChild(path);
+    body.appendChild(row);
+  }
+  return card;
+}
+
+/** Convierte el camelCase del API a un label más legible para el usuario. */
+function formatStoreLabel(store: string): string {
+  switch (store) {
+    case 'steam':
+      return 'Steam';
+    case 'epic':
+      return 'Epic';
+    case 'gog':
+      return 'GOG';
+    case 'gogGalaxy':
+      return 'GOG Galaxy';
+    case 'heroic':
+      return 'Heroic';
+    case 'legendary':
+      return 'Legendary';
+    case 'lutris':
+      return 'Lutris';
+    case 'microsoft':
+      return 'Microsoft Store';
+    case 'origin':
+      return 'Origin';
+    case 'prime':
+      return 'Prime Gaming';
+    case 'uplay':
+      return 'Uplay';
+    case 'ea':
+      return 'EA';
+    case 'otherHome':
+      return 'Other (home)';
+    case 'otherWine':
+      return 'Other (Wine)';
+    case 'otherWindows':
+      return 'Other (Windows)';
+    case 'otherLinux':
+      return 'Other (Linux)';
+    case 'otherMac':
+      return 'Other (Mac)';
+    case 'other':
+      return 'Other';
+    default:
+      return store;
+  }
+}
+
+function renderManifestCard(doc: Document, settings: ApiSettingsResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'MANIFEST');
+  body.appendChild(
+    settingsDescription(
+      doc,
+      'The manifest contains the list of known games and their save locations.',
+    ),
+  );
+
+  // Primary manifest.
+  const primaryRow = doc.createElement('div');
+  primaryRow.style.cssText = 'display: flex; gap: 12px; font-size: 12px; align-items: baseline;';
+  const primaryLabel = doc.createElement('span');
+  primaryLabel.textContent = settings.manifest.primary_enabled
+    ? 'Primary (enabled):'
+    : 'Primary (disabled):';
+  primaryLabel.style.cssText = `color: ${
+    settings.manifest.primary_enabled ? '#3ecf8e' : '#9aa3b2'
+  }; min-width: 140px; flex-shrink: 0;`;
+  primaryRow.appendChild(primaryLabel);
+  const primaryUrl = doc.createElement('span');
+  primaryUrl.textContent = settings.manifest.primary_url;
+  primaryUrl.style.cssText =
+    'color: #cfd6e3; font-family: monospace; font-size: 11px; word-break: break-all;';
+  primaryRow.appendChild(primaryUrl);
+  body.appendChild(primaryRow);
+
+  // Secondary manifests.
+  if (settings.manifest.secondary.length > 0) {
+    const sep = doc.createElement('div');
+    sep.style.cssText = 'border-top: 1px solid #2a2f42; margin: 8px 0 4px 0;';
+    body.appendChild(sep);
+    for (const sec of settings.manifest.secondary) {
+      const row = doc.createElement('div');
+      row.style.cssText =
+        'display: flex; gap: 12px; font-size: 12px; align-items: baseline;';
+      const label = doc.createElement('span');
+      const kindLabel = sec.kind === 'remote' ? 'Secondary (remote)' : 'Secondary (local)';
+      label.textContent = `${kindLabel}${sec.enabled ? '' : ' [disabled]'}:`;
+      label.style.cssText = `color: ${
+        sec.enabled ? '#cfd6e3' : '#6b7280'
+      }; min-width: 140px; flex-shrink: 0;`;
+      row.appendChild(label);
+      const value = doc.createElement('span');
+      value.textContent = sec.kind === 'remote' ? sec.url : sec.path;
+      value.style.cssText =
+        'color: #cfd6e3; font-family: monospace; font-size: 11px; word-break: break-all;';
+      row.appendChild(value);
+      body.appendChild(row);
+    }
+  }
+
+  return card;
+}
+
+// ============================================================================
 // SSE wiring — refresh automático
 // ============================================================================
 
@@ -1541,6 +1942,14 @@ function shouldRefreshOn(eventType: string): boolean {
     case 'this-device':
     case 'all-devices':
       return eventType === 'devices_changed' || eventType === 'games_changed';
+    case 'settings':
+      // Settings refleja config + sync_games_config. El daemon no
+      // emite un evento `settings_changed` específico todavía — pero
+      // como SyncGamesConfig (toggles SAFETY) se escribe al cambiar
+      // mode de un juego, `daemon_restarted` ya cubre el caso (se
+      // emite cuando se rota sync-games.json). Refrescamos también
+      // ahí para que toggles edits desde la GUI se vean en vivo.
+      return false;
   }
 }
 
