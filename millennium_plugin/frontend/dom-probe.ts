@@ -396,6 +396,10 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
       // Steam (cef-osr-frame, sp-page, etc.) que necesitamos
       // identificar para targetearlo.
       logViewportCenter(doc);
+      // Banner visible en pantalla con TODO el diagnóstico que
+      // acumulamos en debugLines. Permite leer los datos sin abrir
+      // cef_log.txt y sin DevTools. Auto-fade tras 15s.
+      showDebugBanner(doc);
     },
     true, // capture phase para llegar antes de los listeners de Steam
   );
@@ -1541,11 +1545,20 @@ function hideSyncOverlay(doc: Document) {
 
 const hiddenElementsState = new Map<HTMLElement, string>();
 
+/** Buffer de líneas de diagnóstico que `showDebugBanner` muestra en
+ *  pantalla. Se acumulan por click. Se limpia al mostrar el banner. */
+const debugLines: string[] = [];
+
+function diag(msg: string) {
+  // Doble vía: console.error (no log — log puede filtrarse en
+  // cef_log.txt) y buffer in-memory para banner en pantalla.
+  console.error(`[ludusavi-sync] ${msg}`);
+  debugLines.push(msg);
+}
+
 /** Navega Steam a Biblioteca probando varios métodos en orden de
- *  fiabilidad. Emite logs detallados para diagnóstico (lee
- *  C:\Program Files (x86)\Steam\logs\cef_log.txt buscando líneas
- *  `[ludusavi-sync] navigate:`). Una vez sabemos qué método funciona
- *  podemos limpiar los demás.
+ *  fiabilidad. Cada método registra resultado en `debugLines` que
+ *  luego se muestra como banner en pantalla.
  *
  *  Por qué tantas tentativas:
  *   - Tienda y Comunidad viven en procesos CEF separados (distinto
@@ -1557,75 +1570,137 @@ const hiddenElementsState = new Map<HTMLElement, string>();
  *     afecta. Sólo la API interna de Steam puede hacerlo.
  */
 function navigateToBiblioteca(bibliotecaWrapper: Element) {
-  const log = (msg: string) => console.log(`[ludusavi-sync] navigate: ${msg}`);
+  // Reset buffer al empezar nuevo intento.
+  debugLines.length = 0;
+  diag(`navigate start. SteamClient typeof: ${typeof SteamClient}`);
 
   // Vía 1: SteamClient.URL.ExecuteSteamURL — API interna oficial.
-  // Probamos varios paths porque la URL exacta puede variar entre
-  // builds de Steam.
-  if (typeof SteamClient !== 'undefined' && SteamClient?.URL?.ExecuteSteamURL) {
-    const candidates = [
-      'steam://nav/library/home',
-      'steam://nav/library',
-      'steam://open/games',
-      'steam://open/library',
-    ];
-    for (const url of candidates) {
-      try {
-        SteamClient.URL.ExecuteSteamURL(url);
-        log(`SteamClient.URL.ExecuteSteamURL("${url}") OK`);
-        return;
-      } catch (e) {
-        log(`SteamClient.URL.ExecuteSteamURL("${url}") threw: ${e}`);
-      }
-    }
-  } else {
-    log('SteamClient.URL.ExecuteSteamURL no disponible');
-  }
-
-  // Vía 2: React onClick directo via __reactProps$<hash>.
-  const propKey = Object.keys(bibliotecaWrapper).find((k) =>
-    k.startsWith('__reactProps$'),
-  );
-  if (propKey) {
-    const props = (bibliotecaWrapper as any)[propKey];
-    if (typeof props?.onClick === 'function') {
-      try {
-        props.onClick({
-          preventDefault: () => {},
-          stopPropagation: () => {},
-          currentTarget: bibliotecaWrapper,
-          target: bibliotecaWrapper,
-        });
-        log('React onClick (props) OK');
-        return;
-      } catch (e) {
-        log(`React onClick threw: ${e}`);
+  if (typeof SteamClient !== 'undefined') {
+    diag(
+      `SteamClient keys: ${Object.keys(SteamClient ?? {}).slice(0, 12).join(',')}`,
+    );
+    if (SteamClient?.URL?.ExecuteSteamURL) {
+      const candidates = [
+        'steam://nav/library/home',
+        'steam://nav/library',
+        'steam://open/games',
+        'steam://open/library',
+      ];
+      for (const url of candidates) {
+        try {
+          SteamClient.URL.ExecuteSteamURL(url);
+          diag(`ExecuteSteamURL("${url}") OK`);
+          return;
+        } catch (e) {
+          diag(`ExecuteSteamURL("${url}") threw: ${e}`);
+        }
       }
     } else {
-      log('React props sin onClick');
+      diag('SteamClient.URL.ExecuteSteamURL undefined');
     }
-  } else {
-    log('No __reactProps$ key');
   }
+
+  // Vía 2: React onClick directo via __reactProps$<hash>. Probamos
+  // sobre el wrapper Y sobre el leaf interno por si las props no
+  // están donde esperamos.
+  const tryReactClick = (el: Element, label: string): boolean => {
+    const propKey = Object.keys(el).find((k) =>
+      k.startsWith('__reactProps$'),
+    );
+    if (!propKey) {
+      diag(`${label}: sin __reactProps$`);
+      return false;
+    }
+    const props = (el as any)[propKey];
+    if (typeof props?.onClick !== 'function') {
+      const propKeys = Object.keys(props ?? {}).slice(0, 8).join(',');
+      diag(`${label}: react props sin onClick. keys=[${propKeys}]`);
+      return false;
+    }
+    try {
+      props.onClick({
+        preventDefault: () => {},
+        stopPropagation: () => {},
+        currentTarget: el,
+        target: el,
+      });
+      diag(`${label}: React onClick OK`);
+      return true;
+    } catch (e) {
+      diag(`${label}: React onClick threw: ${e}`);
+      return false;
+    }
+  };
+
+  // Probamos el wrapper, su parent, y su primer child con texto.
+  if (tryReactClick(bibliotecaWrapper, 'wrapper')) return;
+  if (
+    bibliotecaWrapper.parentElement &&
+    tryReactClick(bibliotecaWrapper.parentElement, 'wrapper.parent')
+  )
+    return;
+  if (
+    bibliotecaWrapper.firstElementChild &&
+    tryReactClick(bibliotecaWrapper.firstElementChild, 'wrapper.firstChild')
+  )
+    return;
 
   // Vía 3: dispatchEvent click sintético.
   try {
     bibliotecaWrapper.dispatchEvent(
       new MouseEvent('click', { bubbles: true, cancelable: true }),
     );
-    log('dispatchEvent MouseEvent OK');
+    diag('dispatchEvent MouseEvent OK');
     return;
   } catch (e) {
-    log(`dispatchEvent threw: ${e}`);
+    diag(`dispatchEvent threw: ${e}`);
   }
 
   // Vía 4: HTMLElement.click() nativo.
   try {
     (bibliotecaWrapper as HTMLElement).click();
-    log('HTMLElement.click() OK');
+    diag('HTMLElement.click() OK');
   } catch (e) {
-    log(`HTMLElement.click() threw: ${e}`);
+    diag(`HTMLElement.click() threw: ${e}`);
   }
+}
+
+/** Muestra `debugLines` como banner fijo arriba a la izquierda,
+ *  por encima de TODO incluso de los procesos CEF que se cuelan
+ *  por encima del overlay. Auto-fade tras 15s. Sirve para que el
+ *  usuario pueda leer los diagnósticos sin abrir cef_log.txt. */
+function showDebugBanner(doc: Document) {
+  // Quitar banner previo si existe (idempotente).
+  const prev = doc.querySelector('[data-ludusavi-debug-banner]');
+  if (prev) prev.remove();
+
+  const banner = doc.createElement('div');
+  banner.setAttribute('data-ludusavi-debug-banner', '1');
+  banner.style.cssText = [
+    'position: fixed',
+    'top: 4px',
+    'left: 4px',
+    'max-width: 60vw',
+    'background: #fde68a', // amarillo claro, alto contraste
+    'color: #111',
+    'font: 11px/1.4 "Consolas", monospace',
+    'padding: 8px 12px',
+    'border-radius: 4px',
+    'border: 2px solid #f59e0b',
+    'z-index: 2147483647',
+    'box-shadow: 0 4px 12px rgba(0,0,0,0.4)',
+    'white-space: pre-wrap',
+    'pointer-events: auto',
+    'user-select: text',
+  ].join(';');
+  banner.textContent =
+    '[ludusavi-sync] DIAGNÓSTICO\n' + debugLines.join('\n');
+
+  // Append a documentElement para escapar del stacking de body.
+  doc.documentElement.appendChild(banner);
+
+  // Auto-fade tras 15s.
+  setTimeout(() => banner.remove(), 15000);
 }
 
 /** Después de mostrar el overlay, mira si algo se cuela por encima.
@@ -1697,36 +1772,35 @@ function restoreStackingCompetitors() {
   hiddenElementsState.clear();
 }
 
-/** Log diagnóstico para cef_log.txt: qué tags y URLs están en el
- *  centro del viewport tras intentar mostrar el overlay. Sirve para
- *  identificar empíricamente qué tipo de elemento está pintando
- *  Tienda — iframe, webview, custom element, etc. */
+/** Diagnóstico tras intento de mostrar overlay: qué tags y URLs están
+ *  en el centro del viewport. Sirve para identificar empíricamente qué
+ *  tipo de elemento está pintando Tienda — iframe, webview, custom
+ *  element, etc. Empuja líneas a `debugLines` para que el banner las
+ *  muestre. */
 function logViewportCenter(doc: Document) {
   const w = (doc.defaultView ?? window).innerWidth;
   const h = (doc.defaultView ?? window).innerHeight;
+  const href = (doc.defaultView as any)?.location?.href || '<unknown>';
+  diag(`location.href = ${href}`);
+
   const stack = doc.elementsFromPoint(w / 2, h / 2);
-  console.log(
-    `[ludusavi-sync] viewport-center stack (${stack.length} elements):`,
-  );
-  for (let i = 0; i < Math.min(stack.length, 10); i++) {
+  diag(`viewport-center stack (${stack.length}):`);
+  for (let i = 0; i < Math.min(stack.length, 6); i++) {
     const el = stack[i] as HTMLElement;
     const tag = el.tagName.toLowerCase();
     const cls =
-      typeof el.className === 'string' ? el.className.slice(0, 60) : '';
+      typeof el.className === 'string'
+        ? el.className.slice(0, 40)
+        : '';
     const id = el.id || '';
     const src = (el as any).src || '';
     const rect = el.getBoundingClientRect();
-    console.log(
-      `  [${i}] <${tag}> ${id ? '#' + id : ''} ${cls ? '.' + cls : ''} ${
+    diag(
+      `  [${i}] <${tag}>${id ? '#' + id : ''}${cls ? '.' + cls : ''} ${
         Math.round(rect.width)
-      }x${Math.round(rect.height)}@${Math.round(rect.x)},${Math.round(rect.y)}${
-        src ? ' src=' + src : ''
-      }`,
+      }x${Math.round(rect.height)}${src ? ' src=' + src.slice(0, 40) : ''}`,
     );
   }
-  // Lista de URL de la ventana — si Steam navegó a Biblioteca el
-  // location.href cambia.
-  console.log(`[ludusavi-sync] window.location.href = ${(doc.defaultView as any)?.location?.href}`);
 }
 
 
