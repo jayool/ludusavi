@@ -785,6 +785,347 @@ def _launch_in_terminal(cmd: list, cwd: str) -> None:
     raise RuntimeError("No terminal emulator found")
 
 
+def _accela_marker_path(game_path: str) -> str:
+    """Return the absolute path of the ACCELA install marker if present.
+
+    Mirrors ``GameManager._get_accela_marker_path`` (game_manager.py:447).
+    Either ``.ACCELA`` or ``.DepotDownloader`` counts as a marker.
+    """
+    for name in (".ACCELA", ".DepotDownloader"):
+        candidate = os.path.join(game_path, name)
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+
+def _has_real_game_content(game_path: str) -> bool:
+    """True iff the directory has files beyond the ACCELA markers / OS junk.
+    Mirrors ``GameManager._has_game_content`` (game_manager.py:415)."""
+    ignore = {".accela", ".depotdownloader", "desktop.ini", "thumbs.db"}
+    try:
+        with os.scandir(game_path) as entries:
+            for entry in entries:
+                try:
+                    name = entry.name
+                    if name.lower() in ignore or name.startswith("."):
+                        continue
+                    if entry.is_file() or entry.is_dir():
+                        return True
+                except (OSError, FileNotFoundError, PermissionError):
+                    continue
+    except OSError:
+        return False
+    return False
+
+
+def _find_acf_for_game(library_path: str, game_name: str):
+    """Locate the ``appmanifest_*.acf`` whose ``installdir`` matches game_name.
+
+    Returns ``(appmanifest_path, appid)`` or ``(None, None)``. Mirrors
+    ``GameManager._parse_acf_for_appid`` (game_manager.py:713).
+    """
+    import re
+
+    steamapps = os.path.join(library_path, "steamapps")
+    if not os.path.exists(steamapps):
+        return None, None
+    try:
+        with os.scandir(steamapps) as entries:
+            for entry in entries:
+                try:
+                    if not (
+                        entry.name.startswith("appmanifest_")
+                        and entry.name.endswith(".acf")
+                    ):
+                        continue
+                    try:
+                        with open(entry.path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                    except (OSError, IOError, PermissionError):
+                        continue
+                    m = re.search(r'"installdir"\s+"([^"]+)"', content)
+                    if not m:
+                        continue
+                    installdir = m.group(1)
+                    if installdir.lower() == game_name.lower():
+                        appid = entry.name.replace("appmanifest_", "").replace(".acf", "")
+                        return entry.path, appid
+                except (OSError, FileNotFoundError, PermissionError):
+                    continue
+    except OSError:
+        pass
+    return None, None
+
+
+def _parse_acf_metadata(appmanifest_path: str) -> Dict[str, Any]:
+    """Extract ``buildid``, ``LastUpdated``, ``SizeOnDisk``, ``name`` from an ACF.
+    Mirrors ``GameManager._parse_acf_for_metadata`` (game_manager.py:780)."""
+    import re
+
+    out: Dict[str, Any] = {
+        "name": "",
+        "buildid": "",
+        "last_updated": "",
+        "size_on_disk": 0,
+    }
+    try:
+        with open(appmanifest_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except (OSError, IOError, PermissionError):
+        return out
+
+    for key, target in (
+        ("name", "name"),
+        ("buildid", "buildid"),
+        ("LastUpdated", "last_updated"),
+    ):
+        m = re.search(rf'"{key}"\s+"([^"]+)"', content)
+        if m:
+            out[target] = m.group(1)
+    m = re.search(r'"SizeOnDisk"\s+"([^"]+)"', content)
+    if m:
+        try:
+            size = int(m.group(1))
+            if size > 0:
+                out["size_on_disk"] = size
+        except ValueError:
+            pass
+    return out
+
+
+def handle_list_accela_installs(_payload: Dict[str, Any]) -> None:
+    """Scan all Steam libraries for games installed via ACCELA.
+
+    A game is "installed via ACCELA" if its directory under
+    ``steamapps/common/`` contains a ``.ACCELA`` or ``.DepotDownloader``
+    marker folder (created by DepotDownloader during a Phase 4 download).
+
+    Vanilla Steam installs are deliberately excluded: Ludusavi exposes
+    these entries as a fourth source for the Games table, and only the
+    ACCELA-managed ones offer meaningful Overview/Uninstall/Tools
+    actions in our integration.
+    """
+    try:
+        from core.steam_helpers import get_steam_libraries
+    except Exception as e:
+        emit_error(f"list_accela_installs: import failed: {e!r}")
+        return
+
+    libraries = get_steam_libraries() or []
+    games = []
+
+    for library in libraries:
+        common = os.path.join(library, "steamapps", "common")
+        if not os.path.exists(common):
+            continue
+        try:
+            with os.scandir(common) as entries:
+                for entry in entries:
+                    try:
+                        if not entry.is_dir():
+                            continue
+                        marker = _accela_marker_path(entry.path)
+                        if not marker:
+                            continue
+                        if not _has_real_game_content(entry.path):
+                            continue
+
+                        appmanifest_path, appid = _find_acf_for_game(library, entry.name)
+                        meta = _parse_acf_metadata(appmanifest_path) if appmanifest_path else {}
+
+                        games.append({
+                            "appid": appid or "0",
+                            "game_name": meta.get("name") or entry.name,
+                            "install_dir": entry.name,
+                            "install_path": entry.path,
+                            "library_path": library,
+                            "size_on_disk": meta.get("size_on_disk", 0),
+                            "buildid": meta.get("buildid", ""),
+                            "last_updated": meta.get("last_updated", ""),
+                            "source": "ACCELA",
+                            "is_accela_install": True,
+                            "accela_marker_path": marker,
+                            "appmanifest_path": appmanifest_path or "",
+                        })
+                    except (OSError, FileNotFoundError, PermissionError):
+                        continue
+        except OSError:
+            continue
+
+    emit({"event": "accela_installs", "games": games})
+
+
+def handle_uninstall_game(payload: Dict[str, Any]) -> None:
+    """Uninstall a game: rmtree the install dir, delete its ACF, optionally
+    purge Linux-only state (Proton compatdata, cloud saves).
+
+    Mirrors the Linux/Windows branches of ``GameManager.uninstall_game``
+    (game_manager.py:1004) but headless (no Qt dialogs).
+    """
+    import shutil
+    import sys as _sys
+
+    install_path = payload.get("install_path") or ""
+    appmanifest_path = payload.get("appmanifest_path") or ""
+    library_path = payload.get("library_path") or ""
+    appid = payload.get("appid") or ""
+    remove_compatdata = bool(payload.get("remove_compatdata", False))
+    remove_saves = bool(payload.get("remove_saves", False))
+
+    if not install_path:
+        emit_error("uninstall_game: 'install_path' is required")
+        return
+
+    errors = []
+
+    if os.path.exists(install_path):
+        try:
+            shutil.rmtree(install_path)
+        except OSError as e:
+            errors.append(f"rmtree install dir: {e!r}")
+
+    if appmanifest_path and os.path.exists(appmanifest_path):
+        try:
+            os.remove(appmanifest_path)
+        except OSError as e:
+            errors.append(f"remove ACF: {e!r}")
+
+    if _sys.platform == "linux" and library_path and appid:
+        if remove_compatdata:
+            compat = os.path.join(library_path, "steamapps", "compatdata", appid)
+            if os.path.exists(compat):
+                try:
+                    shutil.rmtree(compat)
+                except OSError as e:
+                    errors.append(f"rmtree compatdata: {e!r}")
+        if remove_saves:
+            userdata = os.path.join(library_path, "userdata")
+            if os.path.exists(userdata):
+                try:
+                    with os.scandir(userdata) as users:
+                        for user in users:
+                            if not user.is_dir():
+                                continue
+                            remote = os.path.join(user.path, appid, "remote")
+                            if os.path.exists(remote):
+                                try:
+                                    shutil.rmtree(remote)
+                                except OSError as e:
+                                    errors.append(f"rmtree saves {user.name}: {e!r}")
+                except OSError as e:
+                    errors.append(f"scan userdata: {e!r}")
+
+    emit({
+        "event": "uninstall_done",
+        "ok": len(errors) == 0,
+        "errors": errors,
+    })
+
+
+def handle_fix_install(payload: Dict[str, Any]) -> None:
+    """Delete only the ``appmanifest_*.acf`` so Steam stops thinking the
+    game is installed (without touching the game files themselves).
+
+    Useful when a Steam DB sync after an ACCELA install accidentally
+    re-registers the game and Steam tries to download it on top.
+    """
+    appmanifest_path = payload.get("appmanifest_path")
+    if not appmanifest_path:
+        emit_error("fix_install: 'appmanifest_path' is required")
+        return
+    if not os.path.exists(appmanifest_path):
+        emit({"event": "fix_install_done", "ok": True, "note": "ACF was already absent."})
+        return
+    try:
+        os.remove(appmanifest_path)
+        emit({"event": "fix_install_done", "ok": True, "note": "ACF deleted."})
+    except OSError as e:
+        emit({"event": "fix_install_done", "ok": False, "note": f"{e!r}"})
+
+
+def _stub_task_manager():
+    """Instantiate ``TaskManager`` with a minimal main_window stub.
+
+    ``TaskManager.__init__`` only needs ``main_window.settings``; the rest
+    of the references to ``self.main_window`` in the methods we call are
+    gated behind ``show_dialog`` (always passed as ``False`` from us).
+    """
+    from PyQt6.QtCore import QSettings
+    from managers.task_manager import TaskManager
+
+    class _MainWindowStub:
+        def __init__(self):
+            self.settings = QSettings("Tachibana Labs", "ACCELA")
+
+    return TaskManager(_MainWindowStub())
+
+
+def handle_apply_goldberg(payload: Dict[str, Any]) -> None:
+    """Apply the Goldberg Steam emulator to a game directory via
+    ``TaskManager.apply_goldberg_to_game`` (task_manager.py:779).
+    """
+    install_path = payload.get("install_path")
+    appid = payload.get("appid")
+    game_name = payload.get("game_name", "")
+    if not install_path:
+        emit_error("apply_goldberg: 'install_path' is required")
+        return
+    if not appid:
+        emit_error("apply_goldberg: 'appid' is required")
+        return
+    try:
+        tm = _stub_task_manager()
+        ok = tm.apply_goldberg_to_game(install_path, appid, game_name, show_dialog=False)
+        emit({"event": "goldberg_done", "ok": bool(ok)})
+    except Exception as e:
+        emit({"event": "goldberg_done", "ok": False, "note": f"{e!r}"})
+
+
+def handle_remove_goldberg(payload: Dict[str, Any]) -> None:
+    """Restore the original ``steam_api*.dll`` backups via
+    ``TaskManager.remove_goldberg_from_game`` (task_manager.py:824).
+    """
+    install_path = payload.get("install_path")
+    appid = payload.get("appid", "")
+    game_name = payload.get("game_name", "")
+    if not install_path:
+        emit_error("remove_goldberg: 'install_path' is required")
+        return
+    try:
+        tm = _stub_task_manager()
+        ok = tm.remove_goldberg_from_game(install_path, appid, game_name, show_dialog=False)
+        emit({"event": "goldberg_removed", "ok": bool(ok)})
+    except Exception as e:
+        emit({"event": "goldberg_removed", "ok": False, "note": f"{e!r}"})
+
+
+def handle_run_steamless_for_game(payload: Dict[str, Any]) -> None:
+    """Run Steamless on every executable Steamless considers in the game
+    directory. ``SteamlessTask.set_game_directory`` walks the dir and
+    queues exes; ``run`` (sync entrypoint) processes them sequentially.
+    """
+    install_path = payload.get("install_path")
+    if not install_path:
+        emit_error("run_steamless_for_game: 'install_path' is required")
+        return
+    try:
+        from core.tasks.steamless_task import SteamlessTask
+
+        task = SteamlessTask()
+        task.set_game_directory(install_path)
+        # Synchronous run, same approach as our Phase 4 monkey-patch of
+        # CLITaskManager._run_steamless. Avoids QThread/QEventLoop which
+        # do not work without a Qt event loop.
+        task.run()
+        emit({
+            "event": "steamless_done",
+            "ok": True,
+            "note": f"Steamless ran on {install_path}.",
+        })
+    except Exception as e:
+        emit({"event": "steamless_done", "ok": False, "note": f"{e!r}"})
+
+
 HANDLERS = {
     "search": handle_search,
     "fetch_manifest": handle_fetch_manifest,
@@ -797,6 +1138,12 @@ HANDLERS = {
     "download_depots": handle_download_depots,
     "get_steam_libraries": handle_get_steam_libraries,
     "restart_steam": handle_restart_steam,
+    "list_accela_installs": handle_list_accela_installs,
+    "uninstall_game": handle_uninstall_game,
+    "fix_install": handle_fix_install,
+    "apply_goldberg": handle_apply_goldberg,
+    "remove_goldberg": handle_remove_goldberg,
+    "run_steamless_for_game": handle_run_steamless_for_game,
 }
 
 
