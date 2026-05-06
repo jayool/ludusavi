@@ -844,6 +844,25 @@ impl App {
             ..Default::default()
         };
 
+        // Eagerly fetch the ACCELA installs list on startup so the
+        // GameDetail ACCELA section appears instantly the first time
+        // the user opens any game. Without this, the fetch only fires
+        // on the first explicit `SwitchScreen` to Games or Accela —
+        // if the user starts in Games (the default screen) and clicks
+        // a game directly, there's a ~10s round-trip waiting for the
+        // Python adapter to boot. Silent on failure (defaults apply).
+        if !accela_screen.python_path.trim().is_empty()
+            && !accela_screen.accela_path.trim().is_empty()
+        {
+            let python = accela_screen.python_path.clone();
+            let accela = accela_screen.accela_path.clone();
+            let adapter = crate::gui::accela::default_adapter_path();
+            commands.push(Task::perform(
+                crate::gui::accela::run_list_accela_installs(python, adapter, accela),
+                |result| Message::Accela(crate::gui::accela::Event::InstallsLoaded(result)),
+            ));
+        }
+
         (
             Self {
                 backup_screen: screen::Backup::new(&config, &cache),
