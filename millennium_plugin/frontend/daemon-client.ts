@@ -21,6 +21,37 @@ export interface DaemonStatus {
   daemon: string;
   version: string;
   api_version: number;
+  /** Path al app_dir de Ludusavi (p.ej. `C:/Users/.../AppData/Roaming/ludusavi`).
+   *  El plugin lo pasa al backend Lua para abrirlo con el explorador
+   *  del SO. Sólo expuesto desde la versión que añade el card SYNC
+   *  DAEMON al overlay. */
+  app_dir?: string;
+  /** Último mod_time global registrado por el worker (de
+   *  daemon-state.json). Es el "Last sync" que la GUI muestra en
+   *  This Device → SYNC DAEMON. Distinto del per-device
+   *  last_sync_time_utc que devuelve /api/devices. */
+  last_sync_time_utc?: string;
+  /** Siempre true cuando se recibe la respuesta. Existe para que el
+   *  plugin pueda renderizar el dot verde "Daemon is running" sin
+   *  condicionales especiales. */
+  running?: boolean;
+}
+
+/** Estado del binario rclone reportado por el daemon. */
+export type RcloneState = 'ok' | 'missing' | 'not_configured';
+
+export interface ApiCloudResponse {
+  /** "Google Drive" / "Dropbox" / "OneDrive" / "Box" / "FTP" / "SMB"
+   *  / "WebDAV" / "Custom" / "Not configured". */
+  provider: string;
+  /** rclone remote ID (p.ej. "ludusavi-1234567"). "—" si no hay
+   *  remote configurado. */
+  remote_id: string;
+  /** Carpeta cloud para los backups (p.ej. "ludusavi-backup"). */
+  path: string;
+  rclone_state: RcloneState;
+  /** URL para instalar rclone si está missing. */
+  install_url: string;
 }
 
 export interface ApiDevice {
@@ -118,6 +149,33 @@ const DAEMON_URL = 'http://localhost:61234';
 /** Función Lua del backend que devuelve el token o "" si no se puede leer. */
 const readDaemonToken = callable<[], string>('read_daemon_token');
 
+/** Función Lua del backend que abre `path` con el explorador del SO.
+ *  Devuelve "ok" si el comando se lanzó o "error: ..." si no. El
+ *  frontend la necesita porque el sandbox CEF no permite abrir paths
+ *  directamente desde JS (no `window.open('file://...')`, etc).
+ *
+ *  Millennium IPC pasa args como objeto (Record), no posicional —
+ *  por eso aquí va `{ path }` y la función Lua recibe `args.path`. */
+const openAppDirLua = callable<[{ path: string }], string>('open_app_dir');
+
+/**
+ * Wrapper conveniente para abrir el `app_dir` del daemon (devuelto por
+ * /api/status). Devuelve true si se lanzó el comando (no garantiza
+ * que el explorer apareciera) o false si falló.
+ */
+export async function openAppDir(path: string): Promise<boolean> {
+  if (!path) return false;
+  try {
+    const result = await openAppDirLua({ path });
+    if (result === 'ok') return true;
+    console.warn('[ludusavi-sync] open_app_dir failed:', result);
+    return false;
+  } catch (e) {
+    console.error('[ludusavi-sync] open_app_dir threw:', e);
+    return false;
+  }
+}
+
 export class DaemonClient {
   private tokenPromise: Promise<string> | null = null;
 
@@ -195,6 +253,12 @@ export class DaemonClient {
    */
   getAccelaInstalls(): Promise<ApiAccelaInstallsResponse> {
     return this.fetchJSON('/api/accela-installs');
+  }
+
+  /** Config de cloud storage (provider, remote_id, path, rclone_state).
+   *  Read-only en Fase 1 — el usuario configura cloud desde la GUI Iced. */
+  getCloud(): Promise<ApiCloudResponse> {
+    return this.fetchJSON('/api/cloud');
   }
 
   /**

@@ -48,6 +48,47 @@ function read_daemon_token()
     return content
 end
 
+-- Abre `args.path` con el explorador del SO. El frontend no puede
+-- hacerlo por el sandbox CEF — tiene que delegar al backend Lua.
+-- Devuelve "ok" si el comando se lanzó (no garantiza que el explorer
+-- apareciera) o una string de error empezando por "error:".
+--
+-- IMPORTANTE — convenciones de Millennium IPC (validadas en
+-- hello-world 4):
+--  1. Args se reciben como tabla, no posicionales: el frontend
+--     llama `openAppDirLua({ path: '...' })`, y aquí leemos
+--     `args.path`. La signature posicional `function f(path)` da
+--     error TS en el frontend.
+--  2. El return value debe ser ESCALAR (string/number/bool). Si
+--     devuelves tabla llega `undefined` al frontend sin error visible.
+function open_app_dir(args)
+    local path = args and args.path or nil
+    if not path or path == "" then
+        return "error: empty path"
+    end
+    -- Normaliza separadores en Windows. La GUI Iced almacena rutas
+    -- con forward slashes (StrictPath::render); explorer.exe acepta
+    -- ambos pero es más limpio normalizar.
+    if package.config:sub(1, 1) == "\\" then
+        path = path:gsub("/", "\\")
+        -- explorer.exe "<path>" — si el path no existe, abre Mis
+        -- Documentos, no falla.
+        local cmd = string.format('start "" explorer "%s"', path)
+        local ok = os.execute(cmd)
+        if ok then
+            return "ok"
+        end
+        return "error: explorer launch failed"
+    else
+        -- Linux: xdg-open. Mac: open. Probamos xdg-open primero.
+        local ok = os.execute(string.format('xdg-open "%s" >/dev/null 2>&1', path))
+        if ok then return "ok" end
+        ok = os.execute(string.format('open "%s" >/dev/null 2>&1', path))
+        if ok then return "ok" end
+        return "error: no opener found (xdg-open / open)"
+    end
+end
+
 local function on_load()
     logger:info("[ludusavi-sync] backend loaded")
     millennium.ready()
