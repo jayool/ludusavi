@@ -460,20 +460,41 @@ impl Modal {
             let mut parts = full.splitn(2, "\n\n");
             let title = parts.next().unwrap_or("").to_string();
             let description = parts.next().unwrap_or("").to_string();
+            // `align_x(Center)` on the Column centers the children as
+            // a whole, but a wrapping Text expands to Length::Fill and
+            // its internal lines fall back to left-aligned. Forcing
+            // `align_x(Horizontal::Center)` on each Text guarantees
+            // every line is centered regardless of wrap behavior, so
+            // short and long destructive modals look the same.
             Column::new()
                 .width(Length::Fill)
                 .spacing(10)
                 .padding(padding::right(10))
                 .align_x(Alignment::Center)
-                .push(text(title).size(16))
-                .push(text(description).size(13).class(style::Text::Muted))
+                .push(
+                    text(title)
+                        .size(16)
+                        .align_x(iced::alignment::Horizontal::Center)
+                        .width(Length::Fill),
+                )
+                .push(
+                    text(description)
+                        .size(13)
+                        .class(style::Text::Muted)
+                        .align_x(iced::alignment::Horizontal::Center)
+                        .width(Length::Fill),
+                )
         } else {
             Column::new()
                 .width(Length::Fill)
                 .spacing(15)
                 .padding(padding::right(10))
                 .align_x(Alignment::Center)
-                .push(text(self.text(config)))
+                .push(
+                    text(self.text(config))
+                        .align_x(iced::alignment::Horizontal::Center)
+                        .width(Length::Fill),
+                )
         };
 
         match self {
