@@ -205,15 +205,148 @@ async fn require_auth(
     next.run(req).await
 }
 
-/// `GET /api/status` — endpoint mínimo para validar la plumbing entera.
-/// Devuelve info estática del daemon. Más adelante incluirá juegos
-/// activos, errores de rclone, último sync, etc.
+/// `GET /api/status` — info de salud del daemon.
+///
+/// Además del check básico de plumbing, devuelve:
+///  - `app_dir`: path al directorio de Ludusavi en el SO (los plugins
+///    no pueden leer disco directamente por el sandbox CEF, pero sí
+///    pasarle este path a una callable de su backend Lua/Python para
+///    abrirlo con el explorador).
+///  - `last_sync_time_utc`: último mod_time global registrado por el
+///    daemon (de `daemon-state.json`/`last_known_mod_time`). Es el
+///    "Last sync" que la GUI muestra en el card SYNC DAEMON.
+///  - `running`: aquí siempre `true` — si el cliente recibe la
+///    respuesta es que el daemon está vivo. El campo existe para que
+///    el plugin pueda renderizar el dot verde "Daemon is running"
+///    sin condicionales especiales.
 async fn status_handler() -> Json<serde_json::Value> {
+    let app_dir_path = app_dir();
+    let last_sync = read_last_sync_time(&app_dir_path);
+
     Json(serde_json::json!({
         "daemon": "ludusavi-daemon",
         "version": env!("CARGO_PKG_VERSION"),
         "api_version": 1,
+        "app_dir": app_dir_path.render(),
+        "last_sync_time_utc": last_sync,
+        "running": true,
     }))
+}
+
+/// Lee `daemon-state.json` y extrae el campo `last_known_mod_time`,
+/// que el worker actualiza cada vez que detecta un cambio de mod-time
+/// en el game-list. Es el "Last sync" del daemon a nivel global —
+/// distinto del per-device `last_sync_time_utc`. Devuelve None si el
+/// fichero no existe o no contiene el campo.
+fn read_last_sync_time(app_dir: &StrictPath) -> Option<String> {
+    let path = app_dir.joined("daemon-state.json");
+    let content = path.read()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    json.get("last_known_mod_time")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+// ============================================================================
+// /api/cloud — config de cloud storage (Provider, Remote ID, Path, rclone)
+// ============================================================================
+//
+// Equivale a la "CLOUD STORAGE card" de Screen::ThisDevice en la GUI.
+// El plugin necesita esto para pintar la misma card. Read-only — el
+// usuario configura cloud desde la GUI Iced (o, en el futuro, via POST
+// endpoint en Fase 2).
+
+#[derive(serde::Serialize)]
+struct ApiCloudResponse {
+    /// "Google Drive" / "Dropbox" / "OneDrive" / "Box" / "FTP" / "SMB"
+    /// / "WebDAV" / "Custom" / "Not configured".
+    provider: String,
+    /// rclone remote ID. "—" si no hay remote configurado.
+    remote_id: String,
+    /// Carpeta cloud para los backups (p.ej. "ludusavi-backup").
+    path: String,
+    /// Estado del binario rclone: "ok" (config válida y binario
+    /// encontrado), "not_configured" (path en config vacío o inválido),
+    /// "missing" (el daemon worker reportó que el binario no existe
+    /// en runtime — por flag en daemon-status.json).
+    rclone_state: String,
+    /// URL para instalar rclone si está missing — el plugin la usa
+    /// para el botón "Install instructions" como hace la GUI.
+    install_url: String,
+}
+
+async fn cloud_handler() -> Json<ApiCloudResponse> {
+    use crate::resource::config::Config;
+
+    let config = match Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[daemon-http] config load failed for cloud: {e:?}");
+            return Json(ApiCloudResponse {
+                provider: "Not configured".to_string(),
+                remote_id: "—".to_string(),
+                path: String::new(),
+                rclone_state: "not_configured".to_string(),
+                install_url: "https://rclone.org/downloads/".to_string(),
+            });
+        }
+    };
+
+    let provider = match &config.cloud.remote {
+        Some(crate::cloud::Remote::GoogleDrive { .. }) => "Google Drive",
+        Some(crate::cloud::Remote::Dropbox { .. }) => "Dropbox",
+        Some(crate::cloud::Remote::OneDrive { .. }) => "OneDrive",
+        Some(crate::cloud::Remote::Box { .. }) => "Box",
+        Some(crate::cloud::Remote::Ftp { .. }) => "FTP",
+        Some(crate::cloud::Remote::Smb { .. }) => "SMB",
+        Some(crate::cloud::Remote::WebDav { .. }) => "WebDAV",
+        Some(crate::cloud::Remote::Custom { .. }) => "Custom",
+        None => "Not configured",
+    }
+    .to_string();
+
+    let remote_id = config
+        .cloud
+        .remote
+        .as_ref()
+        .map(|r| r.id().to_string())
+        .unwrap_or_else(|| "—".to_string());
+
+    // 3-way: missing (binario no existe runtime) > ok (config válida)
+    // > not_configured (path vacío o inválido). Mismo orden que la GUI.
+    let rclone_missing_flag = read_rclone_missing_flag(&app_dir());
+    let rclone_state = if rclone_missing_flag {
+        "missing"
+    } else if config.apps.rclone.is_valid() {
+        "ok"
+    } else {
+        "not_configured"
+    }
+    .to_string();
+
+    Json(ApiCloudResponse {
+        provider,
+        remote_id,
+        path: config.cloud.path.clone(),
+        rclone_state,
+        install_url: "https://rclone.org/downloads/".to_string(),
+    })
+}
+
+/// Lee el flag `rclone_missing` de `daemon-status.json`. El worker lo
+/// escribe vía `write_rclone_missing_flag` cuando descubre que el
+/// binario rclone no existe en runtime.
+fn read_rclone_missing_flag(app_dir: &StrictPath) -> bool {
+    let path = app_dir.joined("daemon-status.json");
+    let Some(content) = path.read() else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    json.get("rclone_missing")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 // ============================================================================
@@ -788,6 +921,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/devices", get(devices_handler))
         .route("/api/events", get(events_handler))
         .route("/api/accela-installs", get(accela_installs_handler))
+        .route("/api/cloud", get(cloud_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
