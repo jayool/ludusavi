@@ -164,6 +164,15 @@ pub enum Message {
     RemoveCustomGameRequested(String),
     RemoveCustomGameConfirm(String),
     Accela(crate::gui::accela::Event),
+    /// Confirmation from `Modal::ConfirmAccelaAction`. Closes the
+    /// modal and dispatches to the right adapter command according to
+    /// `action`.
+    AccelaActionConfirm {
+        install: crate::gui::accela::AccelaInstall,
+        action: crate::gui::accela::InstallAction,
+        remove_compatdata: bool,
+        remove_saves: bool,
+    },
 }
 
 impl Message {

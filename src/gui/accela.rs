@@ -87,16 +87,11 @@ pub enum Event {
     /// Linux-only checkboxes inside the Uninstall sub-tab.
     SetUninstallRemoveCompatdata(bool),
     SetUninstallRemoveSaves(bool),
-    /// User clicked an action button (Uninstall / Fix Install / Apply
-    /// Goldberg / Remove Goldberg / Run Steamless). Stashes the
-    /// pending action so the inline confirmation row appears.
+    /// User clicked an action button. Opens a confirmation modal
+    /// (`Modal::ConfirmAccelaAction`); on confirm, the modal returns
+    /// `Message::AccelaActionConfirm` which dispatches to the right
+    /// adapter command.
     RequestInstallAction(InstallAction, AccelaInstall),
-    /// User clicked "Yes" on the inline confirmation row. Fires the
-    /// adapter command associated with the pending action.
-    ConfirmInstallAction,
-    /// User clicked "Cancel" on the inline confirmation row, or
-    /// switched tabs/games while a confirmation was pending.
-    CancelInstallAction,
     /// Adapter finished an install-action command (success or failure).
     InstallActionFinished(Result<String, String>),
 }
@@ -142,23 +137,29 @@ impl InstallAction {
         }
     }
 
+    /// Returns a "title\n\ndescription" string for the confirmation
+    /// modal (matches the layout other modals use).
     pub fn confirm_message(&self, game: &str) -> String {
         match self {
             Self::Uninstall => format!(
-                "Delete '{game}' install folder, ACF and any selected Linux extras?"
+                "Uninstall \"{game}\"?\n\nDelete the install folder and the \
+                 appmanifest_*.acf so Steam stops tracking the game."
             ),
             Self::FixInstall => format!(
-                "Delete the appmanifest_*.acf for '{game}'? The game files stay; \
-                 Steam will stop tracking the install."
+                "Fix install for \"{game}\"?\n\nDelete the appmanifest_*.acf. \
+                 Game files stay; Steam will stop tracking the install."
             ),
             Self::ApplyGoldberg => format!(
-                "Replace steam_api*.dll in '{game}' with the Goldberg emulator?"
+                "Apply Goldberg to \"{game}\"?\n\nReplace steam_api*.dll in the \
+                 install folder with the Goldberg emulator."
             ),
             Self::RemoveGoldberg => format!(
-                "Restore the original steam_api*.dll backups (.valve files) in '{game}'?"
+                "Remove Goldberg from \"{game}\"?\n\nRestore the original \
+                 steam_api*.dll backups (.valve files)."
             ),
             Self::RunSteamless => format!(
-                "Run Steamless on every executable found inside '{game}'?"
+                "Run Steamless on \"{game}\"?\n\nProcess every executable \
+                 inside the install folder."
             ),
         }
     }
@@ -364,7 +365,7 @@ pub struct GameResult {
 
 /// One game detected as ACCELA-installed by scanning Steam libraries.
 /// Mirror of the JSON dict the adapter returns from `list_accela_installs`.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct AccelaInstall {
     #[serde(default)]
     pub appid: String,
@@ -429,13 +430,10 @@ pub struct AccelaScreen {
     /// GameDetail. Single global value (not per-game) — the section
     /// reopens on Overview when the user switches games.
     pub install_subtab: InstallSubTab,
-    /// Linux-only checkboxes for `uninstall_game`. Reset when the
-    /// confirmation row is cancelled / completed.
+    /// Linux-only checkboxes for `uninstall_game`. Captured into the
+    /// confirmation modal at open time and reset on completion.
     pub install_remove_compatdata: bool,
     pub install_remove_saves: bool,
-    /// Pending action waiting for inline confirmation. Some(...) means
-    /// the row "Are you sure? [Yes] [Cancel]" is visible in the section.
-    pub install_pending_action: Option<(InstallAction, AccelaInstall)>,
     /// True while an install-action command is running on the adapter.
     pub install_busy: bool,
     /// Last install-action message ("✓ Uninstalled.", "✗ Failed: ..."),
@@ -1815,44 +1813,6 @@ impl AccelaScreen {
             .push(header)
             .push(tabs)
             .push(content);
-
-        if let Some((action, target)) = &self.install_pending_action {
-            // Inline confirmation row, visible only while a request is
-            // staged. Yes runs the action; Cancel clears the request.
-            let row = Container::new(
-                Column::new()
-                    .spacing(8)
-                    .push(
-                        text(action.confirm_message(&target.game_name))
-                            .size(12)
-                            .class(style::Text::Muted),
-                    )
-                    .push(
-                        Row::new()
-                            .spacing(8)
-                            .push(
-                                Button::new(text("Yes, do it").size(12))
-                                    .padding([6, 14])
-                                    .class(style::Button::Primary)
-                                    .on_press(Message::Accela(
-                                        Event::ConfirmInstallAction,
-                                    )),
-                            )
-                            .push(
-                                Button::new(text("Cancel").size(12))
-                                    .padding([6, 14])
-                                    .class(style::Button::Ghost)
-                                    .on_press(Message::Accela(
-                                        Event::CancelInstallAction,
-                                    )),
-                            ),
-                    ),
-            )
-            .width(Length::Fill)
-            .padding(12)
-            .class(style::Container::GamesTable);
-            col = col.push(row);
-        }
 
         if self.install_busy {
             col = col.push(

@@ -102,6 +102,7 @@ pub enum Kind {
     ConfirmRestoreSafetyBackup,
     ConfirmDeleteSafetyBackup,
     ConfirmResolveConflictKeepBoth,
+    ConfirmAccelaAction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +151,16 @@ pub enum Modal {
     ConfirmRemoveCustomGame {
     game: String,
     },
+    /// Confirmation for one of the ACCELA library-mode actions
+    /// (Uninstall / Fix Install / Apply Goldberg / Remove Goldberg /
+    /// Run Steamless). The flags are captured at modal-open time from
+    /// `AccelaScreen.install_remove_*` and stay frozen until confirm.
+    ConfirmAccelaAction {
+        install: crate::gui::accela::AccelaInstall,
+        action: crate::gui::accela::InstallAction,
+        remove_compatdata: bool,
+        remove_saves: bool,
+    },
 }
 
 impl Modal {
@@ -173,6 +184,7 @@ impl Modal {
             Modal::ConfirmRestoreSafetyBackup { .. } => Kind::ConfirmRestoreSafetyBackup,
             Modal::ConfirmDeleteSafetyBackup { .. } => Kind::ConfirmDeleteSafetyBackup,
             Modal::ConfirmResolveConflictKeepBoth { .. } => Kind::ConfirmResolveConflictKeepBoth,
+            Modal::ConfirmAccelaAction { .. } => Kind::ConfirmAccelaAction,
         }
     }
 
@@ -197,6 +209,7 @@ impl Modal {
             Modal::ConfirmRestoreSafetyBackup { .. } => false,
             Modal::ConfirmDeleteSafetyBackup { .. } => false,
             Modal::ConfirmResolveConflictKeepBoth { .. } => false,
+            Modal::ConfirmAccelaAction { .. } => false,
         }
     }
 
@@ -218,7 +231,8 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => ModalVariant::Confirm,
+            | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfirmAccelaAction { .. } => ModalVariant::Confirm,
         }
     }
 
@@ -263,6 +277,31 @@ impl Modal {
                     game
                 )
             }
+            Self::ConfirmAccelaAction {
+                install,
+                action,
+                remove_compatdata,
+                remove_saves,
+            } => {
+                use crate::gui::accela::InstallAction;
+                let mut msg = action.confirm_message(&install.game_name);
+                if matches!(action, InstallAction::Uninstall) {
+                    let mut extras: Vec<&str> = Vec::new();
+                    if *remove_compatdata {
+                        extras.push("Proton/Wine compatdata");
+                    }
+                    if *remove_saves {
+                        extras.push("Steam cloud saves");
+                    }
+                    if !extras.is_empty() {
+                        msg.push_str("\n\nAlso removing: ");
+                        msg.push_str(&extras.join(", "));
+                        msg.push('.');
+                    }
+                    msg.push_str("\n\nThis cannot be undone.");
+                }
+                msg
+            }
         }
     }
 
@@ -285,6 +324,17 @@ impl Modal {
             }
             Self::AddGame { .. } => Some(Message::AddGameConfirm),
             Self::ConfirmRemoveCustomGame { game } => Some(Message::RemoveCustomGameConfirm(game.clone())),
+            Self::ConfirmAccelaAction {
+                install,
+                action,
+                remove_compatdata,
+                remove_saves,
+            } => Some(Message::AccelaActionConfirm {
+                install: install.clone(),
+                action: *action,
+                remove_compatdata: *remove_compatdata,
+                remove_saves: *remove_saves,
+            }),
             Self::Exiting => None,
             Self::ConfirmAddMissingRoots(missing) => Some(Message::ConfirmAddMissingRoots(missing.clone())),
             Self::UpdatingManifest => None,
@@ -377,7 +427,8 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => vec![],
+            | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfirmAccelaAction { .. } => vec![],
         }
     }
 
@@ -391,6 +442,7 @@ impl Modal {
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
             | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfirmAccelaAction { .. }
             | Self::ConfigureFtpRemote { .. }
             | Self::ConfigureSmbRemote { .. }
             | Self::ConfigureWebDavRemote { .. }
@@ -430,7 +482,8 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => (),
+            | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfirmAccelaAction { .. } => (),
             Self::AddGame { name, path, error } => {
                 let mut form = Column::new()
                     .spacing(12)
@@ -585,7 +638,8 @@ impl Modal {
             | Self::ConfirmRemoveCustomGame { .. }
             | Self::ConfirmRestoreSafetyBackup { .. }
             | Self::ConfirmDeleteSafetyBackup { .. }
-            | Self::ConfirmResolveConflictKeepBoth { .. } => 1,
+            | Self::ConfirmResolveConflictKeepBoth { .. }
+            | Self::ConfirmAccelaAction { .. } => 1,
         }
     }
 
