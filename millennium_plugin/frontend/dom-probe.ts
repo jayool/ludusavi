@@ -459,6 +459,12 @@ async function showSyncOverlay(doc: Document) {
     overlay.style.display = 'flex';
   }
 
+  // Tienda y Comunidad usan webviews / iframes con compositor
+  // propio que renderizan por encima del DOM normal — el z-index
+  // CSS no les afecta. Los ocultamos temporalmente mientras el
+  // overlay está visible y los restauramos al cerrar.
+  hideStackingCompetitors(doc);
+
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
   const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
   await renderActiveTab(doc, overlay, content);
@@ -1475,13 +1481,53 @@ function showFatalError(doc: Document, content: HTMLElement, e: unknown) {
 
 /** Oculta el overlay si está visible (sin destruirlo — visibility toggle).
  *  Cierra el EventSource para no dejar conexiones abiertas mientras el
- *  usuario está en otra pestaña de Steam. */
+ *  usuario está en otra pestaña de Steam. Restaura los webviews/
+ *  iframes que habíamos ocultado al mostrar el overlay. */
 function hideSyncOverlay(doc: Document) {
   const overlay = doc.querySelector<HTMLElement>(`[${OVERLAY_ATTR}]`);
   if (overlay) {
     overlay.style.display = 'none';
   }
+  restoreStackingCompetitors();
   disconnectSse();
+}
+
+// ----------------------------------------------------------------------
+// Hide/restore de webviews y iframes (workaround para Tienda/Comunidad)
+// ----------------------------------------------------------------------
+//
+// Steam renderiza Tienda y Comunidad en webviews/iframes con su propio
+// compositor GPU. Esos elementos pintan por encima del DOM normal sin
+// importar el z-index CSS — así que el truco de stacking-context puro
+// no basta. Los ocultamos temporalmente mientras el overlay está
+// visible.
+//
+// Por qué `visibility: hidden` y no `display: none`:
+//   - hidden preserva el layout (Steam puede mantener su estado
+//     interno mejor si el contenedor sigue ocupando espacio).
+//   - hidden es reversible sin pérdida de scroll position dentro
+//     del webview.
+
+const hiddenElementsState = new Map<HTMLElement, string>();
+
+function hideStackingCompetitors(doc: Document) {
+  hiddenElementsState.clear();
+  // Selector amplio: capturamos todo lo que pueda traer compositor
+  // propio. webview es de CEF/Electron, iframe del HTML estándar.
+  const targets = doc.querySelectorAll<HTMLElement>(
+    'iframe, webview, embed, object',
+  );
+  targets.forEach((el) => {
+    hiddenElementsState.set(el, el.style.visibility);
+    el.style.visibility = 'hidden';
+  });
+}
+
+function restoreStackingCompetitors() {
+  hiddenElementsState.forEach((origVis, el) => {
+    el.style.visibility = origVis;
+  });
+  hiddenElementsState.clear();
 }
 
 // ============================================================================
