@@ -76,6 +76,10 @@ pub enum Event {
     RunTool(ToolKind),
     BrowseSteamlessExe,
     ToolFinished(Result<String, String>),
+    /// Background fetch of the ACCELA-installed games list. Populated
+    /// the first time the user enters the Games or ACCELA tab with
+    /// paths configured. Silent on failure.
+    InstallsLoaded(Result<Vec<AccelaInstall>, String>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -276,6 +280,38 @@ pub struct GameResult {
     pub header_image: Option<String>,
 }
 
+/// One game detected as ACCELA-installed by scanning Steam libraries.
+/// Mirror of the JSON dict the adapter returns from `list_accela_installs`.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct AccelaInstall {
+    #[serde(default)]
+    pub appid: String,
+    #[serde(default)]
+    pub game_name: String,
+    #[serde(default)]
+    pub install_path: String,
+    #[serde(default)]
+    pub library_path: String,
+    #[serde(default)]
+    pub size_on_disk: u64,
+    #[serde(default)]
+    pub buildid: String,
+    #[serde(default)]
+    pub last_updated: String,
+    #[serde(default)]
+    pub accela_marker_path: String,
+    #[serde(default)]
+    pub appmanifest_path: String,
+}
+
+impl AccelaInstall {
+    /// Format size like "1.45 GB" / "230 MB". Mirrors `format_size` for depots
+    /// but on `u64` directly instead of `Option<serde_json::Value>`.
+    pub fn size_display(&self) -> String {
+        format_size(self.size_on_disk)
+    }
+}
+
 #[derive(Default)]
 pub struct AccelaScreen {
     pub accela_path: String,
@@ -297,6 +333,14 @@ pub struct AccelaScreen {
     pub selected_depots: BTreeSet<String>,
     pub pending_download_detail: Option<GameDetail>,
     pub pending_download_depots: Vec<String>,
+    /// ACCELA-installed games detected via marker scan. Populated lazily
+    /// when the user enters the Games or ACCELA tab. Used as a fourth
+    /// source for the Games table (alongside backup entries,
+    /// cloud_available, and custom_games).
+    pub installs: Vec<AccelaInstall>,
+    /// True once we've attempted a background fetch in this session.
+    /// Avoids duplicate launches if the user toggles tabs rapidly.
+    pub installs_fetched: bool,
 }
 
 pub enum SettingValue {
@@ -2031,6 +2075,31 @@ pub async fn run_get_steam_libraries(
                 .into_iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect())
+        }
+        Some("error") => Err(extract_error(&event)),
+        other => Err(format!("unexpected event: {other:?}")),
+    }
+}
+
+pub async fn run_list_accela_installs(
+    python_path: String,
+    adapter_path: PathBuf,
+    accela_path: String,
+) -> Result<Vec<AccelaInstall>, String> {
+    let cmd_json = serde_json::json!({"cmd": "list_accela_installs"}).to_string();
+    let event = send_command(&python_path, &adapter_path, &accela_path, cmd_json).await?;
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("accela_installs") => {
+            let games = event
+                .get("games")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let parsed: Vec<AccelaInstall> = games
+                .into_iter()
+                .filter_map(|v| serde_json::from_value::<AccelaInstall>(v).ok())
+                .collect();
+            Ok(parsed)
         }
         Some("error") => Err(extract_error(&event)),
         other => Err(format!("unexpected event: {other:?}")),

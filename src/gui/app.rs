@@ -1549,6 +1549,19 @@ impl App {
                         self.accela_screen.tool_message = Some(format!("Failed: {e}"));
                         Task::none()
                     }
+                    AE::InstallsLoaded(Ok(installs)) => {
+                        self.accela_screen.installs = installs;
+                        self.accela_screen.installs_fetched = true;
+                        Task::none()
+                    }
+                    AE::InstallsLoaded(Err(_)) => {
+                        // Silent failure: list stays empty, table just
+                        // doesn't show the fourth source. We mark the
+                        // attempt as completed so we don't retry on
+                        // every tab switch.
+                        self.accela_screen.installs_fetched = true;
+                        Task::none()
+                    }
                 }
             }
             Message::AddGameRequested => {
@@ -3278,6 +3291,7 @@ impl App {
                 // the Downloading view alive so an in-progress download
                 // can be observed when the user returns.
                 let mut accela_settings_load: Option<Task<Message>> = None;
+                let mut accela_installs_load: Option<Task<Message>> = None;
                 if matches!(screen, Screen::Accela)
                     && !matches!(self.screen, Screen::Accela)
                 {
@@ -3316,10 +3330,41 @@ impl App {
                         ));
                     }
                 }
+                // Background-load the ACCELA-installed games list once
+                // per session, the first time the user enters either
+                // the Games tab or the ACCELA tab with paths set. Used
+                // as a fourth source for the Games table.
+                if matches!(screen, Screen::Games | Screen::Accela)
+                    && !self.accela_screen.installs_fetched
+                {
+                    let python = self.accela_screen.python_path.clone();
+                    let accela = self.accela_screen.accela_path.clone();
+                    if !python.trim().is_empty() && !accela.trim().is_empty() {
+                        let adapter = crate::gui::accela::default_adapter_path();
+                        accela_installs_load = Some(Task::perform(
+                            crate::gui::accela::run_list_accela_installs(
+                                python, adapter, accela,
+                            ),
+                            |result| {
+                                Message::Accela(
+                                    crate::gui::accela::Event::InstallsLoaded(result),
+                                )
+                            },
+                        ));
+                    }
+                }
                 let switch_task = self.switch_screen(screen);
-                match accela_settings_load {
-                    Some(load) => Task::batch([switch_task, load]),
-                    None => switch_task,
+                let mut tasks = vec![switch_task];
+                if let Some(t) = accela_settings_load {
+                    tasks.push(t);
+                }
+                if let Some(t) = accela_installs_load {
+                    tasks.push(t);
+                }
+                if tasks.len() == 1 {
+                    tasks.into_iter().next().unwrap()
+                } else {
+                    Task::batch(tasks)
                 }
             }
             Message::ToggleGameListEntryTreeExpanded { name, keys } => {
@@ -4217,7 +4262,11 @@ impl App {
                     })
                     .collect();
                 
-                if entries.is_empty() && cloud_available.is_empty() && custom_games.is_empty() {
+                if entries.is_empty()
+                    && cloud_available.is_empty()
+                    && custom_games.is_empty()
+                    && self.accela_screen.installs.is_empty()
+                {
                     rows = rows.push(
                         Container::new(
                             crate::gui::widget::text("No games found. Run a backup scan first.")
@@ -4556,6 +4605,89 @@ impl App {
                                     )
                                     .width(50)
                                 }),
+                        )
+                        .width(Length::Fill)
+                        .class(style::Container::GamesTableRow);
+
+                        let name_for_click = name.clone();
+                        let clickable_row = crate::gui::widget::Button::new(row)
+                            .on_press(Message::SwitchScreen(Screen::GameDetail(name_for_click)))
+                            .width(Length::Fill)
+                            .padding(0)
+                            .class(style::Button::SidebarItem);
+
+                        rows = rows.push(
+                            Container::new(crate::gui::widget::Space::new())
+                                .width(Length::Fill)
+                                .height(1)
+                                .class(style::Container::Divider),
+                        );
+                        rows = rows.push(clickable_row);
+                    }
+
+                    // 4ª fuente: juegos ACCELA-installed que aún no están
+                    // representados por ninguna otra fuente (sin saves, sin
+                    // entrada en game-list, sin custom). Filtramos por
+                    // game_name (mismo string que install_dir de Steam).
+                    let installed_elsewhere: std::collections::HashSet<String> = entries
+                        .iter()
+                        .map(|e| e.scan_info.game_name.clone())
+                        .chain(cloud_available.iter().map(|g| g.id.clone()))
+                        .chain(custom_games.iter().map(|g| g.id.clone()))
+                        .collect();
+
+                    for install in &self.accela_screen.installs {
+                        let name = &install.game_name;
+                        if installed_elsewhere.contains(name) {
+                            continue;
+                        }
+                        if !search_lower.is_empty()
+                            && !name.to_lowercase().contains(&search_lower)
+                        {
+                            continue;
+                        }
+
+                        let row = Container::new(
+                            Row::new()
+                                .padding([12, 16])
+                                .align_y(Alignment::Center)
+                                .push(
+                                    Container::new(crate::gui::widget::Space::new())
+                                        .width(10)
+                                        .height(10)
+                                        .class(style::Container::DaemonDotInactive),
+                                )
+                                .push(crate::gui::widget::Space::new().width(16))
+                                .push(
+                                    crate::gui::widget::text(name.clone())
+                                        .size(13)
+                                        .width(Length::Fill),
+                                )
+                                .push(
+                                    crate::gui::widget::text("📦 Installed")
+                                        .size(11)
+                                        .class(style::Text::Accent)
+                                        .width(80),
+                                )
+                                .push(
+                                    crate::gui::widget::text("—")
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                        .width(100),
+                                )
+                                .push(
+                                    crate::gui::widget::text("—")
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                        .width(160),
+                                )
+                                .push(
+                                    crate::gui::widget::text("—")
+                                        .size(12)
+                                        .class(style::Text::Muted)
+                                        .width(140),
+                                )
+                                .push(crate::gui::widget::Space::new().width(50)),
                         )
                         .width(Length::Fill)
                         .class(style::Container::GamesTableRow);
