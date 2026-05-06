@@ -356,6 +356,10 @@ type ActiveTab = 'games' | 'this-device' | 'all-devices';
  *  usuario abre/cierra el overlay sin reiniciar Steam. */
 let currentTab: ActiveTab = 'games';
 
+/** Filtro de búsqueda activo en la tab Games. Persiste entre cambios
+ *  de tab (igual que en la GUI Iced). */
+let gamesSearchQuery = '';
+
 const TABS: { id: ActiveTab; label: string }[] = [
   { id: 'games', label: 'Games' },
   { id: 'this-device', label: 'This Device' },
@@ -546,15 +550,15 @@ function buildOverlayShell(doc: Document): HTMLElement {
 }
 
 /**
- * Fetch a /api/games + /api/accela-installs en paralelo y render como
- * lista combinada de cards en `content`.
+ * Renderiza la tab "Games" en paridad con `Screen::Games` de la GUI:
+ * search input + tabla con columnas explícitas (dot, NAME, MODE,
+ * AUTO SYNC, LAST SYNCED FROM, LAST SYNCED).
  *
- * /api/games viene de las 3 fuentes que ya gestiona el worker (manifest
- * + custom + backups previos). /api/accela-installs es la 4ª fuente que
- * el GUI Iced también añade al game-list. Mergeamos por nombre: si un
- * juego está en ambos, gana la entry de /api/games (tiene info de
- * sync). Si sólo está en accela-installs, lo mostramos como "📦
- * Installed (ACCELA)" sin info de sync.
+ * Sources: /api/games (3 fuentes Ludusavi: manifest + custom + backups
+ * previos) + /api/accela-installs (4ª fuente). Merge por nombre.
+ *
+ * Botones write-mode (Scan now, + Add game, acciones por fila) llegan
+ * en Fase 2 cuando expongamos los POST endpoints.
  */
 async function loadAndRenderGames(doc: Document, content: HTMLElement) {
   content.innerHTML = '';
@@ -566,8 +570,6 @@ async function loadAndRenderGames(doc: Document, content: HTMLElement) {
   // Pedimos ambos endpoints en paralelo. Si /api/games falla es fatal
   // (no podemos mostrar nada). Si /api/accela-installs falla o devuelve
   // vacío con `note`, no es fatal — sólo no añadimos esos juegos.
-  // Usamos `Promise.allSettled` para que un fallo del segundo no cancele
-  // el primero.
   const [gamesSettled, accelaSettled] = await Promise.allSettled([
     daemon.getGames(),
     daemon.getAccelaInstalls(),
@@ -600,18 +602,17 @@ async function loadAndRenderGames(doc: Document, content: HTMLElement) {
     accelaNote = `ACCELA endpoint failed: ${accelaSettled.reason}`;
   }
 
-  // Header summary line.
+  // Header summary.
   const summary = doc.createElement('div');
-  const rcloneNote = resp.rclone_missing ? ' · ⚠ rclone no disponible' : '';
+  const rcloneNote = resp.rclone_missing ? ' · ⚠ rclone unavailable' : '';
   const totalCount = resp.games.length + extraAccela.length;
   const accelaCount =
     extraAccela.length > 0 ? ` (+${extraAccela.length} ACCELA)` : '';
-  summary.textContent = `${totalCount} juego(s)${accelaCount} — device: ${resp.device.name}${rcloneNote}`;
-  summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 8px;';
+  summary.textContent = `${totalCount} game(s)${accelaCount} — device: ${resp.device.name}${rcloneNote}`;
+  summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 12px;';
   content.appendChild(summary);
 
-  // Note de ACCELA (si lo devolvió el endpoint) — sólo informativo,
-  // no es error.
+  // Note ACCELA si endpoint falló.
   if (accelaNote && extraAccela.length === 0) {
     const noteEl = doc.createElement('div');
     noteEl.textContent = `ℹ ${accelaNote}`;
@@ -619,45 +620,148 @@ async function loadAndRenderGames(doc: Document, content: HTMLElement) {
     content.appendChild(noteEl);
   }
 
+  // Search input. Filtra por nombre. Persistente entre tab switches.
+  const searchInput = doc.createElement('input');
+  searchInput.type = 'text';
+  searchInput.placeholder = 'Search games...';
+  searchInput.value = gamesSearchQuery;
+  searchInput.style.cssText = [
+    'background: #1f2433',
+    'color: #ffffff',
+    'border: 1px solid #2a2f42',
+    'border-radius: 4px',
+    'padding: 8px 12px',
+    'font-size: 13px',
+    'font-family: inherit',
+    'margin-bottom: 12px',
+    'width: 100%',
+    'box-sizing: border-box',
+  ].join(';');
+  // El listener actualiza el módulo state y re-renderiza solo el body
+  // de la tabla — sin refetch al daemon (que sería overkill para un
+  // filter de cliente).
+  const tableBody = doc.createElement('div');
+  tableBody.style.cssText = 'display: flex; flex-direction: column;';
+  searchInput.addEventListener('input', () => {
+    gamesSearchQuery = searchInput.value;
+    redrawTableBody(doc, tableBody, resp, extraAccela);
+  });
+  content.appendChild(searchInput);
+
   if (totalCount === 0) {
     const empty = doc.createElement('div');
-    empty.textContent = 'Sin juegos configurados. Configura modos desde la GUI Iced.';
+    empty.textContent = 'No games found. Run a backup scan first.';
     empty.style.cssText = 'color: #6b7280; padding: 24px; text-align: center;';
     content.appendChild(empty);
     return;
   }
 
-  // Lista unificada: registered games primero (sort alfabético), luego
-  // ACCELA-only (también sort alfabético) marcados con tag distinto.
-  const registered = [...resp.games].sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
-  const accelaOnly = [...extraAccela].sort((a, b) =>
-    a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
-  );
+  // Header de tabla: una row con labels en uppercase + columnas que
+  // matcean con renderGameRow / renderAccelaOnlyRow.
+  content.appendChild(buildTableHeader(doc));
+
+  content.appendChild(tableBody);
+  redrawTableBody(doc, tableBody, resp, extraAccela);
+}
+
+/** Re-renderiza el cuerpo de la tabla aplicando el filtro actual.
+ *  Llamado al input del search (sin refetch). */
+function redrawTableBody(
+  doc: Document,
+  tableBody: HTMLElement,
+  resp: import('./daemon-client').ApiGamesResponse,
+  extraAccela: { name: string; install_path: string; size_on_disk: number }[],
+) {
+  tableBody.innerHTML = '';
+  const q = gamesSearchQuery.trim().toLowerCase();
+  const matches = (n: string) => !q || n.toLowerCase().includes(q);
+
+  // Para "LAST SYNCED FROM" necesitamos resolver device_id → device_name
+  // del map que el daemon ya nos da en device_names.
+  const resolveDeviceName = (id: string | undefined): string => {
+    if (!id) return '—';
+    return resp.device_names?.[id] ?? id;
+  };
+
+  const registered = resp.games
+    .filter((g) => matches(g.name))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const accelaOnly = extraAccela
+    .filter((a) => matches(a.name))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+  if (registered.length === 0 && accelaOnly.length === 0) {
+    const noResults = doc.createElement('div');
+    noResults.textContent = `No matches for "${gamesSearchQuery}".`;
+    noResults.style.cssText = 'color: #6b7280; padding: 16px; text-align: center;';
+    tableBody.appendChild(noResults);
+    return;
+  }
 
   for (const game of registered) {
-    content.appendChild(renderGameRow(doc, game));
+    tableBody.appendChild(renderGameRow(doc, game, resolveDeviceName));
   }
   for (const accela of accelaOnly) {
-    content.appendChild(renderAccelaOnlyRow(doc, accela));
+    tableBody.appendChild(renderAccelaOnlyRow(doc, accela));
   }
 }
 
-/** Card de un juego: dot de status + nombre + descripción. */
-function renderGameRow(doc: Document, game: any): HTMLElement {
+/** Header de la tabla: row de labels en uppercase. Columnas con
+ *  anchos fijos para que las rows alineen visualmente. */
+function buildTableHeader(doc: Document): HTMLElement {
+  const header = doc.createElement('div');
+  header.style.cssText = [
+    'display: flex',
+    'align-items: center',
+    'gap: 12px',
+    'padding: 8px 14px',
+    'border-bottom: 1px solid #2a2f42',
+    'font-size: 11px',
+    'color: #9aa3b2',
+    'letter-spacing: 0.05em',
+  ].join(';');
+
+  const cell = (text: string, width: string) => {
+    const c = doc.createElement('div');
+    c.textContent = text;
+    c.style.cssText = `width: ${width}; flex-shrink: 0;`;
+    return c;
+  };
+  const flexCell = (text: string) => {
+    const c = doc.createElement('div');
+    c.textContent = text;
+    c.style.cssText = 'flex: 1; min-width: 0;';
+    return c;
+  };
+
+  // Hueco para el dot.
+  header.appendChild(cell('', '10px'));
+  header.appendChild(flexCell('NAME'));
+  header.appendChild(cell('MODE', '70px'));
+  header.appendChild(cell('AUTO SYNC', '90px'));
+  header.appendChild(cell('LAST SYNCED FROM', '160px'));
+  header.appendChild(cell('LAST SYNCED', '120px'));
+  return header;
+}
+
+/** Row de un juego registrado en Ludusavi. Columnas: dot + name +
+ *  mode + auto_sync + last_synced_from + last_sync_time. */
+function renderGameRow(
+  doc: Document,
+  game: import('./daemon-client').ApiGameRow,
+  resolveDeviceName: (id: string | undefined) => string,
+): HTMLElement {
   const row = doc.createElement('div');
   row.style.cssText = [
     'display: flex',
     'align-items: center',
     'gap: 12px',
     'padding: 10px 14px',
-    'background: #171b26',
-    'border: 1px solid #2a2f42',
-    'border-radius: 6px',
+    'border-bottom: 1px solid #1f2433',
+    'font-size: 12px',
   ].join(';');
 
-  // Dot de status (color según status).
+  // Dot status
   const dot = doc.createElement('div');
   dot.style.cssText = [
     `background: ${statusColor(game.status)}`,
@@ -668,28 +772,92 @@ function renderGameRow(doc: Document, game: any): HTMLElement {
   ].join(';');
   row.appendChild(dot);
 
-  // Bloque de texto: nombre + descripción.
-  const textBlock = doc.createElement('div');
-  textBlock.style.cssText = 'display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;';
-
+  // NAME (flex)
   const name = doc.createElement('div');
   name.textContent = game.name;
-  name.style.cssText = 'font-size: 13px; font-weight: 500; color: #ffffff;';
-  textBlock.appendChild(name);
+  name.title = describeGame(game); // tooltip con detalle si hay error/conflict
+  name.style.cssText =
+    'flex: 1; min-width: 0; font-size: 13px; color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+  row.appendChild(name);
 
-  const desc = doc.createElement('div');
-  desc.textContent = describeGame(game);
-  desc.style.cssText = 'font-size: 11px; color: #9aa3b2;';
-  textBlock.appendChild(desc);
+  // MODE
+  row.appendChild(makeCell(doc, modeBadgeShort(game.mode), '70px', modeColor(game.mode)));
 
-  row.appendChild(textBlock);
+  // AUTO SYNC — checkmark/dash. Sólo aplicable si mode != none.
+  const autoSyncText = game.mode === 'none' ? '—' : (game.auto_sync ? '✓' : '✗');
+  const autoSyncColor = game.mode === 'none' ? '#6b7280' : (game.auto_sync ? '#3ecf8e' : '#9aa3b2');
+  row.appendChild(makeCell(doc, autoSyncText, '90px', autoSyncColor));
+
+  // LAST SYNCED FROM (device name).
+  const fromText = game.last_synced_from
+    ? resolveDeviceName(game.last_synced_from)
+    : '—';
+  row.appendChild(makeCell(doc, fromText, '160px', '#cfd6e3'));
+
+  // LAST SYNCED (relative time).
+  const lastSyncText = game.last_sync_time_utc
+    ? relativeTime(game.last_sync_time_utc)
+    : '—';
+  row.appendChild(makeCell(doc, lastSyncText, '120px', '#cfd6e3'));
+
   return row;
 }
 
+/** Helper: celda con ancho fijo + color de texto. */
+function makeCell(
+  doc: Document,
+  text: string,
+  width: string,
+  color: string,
+): HTMLElement {
+  const cell = doc.createElement('div');
+  cell.textContent = text;
+  cell.style.cssText = [
+    `width: ${width}`,
+    'flex-shrink: 0',
+    `color: ${color}`,
+    'overflow: hidden',
+    'text-overflow: ellipsis',
+    'white-space: nowrap',
+  ].join(';');
+  return cell;
+}
+
+/** Mode badge corto (uppercase) — paridad con la GUI. */
+function modeBadgeShort(mode: string): string {
+  switch (mode) {
+    case 'sync':
+      return 'SYNC';
+    case 'cloud':
+      return 'CLOUD';
+    case 'local':
+      return 'LOCAL';
+    case 'none':
+      return '—';
+    default:
+      return mode.toUpperCase() || '—';
+  }
+}
+
+/** Color para el mode badge, distinto de status. */
+function modeColor(mode: string): string {
+  switch (mode) {
+    case 'sync':
+      return '#4f8ef7'; // azul
+    case 'cloud':
+      return '#3ecf8e'; // verde
+    case 'local':
+      return '#f0b400'; // amarillo
+    default:
+      return '#6b7280'; // gris para none
+  }
+}
+
 /**
- * Card de un juego instalado por ACCELA pero no registrado todavía en
- * Ludusavi. Igual layout que renderGameRow pero con tag "📦 Installed
- * (ACCELA)" en gris en lugar de status dot, y sin descripción de sync.
+ * Row de un juego ACCELA-only (instalado en disco pero no registrado
+ * todavía en Ludusavi). Misma layout de columnas que renderGameRow,
+ * pero la mayoría son "—" porque no tenemos info de sync. El nombre
+ * se acompaña de un sufijo "📦 ACCELA" inline para distinguirlo.
  */
 function renderAccelaOnlyRow(
   doc: Document,
@@ -701,38 +869,40 @@ function renderAccelaOnlyRow(
     'align-items: center',
     'gap: 12px',
     'padding: 10px 14px',
-    'background: #171b26',
-    'border: 1px solid #2a2f42',
-    'border-radius: 6px',
+    'border-bottom: 1px solid #1f2433',
+    'font-size: 12px',
   ].join(';');
 
-  // Dot gris para diferenciar (no hay status real, sólo "instalado en disco").
+  // Dot gris (no hay status real).
   const dot = doc.createElement('div');
-  dot.style.cssText = [
-    'background: #6b7280',
-    'width: 10px',
-    'height: 10px',
-    'border-radius: 50%',
-    'flex-shrink: 0',
-  ].join(';');
+  dot.style.cssText =
+    'background: #6b7280; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;';
   row.appendChild(dot);
 
-  const textBlock = doc.createElement('div');
-  textBlock.style.cssText =
-    'display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;';
-
-  const name = doc.createElement('div');
+  // NAME + sufijo ACCELA + size.
+  const nameCell = doc.createElement('div');
+  nameCell.style.cssText =
+    'flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap;';
+  const name = doc.createElement('span');
   name.textContent = accela.name;
-  name.style.cssText = 'font-size: 13px; font-weight: 500; color: #ffffff;';
-  textBlock.appendChild(name);
+  name.style.cssText =
+    'font-size: 13px; color: #ffffff; overflow: hidden; text-overflow: ellipsis;';
+  nameCell.appendChild(name);
+  const sizeStr =
+    accela.size_on_disk > 0 ? `📦 ACCELA · ${formatBytesShort(accela.size_on_disk)}` : '📦 ACCELA';
+  const tag = doc.createElement('span');
+  tag.textContent = sizeStr;
+  tag.style.cssText = 'font-size: 11px; color: #9aa3b2; flex-shrink: 0;';
+  nameCell.appendChild(tag);
+  row.appendChild(nameCell);
 
-  const desc = doc.createElement('div');
-  const sizeStr = accela.size_on_disk > 0 ? ` · ${formatBytesShort(accela.size_on_disk)}` : '';
-  desc.textContent = `📦 Installed (ACCELA)${sizeStr} · sin configuración de sync`;
-  desc.style.cssText = 'font-size: 11px; color: #9aa3b2;';
-  textBlock.appendChild(desc);
+  // Resto de columnas: dashes (no aplican a ACCELA installs sin
+  // configurar mode todavía).
+  row.appendChild(makeCell(doc, '—', '70px', '#6b7280'));
+  row.appendChild(makeCell(doc, '—', '90px', '#6b7280'));
+  row.appendChild(makeCell(doc, '—', '160px', '#6b7280'));
+  row.appendChild(makeCell(doc, '—', '120px', '#6b7280'));
 
-  row.appendChild(textBlock);
   return row;
 }
 
@@ -1226,31 +1396,6 @@ function renderAllDevicesCard(
   return card;
 }
 
-/** Fila simple con sólo el nombre del juego — fallback cuando no
- *  tenemos el detalle de /api/games. */
-function renderPlainNameRow(doc: Document, name: string): HTMLElement {
-  const row = doc.createElement('div');
-  row.style.cssText = [
-    'display: flex',
-    'align-items: center',
-    'gap: 12px',
-    'padding: 10px 14px',
-    'background: #171b26',
-    'border: 1px solid #2a2f42',
-    'border-radius: 6px',
-  ].join(';');
-
-  const dot = doc.createElement('div');
-  dot.style.cssText =
-    'background: #6b7280; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;';
-  row.appendChild(dot);
-
-  const label = doc.createElement('div');
-  label.textContent = name;
-  label.style.cssText = 'font-size: 13px; color: #ffffff;';
-  row.appendChild(label);
-  return row;
-}
 
 /** Renderiza un mensaje de error fatal en `content` y limpia el resto. */
 function showFatalError(doc: Document, content: HTMLElement, e: unknown) {
