@@ -447,7 +447,14 @@ async function showSyncOverlay(doc: Document) {
 
   if (!overlay) {
     overlay = buildOverlayShell(doc);
-    doc.body.appendChild(overlay);
+    // Append a `documentElement` (<html>), no a `body`. Algunas
+    // pantallas de Steam (Tienda, Comunidad) viven en contenedores
+    // dentro de body con su propio stacking context o webview
+    // hardware-accelerated que renderiza por encima de cualquier
+    // hijo de body, sin importar el z-index. Saliendo a <html>
+    // garantizamos que el overlay esté en el stacking root del
+    // documento.
+    doc.documentElement.appendChild(overlay);
   } else {
     overlay.style.display = 'flex';
   }
@@ -502,11 +509,17 @@ function buildOverlayShell(doc: Document): HTMLElement {
   overlay.setAttribute(OVERLAY_ATTR, '1');
   overlay.style.cssText = [
     'position: fixed',
-    'top: 60px',
+    'top: 60px', // debajo de la nav de Steam (Biblioteca/Tienda/SYNC)
     'left: 0',
     'right: 0',
     'bottom: 0',
-    'z-index: 9000',
+    // z-index al máximo int32. Steam no debería usar valores tan
+    // altos pero por si acaso. Combinado con `transform: translateZ(0)`
+    // que fuerza al overlay a una capa GPU propia, se sitúa al mismo
+    // nivel que webviews acelerados (el caso de la pestaña Tienda).
+    'z-index: 2147483647',
+    'transform: translateZ(0)',
+    'isolation: isolate',
     'background: #0f1117',
     'color: #ffffff',
     'display: flex',
