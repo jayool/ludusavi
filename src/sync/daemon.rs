@@ -80,7 +80,44 @@ pub fn start_daemon(stop_flag: Arc<AtomicBool>, _daemon_config: DaemonConfig) ->
     })
 }
 
+/// Razón por la que `run_daemon_once` ha terminado. La pasamos a la
+/// supervisión externa (`run_daemon`) para decidir si reiniciar el ciclo
+/// o salir definitivamente. Reemplaza a la antigua llamada recursiva
+/// `return run_daemon(stop_flag)` que apilaba frames indefinidamente.
+#[derive(Debug, PartialEq, Eq)]
+enum RestartReason {
+    /// `stop_flag` se activó durante la ejecución (SIGTERM, GUI Stop,
+    /// final del proceso). El supervisor sale limpiamente.
+    Stopped,
+    /// La config no tiene cloud remote — sin nada que sincronizar el
+    /// daemon termina y el supervisor sale (no insiste).
+    NoCloudConfig,
+    /// Cualquier evento que antes recurría `run_daemon` (rclone caído,
+    /// sync-games.json modificado, juegos nuevos detectados en cloud,
+    /// retry de "no hay paths"). El supervisor relanza `run_daemon_once`
+    /// inmediatamente.
+    Restart,
+}
+
+/// Supervisor del worker loop del daemon. Llama a `run_daemon_once` en
+/// bucle, reiniciando el ciclo cuando detecta cambios de config o de
+/// game-list, hasta que `stop_flag` se activa o la config no tiene
+/// cloud configurado. Sustituye a la antigua recursión en
+/// `run_daemon` que crecía el stack en cada reinicio.
 fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
+    while !stop_flag.load(Ordering::Relaxed) {
+        match run_daemon_once(&stop_flag)? {
+            RestartReason::Stopped | RestartReason::NoCloudConfig => return Ok(()),
+            RestartReason::Restart => {
+                log::info!("[sync daemon] Restarting daemon loop...");
+                continue;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_daemon_once(stop_flag: &Arc<AtomicBool>) -> Result<RestartReason, String> {
     let config = Config::load().map_err(|e| format!("Failed to load config: {e:?}"))?;
     let app_dir = app_dir();
 
@@ -96,10 +133,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             wait += 1;
             if wait >= 60 {
                 log::info!("[sync daemon] Retrying rclone check...");
-                return run_daemon(stop_flag);
+                return Ok(RestartReason::Restart);
             }
         }
-        return Ok(());
+        return Ok(RestartReason::Stopped);
     }
 
     // Rclone disponible — limpiar el flag por si estaba activo de una ejecución anterior
@@ -107,7 +144,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
 
     if config.cloud.remote.is_none() {
         log::warn!("[sync daemon] No cloud remote configured, cannot start");
-        return Ok(());
+        return Ok(RestartReason::NoCloudConfig);
     }
 
     let device = DeviceIdentity::load_or_create(&app_dir);
@@ -115,11 +152,11 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     log::info!("[sync daemon] Running as device: {} ({})", device.name, device.id);
 
     if stop_flag.load(Ordering::Relaxed) {
-        return Ok(());
+        return Ok(RestartReason::Stopped);
     }
 
     if stop_flag.load(Ordering::Relaxed) {
-        return Ok(());
+        return Ok(RestartReason::Stopped);
     }
 
     // Paso 3: construir watched_paths desde sync-games.json + game-list del cloud
@@ -204,10 +241,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             wait += 1;
             if wait >= 30 {
                 log::info!("[sync daemon] Retrying startup...");
-                return run_daemon(stop_flag);
+                return Ok(RestartReason::Restart);
             }
         }
-        return Ok(());
+        return Ok(RestartReason::Stopped);
     } else if watched_paths.is_empty() {
         log::info!("[sync daemon] Games configured but no paths resolved yet, will retry in 30s...");
         let mut wait = 0u64;
@@ -215,10 +252,10 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
             std::thread::sleep(Duration::from_secs(1));
             wait += 1;
             if wait >= 30 {
-                return run_daemon(stop_flag);
+                return Ok(RestartReason::Restart);
             }
         }
-        return Ok(());
+        return Ok(RestartReason::Stopped);
     }
     log::info!("[sync daemon] Watching {} game(s) for changes", watched_paths.len());
 
@@ -304,7 +341,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
         let current_sync_games_mtime = get_sync_games_mtime();
         if current_sync_games_mtime != last_sync_games_mtime && last_sync_games_mtime.is_some() {
             log::info!("[sync daemon] sync-games.json changed, restarting to pick up new config...");
-            return run_daemon(stop_flag);
+            return Ok(RestartReason::Restart);
         }
         last_sync_games_mtime = current_sync_games_mtime;
 
@@ -357,7 +394,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
                 });
                 if has_new_games {
                     log::info!("[sync daemon] New games detected, restarting to update file watcher...");
-                    return run_daemon(stop_flag);
+                    return Ok(RestartReason::Restart);
                 }
             } else {
                 log::debug!("[sync daemon] Cloud game list unchanged, skipping download check");
@@ -526,7 +563,7 @@ fn run_daemon(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     }
 
     log::info!("[sync daemon] Stop flag set, shutting down watcher");
-    Ok(())
+    Ok(RestartReason::Stopped)
 }
 
 fn save_last_mod_time(app_dir: &StrictPath, mod_time: &Option<String>) {
