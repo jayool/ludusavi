@@ -1,0 +1,239 @@
+/**
+ * Cliente HTTP para el daemon de Ludusavi Sync.
+ *
+ * Wraps las requests al daemon (`http://localhost:61234/api/*`) con
+ * el token de auth. El token lo proporciona el backend Lua leyéndolo
+ * del filesystem (`app_dir/daemon-token.txt`) — el frontend nunca lee
+ * disco directamente porque el sandbox CEF no lo permite.
+ *
+ * Capa 0 del plan Millennium/Decky validada en hello-worlds 1 + 4 + A
+ * el 2026-05-06.
+ */
+
+import { callable } from '@steambrew/client';
+
+// ============================================================================
+// Tipos del API (deben matchear la estructura serializada por
+// src/sync/daemon_http.rs en el repo del fork).
+// ============================================================================
+
+export interface DaemonStatus {
+  daemon: string;
+  version: string;
+  api_version: number;
+}
+
+export interface ApiDevice {
+  id: string;
+  name: string;
+}
+
+export interface ApiErrorInfo {
+  category: string;
+  direction: string;
+  message: string;
+}
+
+export interface ApiConflictInfo {
+  local_time?: string;
+  cloud_time?: string;
+  cloud_from?: string;
+}
+
+export interface ApiGameRow {
+  name: string;
+  /** "none" | "local" | "cloud" | "sync" */
+  mode: string;
+  auto_sync: boolean;
+  /** "synced" | "pending_backup" | "pending_restore" | "not_managed"
+   *  | "error" | "conflict" | "" */
+  status: string;
+  registered_here: boolean;
+  registered_elsewhere: boolean;
+  save_path?: string;
+  last_synced_from?: string;
+  last_sync_time_utc?: string;
+  latest_write_time_utc?: string;
+  storage_bytes: number;
+  error?: ApiErrorInfo;
+  conflict?: ApiConflictInfo;
+}
+
+export interface ApiGamesResponse {
+  device: ApiDevice;
+  games: ApiGameRow[];
+  device_names: Record<string, string>;
+  rclone_missing: boolean;
+}
+
+export interface ApiDeviceRow {
+  id: string;
+  name: string;
+  is_current: boolean;
+  games: string[];
+  last_sync_time_utc?: string;
+}
+
+export interface ApiDevicesResponse {
+  current_device_id: string;
+  devices: ApiDeviceRow[];
+}
+
+/** Una entrada de ACCELA installed games. Coincide con `ApiAccelaInstall`
+ *  en daemon_http.rs. Estos juegos pueden NO aparecer en /api/games si
+ *  Ludusavi todavía no los ha registrado para sync — son la 4ª fuente
+ *  del game-list (junto con manifest, custom games y backups previos). */
+export interface ApiAccelaInstall {
+  appid: string;
+  game_name: string;
+  install_path: string;
+  library_path: string;
+  size_on_disk: number;
+  buildid: string;
+  last_updated: string;
+  accela_marker_path: string;
+  appmanifest_path: string;
+}
+
+export interface ApiAccelaInstallsResponse {
+  installs: ApiAccelaInstall[];
+  /** Mensaje opcional cuando devolvemos lista vacía: explica el motivo
+   *  (no configurado, adapter no encontrado, error). El plugin lo puede
+   *  surface al usuario como hint. */
+  note?: string;
+}
+
+/** Eventos del SSE stream — coincide con `DaemonEvent` en daemon_http.rs. */
+export type DaemonEvent =
+  | { type: 'games_changed' }
+  | { type: 'devices_changed' }
+  | { type: 'daemon_restarted' };
+
+// ============================================================================
+// Cliente
+// ============================================================================
+
+const DAEMON_URL = 'http://localhost:61234';
+
+/** Función Lua del backend que devuelve el token o "" si no se puede leer. */
+const readDaemonToken = callable<[], string>('read_daemon_token');
+
+export class DaemonClient {
+  private tokenPromise: Promise<string> | null = null;
+
+  /**
+   * Cachea el token tras la primera llamada al backend Lua. Si la
+   * lectura inicial devuelve vacío, no cachea — la siguiente llamada
+   * vuelve a intentarlo (el daemon puede haber arrancado en el
+   * intervalo).
+   */
+  private async getToken(): Promise<string> {
+    if (this.tokenPromise) {
+      const cached = await this.tokenPromise;
+      if (cached) return cached;
+      this.tokenPromise = null;
+    }
+    this.tokenPromise = (async () => {
+      try {
+        const result = await readDaemonToken();
+        return typeof result === 'string' ? result : '';
+      } catch (e) {
+        console.error('[ludusavi-sync] readDaemonToken failed:', e);
+        return '';
+      }
+    })();
+    return await this.tokenPromise;
+  }
+
+  /** Resetea el token cacheado. Útil si el usuario reinicia el daemon
+   *  y se regenera el fichero. */
+  clearToken(): void {
+    this.tokenPromise = null;
+  }
+
+  private async fetchJSON<T>(path: string): Promise<T> {
+    const token = await this.getToken();
+    if (!token) {
+      throw new Error(
+        'Daemon token unavailable — el daemon no está corriendo o nunca ha arrancado.',
+      );
+    }
+    const res = await fetch(DAEMON_URL + path, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      // 401 = token rotó. Forzamos relectura para el próximo intento.
+      if (res.status === 401) {
+        this.clearToken();
+      }
+      throw new Error(`HTTP ${res.status} ${res.statusText} — ${await safeText(res)}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  getStatus(): Promise<DaemonStatus> {
+    return this.fetchJSON('/api/status');
+  }
+
+  getGames(): Promise<ApiGamesResponse> {
+    return this.fetchJSON('/api/games');
+  }
+
+  getDevices(): Promise<ApiDevicesResponse> {
+    return this.fetchJSON('/api/devices');
+  }
+
+  /**
+   * Lista los juegos detectados por ACCELA en disco. 4ª fuente del
+   * game-list (junto con manifest, custom games, backups previos).
+   *
+   * El daemon spawna `python accela_adapter/adapter.py
+   * --accela-path <bin>` y le manda `list_accela_installs`. Si ACCELA
+   * no está configurado, devuelve `installs: []` con `note` explicando
+   * el motivo — en ese caso el plugin simplemente no muestra estos
+   * juegos extra (no es un error fatal).
+   */
+  getAccelaInstalls(): Promise<ApiAccelaInstallsResponse> {
+    return this.fetchJSON('/api/accela-installs');
+  }
+
+  /**
+   * Suscribe al stream SSE. Devuelve el `EventSource` para que el
+   * caller pueda cerrarlo cuando se desmonte el componente.
+   *
+   * EventSource (estándar W3C) NO acepta headers custom, así que el
+   * token va en query string. El daemon valida tanto Authorization
+   * header como `?token=...` (TODO: aún no implementado en Fase 0 —
+   * por ahora /api/events sólo valida via header, lo que significa
+   * que esta función fallará. Hay que añadir soporte de query token
+   * al daemon en una fase posterior, o usar fetch streaming).
+   */
+  async subscribeEvents(onEvent: (event: DaemonEvent) => void): Promise<EventSource> {
+    const token = await this.getToken();
+    if (!token) {
+      throw new Error('Daemon token unavailable for SSE');
+    }
+    const url = `${DAEMON_URL}/api/events?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+    es.onmessage = (e) => {
+      try {
+        const parsed = JSON.parse(e.data) as DaemonEvent;
+        onEvent(parsed);
+      } catch (err) {
+        console.error('[ludusavi-sync] failed to parse SSE event:', err, e.data);
+      }
+    };
+    return es;
+  }
+}
+
+/** Singleton reusable por todo el plugin. */
+export const daemon = new DaemonClient();
+
+async function safeText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return '<no body>';
+  }
+}

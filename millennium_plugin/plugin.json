@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SteamClientHomebrew/Millennium/main/src/sys/plugin-schema.json",
+  "name": "ludusavi-sync",
+  "common_name": "Ludusavi Sync",
+  "description": "Game save sync — gestiona modos LOCAL/CLOUD/SYNC desde dentro de Steam.",
+  "version": "0.1.0",
+  "useBackend": true,
+  "backendType": "lua"
+}
