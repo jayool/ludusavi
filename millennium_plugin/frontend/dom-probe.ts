@@ -374,22 +374,21 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
       e.stopPropagation();
       e.preventDefault();
 
-      // FORZAR Biblioteca antes de mostrar overlay. Tienda y
-      // Comunidad usan widgets de Steam (no iframes estándar) que
-      // pintan por encima de TODO lo que renderiza nuestro DOM
-      // — z-index, transform, isolation, todo da igual. La única
-      // forma fiable: hacer que Steam navegue a Biblioteca, que
-      // SÍ es DOM normal donde el overlay funciona.
+      // Doble vía para garantizar que el overlay aparezca por encima
+      // del contenido actual (Tienda/Comunidad usan widgets que
+      // ignoran z-index CSS):
       //
-      // Click sintético sobre el wrapper de Biblioteca con bubbles
-      // para que Steam (React) lo procese como un click real.
-      bibliotecaWrapper.dispatchEvent(
-        new MouseEvent('click', { bubbles: true, cancelable: true }),
-      );
-      // Damos un instante a Steam para que arranque la transición y
-      // desmonte el contenedor previo (Tienda/Comunidad).
+      //   1. Forzar navegación a Biblioteca llamando el onClick de
+      //      React directamente (props internas), no via
+      //      dispatchEvent — algunas instalaciones de React filtran
+      //      eventos sintéticos por `isTrusted=false`.
+      //   2. Después de mostrar el overlay, ejecutar limpieza
+      //      empírica con elementFromPoint: detecta qué está encima
+      //      de NUESTRO overlay y lo oculta. Reintenta hasta que
+      //      el overlay quede on top.
+      navigateToBiblioteca(bibliotecaWrapper);
       await sleep(80);
-      showSyncOverlay(doc);
+      await showSyncOverlay(doc);
     },
     true, // capture phase para llegar antes de los listeners de Steam
   );
@@ -481,11 +480,11 @@ async function showSyncOverlay(doc: Document) {
     overlay.style.display = 'flex';
   }
 
-  // Tienda y Comunidad usan webviews / iframes con compositor
-  // propio que renderizan por encima del DOM normal — el z-index
-  // CSS no les afecta. Los ocultamos temporalmente mientras el
-  // overlay está visible y los restauramos al cerrar.
-  hideStackingCompetitors(doc);
+  // Cleanup empírico: detecta qué está encima del overlay y lo
+  // oculta. Necesario porque Tienda/Comunidad usan widgets que
+  // ignoran z-index. Idempotente — si ya estamos en Biblioteca
+  // (DOM normal) no oculta nada.
+  await dismissObscuringLayers(doc);
 
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
   const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
@@ -1515,34 +1514,116 @@ function hideSyncOverlay(doc: Document) {
 }
 
 // ----------------------------------------------------------------------
-// Hide/restore de webviews y iframes (workaround para Tienda/Comunidad)
+// Workaround para Tienda/Comunidad — pintan encima del overlay
 // ----------------------------------------------------------------------
 //
-// Steam renderiza Tienda y Comunidad en webviews/iframes con su propio
-// compositor GPU. Esos elementos pintan por encima del DOM normal sin
-// importar el z-index CSS — así que el truco de stacking-context puro
-// no basta. Los ocultamos temporalmente mientras el overlay está
-// visible.
+// Steam usa widgets propios (no iframes estándar) para Tienda y
+// Comunidad. Esos widgets pintan por encima del DOM normal ignorando
+// z-index, transform, isolation, etc. Después de probar varios
+// approaches "a ciegas", hacemos algo empírico:
 //
-// Por qué `visibility: hidden` y no `display: none`:
-//   - hidden preserva el layout (Steam puede mantener su estado
-//     interno mejor si el contenedor sigue ocupando espacio).
-//   - hidden es reversible sin pérdida de scroll position dentro
-//     del webview.
+//   1. Navegamos a Biblioteca (que sí es React DOM normal donde el
+//      overlay funciona). Llamamos el onClick de React directamente
+//      por las props (`__reactProps$<hash>`), no via dispatchEvent
+//      — React puede filtrar `isTrusted=false`.
+//
+//   2. Tras mostrar el overlay, usamos `elementsFromPoint` en el
+//      centro de la pantalla para ver qué hay POR ENCIMA del overlay
+//      y lo ocultamos (visibility: hidden). Iteramos varias veces
+//      por si hay capas anidadas. Restauramos al cerrar.
 
 const hiddenElementsState = new Map<HTMLElement, string>();
 
-function hideStackingCompetitors(doc: Document) {
-  hiddenElementsState.clear();
-  // Selector amplio: capturamos todo lo que pueda traer compositor
-  // propio. webview es de CEF/Electron, iframe del HTML estándar.
-  const targets = doc.querySelectorAll<HTMLElement>(
-    'iframe, webview, embed, object',
+/** Llama el `onClick` interno de React asociado al elemento (lo que
+ *  Steam configuró para esa nav-tab). Es más fiable que un `click()`
+ *  sintético porque accede a las props directamente sin pasar por
+ *  el event system de React, que puede filtrar por `isTrusted`. */
+function navigateToBiblioteca(bibliotecaWrapper: Element) {
+  const propKey = Object.keys(bibliotecaWrapper).find((k) =>
+    k.startsWith('__reactProps$'),
   );
-  targets.forEach((el) => {
-    hiddenElementsState.set(el, el.style.visibility);
-    el.style.visibility = 'hidden';
-  });
+  if (propKey) {
+    const props = (bibliotecaWrapper as any)[propKey];
+    if (typeof props?.onClick === 'function') {
+      try {
+        // Pasamos un evento mock — React handlers no usan
+        // typically más que preventDefault/stopPropagation.
+        props.onClick({
+          preventDefault: () => {},
+          stopPropagation: () => {},
+          currentTarget: bibliotecaWrapper,
+          target: bibliotecaWrapper,
+        });
+        return;
+      } catch (e) {
+        console.warn('[ludusavi-sync] React onClick failed:', e);
+      }
+    }
+  }
+  // Fallback: click DOM nativo. Menos fiable pero mejor que nada.
+  (bibliotecaWrapper as HTMLElement).click();
+}
+
+/** Después de mostrar el overlay, mira si algo se cuela por encima.
+ *  Si sí, lo oculta. Repite hasta 5 capas o hasta que el overlay
+ *  quede on top. Cada elemento ocultado se guarda en
+ *  hiddenElementsState para restaurarlo al cerrar. */
+async function dismissObscuringLayers(doc: Document) {
+  const w = (doc.defaultView ?? window).innerWidth;
+  const h = (doc.defaultView ?? window).innerHeight;
+  // Cinco puntos de muestreo: centro + 4 cuartos. Capturamos
+  // obstáculos que puedan estar en cualquier zona del viewport,
+  // no sólo en el centro.
+  const samplePoints = [
+    { x: w / 2, y: h / 2 },
+    { x: w / 4, y: h / 4 },
+    { x: (3 * w) / 4, y: h / 4 },
+    { x: w / 4, y: (3 * h) / 4 },
+    { x: (3 * w) / 4, y: (3 * h) / 4 },
+  ];
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    let hidAny = false;
+    for (const pt of samplePoints) {
+      const stack = doc.elementsFromPoint(pt.x, pt.y);
+      for (const el of stack) {
+        // Si encontramos nuestro overlay primero en este punto, OK.
+        if (
+          el.matches?.(`[${OVERLAY_ATTR}]`) ||
+          el.closest?.(`[${OVERLAY_ATTR}]`)
+        ) {
+          break;
+        }
+        // <html> y <body> nunca se ocultan.
+        if (el === doc.documentElement || el === doc.body) {
+          continue;
+        }
+        // Encontrar un ancestro "grande" (que cubra ≥40% del viewport)
+        // para ocultar el contenedor entero, no un nodo profundo.
+        let target = el as HTMLElement;
+        let walk = 0;
+        while (
+          target.parentElement &&
+          target.parentElement !== doc.body &&
+          target.parentElement !== doc.documentElement &&
+          walk < 8
+        ) {
+          const r = target.getBoundingClientRect();
+          if (r.width >= w * 0.4 && r.height >= h * 0.4) break;
+          target = target.parentElement;
+          walk++;
+        }
+        if (!hiddenElementsState.has(target)) {
+          hiddenElementsState.set(target, target.style.visibility);
+          target.style.visibility = 'hidden';
+          hidAny = true;
+        }
+        break; // un elemento por punto de muestreo en cada pasada
+      }
+    }
+    if (!hidAny) break;
+    await sleep(20); // dejamos al layout asentar antes de volver a sondear
+  }
 }
 
 function restoreStackingCompetitors() {
@@ -1551,6 +1632,7 @@ function restoreStackingCompetitors() {
   });
   hiddenElementsState.clear();
 }
+
 
 // ============================================================================
 // Tab "Settings" — 6 cards en paridad con Screen::Other de la GUI
