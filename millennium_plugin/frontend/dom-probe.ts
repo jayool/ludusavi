@@ -1069,14 +1069,22 @@ function renderCardError(doc: Document, label: string, msg: string): HTMLElement
 // ============================================================================
 
 /**
- * Renderiza la tab "All Devices": lista todos los devices que el daemon
- * conoce, marcando cuál es el actual. Equivale a `Screen::AllDevices`
- * en la GUI Iced.
+ * Renderiza la tab "All Devices" en paridad con `Screen::AllDevices`
+ * de la GUI Iced.
  *
- * Cada device se muestra como card con nombre, indicador de "this
- * device", último sync, y count de juegos. Sin click-to-expand por
- * ahora — el detalle de juegos por device viene cuando añadamos write
- * mode (Fase 2).
+ * Lógica clave: la GUI sólo muestra devices que tienen ≥1 juego en
+ * SYNC mode. CLOUD/LOCAL/NONE no participan en multi-device sync, así
+ * que sus devices no son relevantes en esta vista. Replicamos ese
+ * filtro en el cliente — la API /api/devices no filtra por mode (la
+ * usan también otros consumidores que necesitan la lista completa).
+ *
+ * Cada card muestra:
+ *  - Nombre/UUID del device + tag "THIS DEVICE" si aplica.
+ *  - "{N} game(s): name1, name2..." (lista inline separada por coma).
+ *  - "Last sync: 5 hours ago".
+ *
+ * Header del overlay muestra "{N} device(s) registered" donde N es
+ * el count post-filtro (sólo devices con SYNC games).
  */
 async function loadAndRenderAllDevices(doc: Document, content: HTMLElement) {
   content.innerHTML = '';
@@ -1085,108 +1093,136 @@ async function loadAndRenderAllDevices(doc: Document, content: HTMLElement) {
   loading.style.cssText = 'color: #9aa3b2; font-size: 13px; padding: 12px;';
   content.appendChild(loading);
 
-  let resp;
-  try {
-    resp = await daemon.getDevices();
-  } catch (e) {
-    showFatalError(doc, content, e);
+  // Necesitamos /api/devices (lista de devices con sus juegos) +
+  // /api/games (mode por juego, para filtrar a SYNC-only).
+  const [devicesSettled, gamesSettled] = await Promise.allSettled([
+    daemon.getDevices(),
+    daemon.getGames(),
+  ]);
+
+  if (devicesSettled.status === 'rejected') {
+    showFatalError(doc, content, devicesSettled.reason);
+    return;
+  }
+  if (gamesSettled.status === 'rejected') {
+    showFatalError(doc, content, gamesSettled.reason);
     return;
   }
 
   content.innerHTML = '';
 
+  const devicesResp = devicesSettled.value;
+  const gamesResp = gamesSettled.value;
+
+  // Set de juegos en SYNC mode. Mismo criterio que la GUI Iced.
+  const syncGameNames = new Set(
+    gamesResp.games.filter((g) => g.mode === 'sync').map((g) => g.name),
+  );
+
+  // Para cada device, intersectar device.games con syncGameNames.
+  // Conservamos sólo los devices con ≥1 juego en SYNC. Construimos
+  // ApiDeviceRow-like objects con games filtrados.
+  type FilteredDevice = ApiDeviceRow & { syncGames: string[] };
+  const filteredDevices: FilteredDevice[] = devicesResp.devices
+    .map((d) => ({
+      ...d,
+      syncGames: d.games.filter((g) => syncGameNames.has(g)),
+    }))
+    .filter((d) => d.syncGames.length > 0);
+
+  // Header: "{N} device(s) registered".
   const summary = doc.createElement('div');
-  summary.textContent = `${resp.devices.length} device(s) conocido(s)`;
-  summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 8px;';
+  const count = filteredDevices.length;
+  summary.textContent = `${count} device${count === 1 ? '' : 's'} registered`;
+  summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 12px;';
   content.appendChild(summary);
 
-  if (resp.devices.length === 0) {
+  if (filteredDevices.length === 0) {
     const empty = doc.createElement('div');
     empty.textContent =
-      'No hay devices registrados. Ejecuta una operación de Ludusavi para inicializar.';
-    empty.style.cssText = 'color: #6b7280; padding: 24px; text-align: center;';
+      'No devices found. Run a sync to register devices.';
+    empty.style.cssText = 'color: #9aa3b2; padding: 24px; text-align: center;';
     content.appendChild(empty);
     return;
   }
 
-  // Sort: current device primero, luego resto alfabético.
-  const sorted = [...resp.devices].sort((a, b) => {
+  // Sort: current device primero, luego alfabético por name.
+  filteredDevices.sort((a, b) => {
     if (a.is_current && !b.is_current) return -1;
     if (!a.is_current && b.is_current) return 1;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
 
-  for (const device of sorted) {
-    content.appendChild(renderDeviceHeaderCard(doc, device, false));
+  for (const device of filteredDevices) {
+    content.appendChild(renderAllDevicesCard(doc, device, device.syncGames));
   }
 }
 
 /**
- * Card de un device con icono + nombre + tag "this device" + last
- * sync + count de juegos. Usado tanto en la tab "This Device" (como
- * header destacado, expanded=true) como en "All Devices" (lista
- * compacta, expanded=false).
+ * Card de un device en la lista All Devices. Mismo layout que la GUI:
+ *  - Nombre + tag "THIS DEVICE" si current.
+ *  - "{N} game(s): name1, name2..." inline.
+ *  - "Last sync: relativeTime"
  */
-function renderDeviceHeaderCard(
+function renderAllDevicesCard(
   doc: Document,
   device: ApiDeviceRow,
-  expanded: boolean,
+  syncGames: string[],
 ): HTMLElement {
   const card = doc.createElement('div');
   card.style.cssText = [
-    'display: flex',
-    'align-items: center',
-    'gap: 14px',
-    expanded ? 'padding: 16px 18px' : 'padding: 12px 14px',
     'background: #171b26',
     device.is_current ? 'border: 1px solid #4f8ef7' : 'border: 1px solid #2a2f42',
     'border-radius: 6px',
-    'margin-bottom: 6px',
+    'padding: 16px',
+    'margin-bottom: 12px',
+    'display: flex',
+    'flex-direction: column',
+    'gap: 8px',
   ].join(';');
 
-  const icon = doc.createElement('div');
-  icon.textContent = device.is_current ? '🖥' : '📡';
-  icon.style.cssText = expanded ? 'font-size: 24px;' : 'font-size: 18px;';
-  card.appendChild(icon);
-
-  const textBlock = doc.createElement('div');
-  textBlock.style.cssText =
-    'display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;';
-
-  // Línea 1: nombre + tag "this device" si aplica.
+  // Línea 1: nombre + "THIS DEVICE" tag.
   const nameRow = doc.createElement('div');
   nameRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
   const name = doc.createElement('div');
   name.textContent = device.name;
-  name.style.cssText = expanded
-    ? 'font-size: 15px; font-weight: 600; color: #ffffff;'
-    : 'font-size: 13px; font-weight: 500; color: #ffffff;';
+  name.style.cssText = 'font-size: 13px; color: #cfd6e3; flex: 1; min-width: 0;';
   nameRow.appendChild(name);
   if (device.is_current) {
     const tag = doc.createElement('div');
-    tag.textContent = 'this device';
+    tag.textContent = 'THIS DEVICE';
     tag.style.cssText = [
-      'font-size: 10px',
+      'font-size: 11px',
       'color: #4f8ef7',
-      'border: 1px solid #4f8ef7',
-      'padding: 1px 6px',
-      'border-radius: 8px',
-      'text-transform: uppercase',
       'letter-spacing: 0.05em',
     ].join(';');
     nameRow.appendChild(tag);
   }
-  textBlock.appendChild(nameRow);
+  card.appendChild(nameRow);
 
-  // Línea 2: stats — last sync · N juegos.
-  const stats = doc.createElement('div');
-  const lastSync = relativeTime(device.last_sync_time_utc);
-  const gamesCount = device.games.length;
-  stats.textContent = `${gamesCount} juego(s) · last sync: ${lastSync}`;
-  stats.style.cssText = 'font-size: 11px; color: #9aa3b2;';
-  textBlock.appendChild(stats);
+  // Línea 2: "{N} game(s): name1, name2..."
+  const gamesLine = doc.createElement('div');
+  const sortedGames = [...syncGames].sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
+  );
+  const plural = sortedGames.length === 1 ? '' : 's';
+  gamesLine.textContent = `${sortedGames.length} game${plural}: ${sortedGames.join(', ')}`;
+  gamesLine.style.cssText = 'font-size: 12px; color: #9aa3b2; line-height: 1.5;';
+  card.appendChild(gamesLine);
 
-  card.appendChild(textBlock);
+  // Línea 3: Last sync.
+  const lastSyncRow = doc.createElement('div');
+  lastSyncRow.style.cssText = 'display: flex; gap: 6px; font-size: 11px;';
+  const lastSyncLabel = doc.createElement('span');
+  lastSyncLabel.textContent = 'Last sync:';
+  lastSyncLabel.style.color = '#9aa3b2';
+  lastSyncRow.appendChild(lastSyncLabel);
+  const lastSyncValue = doc.createElement('span');
+  lastSyncValue.textContent = relativeTime(device.last_sync_time_utc);
+  lastSyncValue.style.color = '#cfd6e3';
+  lastSyncRow.appendChild(lastSyncValue);
+  card.appendChild(lastSyncRow);
+
   return card;
 }
 
