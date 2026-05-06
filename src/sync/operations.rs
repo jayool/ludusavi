@@ -1380,6 +1380,19 @@ pub fn create_safety_backup(
     game_id: &str,
     save_path: &str,
 ) -> Result<(), SyncError> {
+    create_safety_backup_inner(app_dir, game_id, save_path, SAFETY_BACKUP_MAX_BYTES)
+}
+
+/// Implementación con el límite de tamaño inyectable. La función pública
+/// pasa siempre `SAFETY_BACKUP_MAX_BYTES`; los tests pasan un límite
+/// pequeño para ejercitar la rama de skip-por-tamaño sin tener que
+/// construir un directorio real de 500 MB.
+fn create_safety_backup_inner(
+    app_dir: &StrictPath,
+    game_id: &str,
+    save_path: &str,
+    max_bytes: u64,
+) -> Result<(), SyncError> {
     // Cargar sync-games.json para ver si el flag está activo.
     // Nota: usamos SyncGamesConfig::load() porque es el único sitio donde vive el flag global.
     let sync_config = crate::sync::sync_config::SyncGamesConfig::load();
@@ -1402,12 +1415,12 @@ pub fn create_safety_backup(
 
     // Tamaño excesivo: saltar con warning
     let size = directory_size_bytes(src);
-    if size > SAFETY_BACKUP_MAX_BYTES {
+    if size > max_bytes {
         log::warn!(
             "[safety-backup] Skipping {} ({}MB > {}MB limit)",
             game_id,
             size / (1024 * 1024),
-            SAFETY_BACKUP_MAX_BYTES / (1024 * 1024)
+            max_bytes / (1024 * 1024)
         );
         return Ok(());
     }
@@ -3061,6 +3074,79 @@ mod tests {
         let snap_path = snapshot.as_std_path_buf().unwrap();
         assert!(!snap_path.join("v1.dat").exists(), "v1 should be gone");
         assert!(snap_path.join("v2.dat").exists(), "v2 should be present");
+    }
+
+    // skip-por-tamaño: ejercitan la rama `if size > max_bytes` de
+    // `create_safety_backup_inner`. Inyectamos un límite tiny en lugar
+    // de construir un dir real de 500 MB.
+    #[test]
+    fn safety_backup_skips_when_source_exceeds_size_limit() {
+        let app = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+
+        // 200 bytes con un límite de 100 → 200 > 100, skip silencioso.
+        write_file(&saves.path().join("a.dat"), &vec![0u8; 200]);
+
+        let result = create_safety_backup_inner(
+            &sp(app.path()),
+            "BigGame",
+            &saves.path().to_string_lossy(),
+            100,
+        );
+        assert!(result.is_ok(), "should silently skip, got {result:?}");
+
+        let info = get_safety_backup_info(&sp(app.path()), "BigGame");
+        assert!(
+            info.is_none(),
+            "snapshot should NOT be created when size > limit"
+        );
+    }
+
+    #[test]
+    fn safety_backup_creates_snapshot_when_under_size_limit() {
+        let app = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+
+        // 50 bytes con un límite de 100 → 50 <= 100, snapshot se crea.
+        write_file(&saves.path().join("a.dat"), &vec![0u8; 50]);
+
+        create_safety_backup_inner(
+            &sp(app.path()),
+            "SmallGame",
+            &saves.path().to_string_lossy(),
+            100,
+        )
+        .unwrap();
+
+        let info = get_safety_backup_info(&sp(app.path()), "SmallGame");
+        assert!(
+            info.is_some(),
+            "snapshot should be created when size <= limit"
+        );
+    }
+
+    #[test]
+    fn safety_backup_creates_snapshot_at_exact_size_limit() {
+        let app = tempfile::tempdir().unwrap();
+        let saves = tempfile::tempdir().unwrap();
+
+        // 100 bytes con un límite de 100 → la condición es `>`, no
+        // `>=`, así que snapshot se crea (caso borde).
+        write_file(&saves.path().join("a.dat"), &vec![0u8; 100]);
+
+        create_safety_backup_inner(
+            &sp(app.path()),
+            "EdgeGame",
+            &saves.path().to_string_lossy(),
+            100,
+        )
+        .unwrap();
+
+        let info = get_safety_backup_info(&sp(app.path()), "EdgeGame");
+        assert!(
+            info.is_some(),
+            "snapshot SHOULD be created at exact limit (skip is `>`, not `>=`)"
+        );
     }
 
     // restore_safety_backup ---------------------------------------------------
