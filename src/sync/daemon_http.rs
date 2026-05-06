@@ -273,6 +273,12 @@ struct ApiCloudResponse {
     /// URL para instalar rclone si está missing — el plugin la usa
     /// para el botón "Install instructions" como hace la GUI.
     install_url: String,
+    /// Path al binario rclone (lo que tiene `config.apps.rclone.path`).
+    /// Necesario para la card CLOUD/RCLONE de la pantalla Settings.
+    rclone_executable: String,
+    /// Flags globales que el daemon pasa a rclone (p.ej.
+    /// "--fast-list --ignore-checksum"). Necesario para la misma card.
+    rclone_arguments: String,
 }
 
 async fn cloud_handler() -> Json<ApiCloudResponse> {
@@ -288,6 +294,8 @@ async fn cloud_handler() -> Json<ApiCloudResponse> {
                 path: String::new(),
                 rclone_state: "not_configured".to_string(),
                 install_url: "https://rclone.org/downloads/".to_string(),
+                rclone_executable: String::new(),
+                rclone_arguments: String::new(),
             });
         }
     };
@@ -330,6 +338,8 @@ async fn cloud_handler() -> Json<ApiCloudResponse> {
         path: config.cloud.path.clone(),
         rclone_state,
         install_url: "https://rclone.org/downloads/".to_string(),
+        rclone_executable: config.apps.rclone.path.raw().to_string(),
+        rclone_arguments: config.apps.rclone.arguments.clone(),
     })
 }
 
@@ -347,6 +357,174 @@ fn read_rclone_missing_flag(app_dir: &StrictPath) -> bool {
     json.get("rclone_missing")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+// ============================================================================
+// /api/settings — config completa relevante para la pantalla Settings
+// ============================================================================
+//
+// Equivale a Screen::Other ("Settings") de la GUI Iced. Devuelve cada
+// card como una sub-estructura: backup_path, manifest, roots, safety,
+// service. La info de cloud sigue en /api/cloud (que ya añadimos antes
+// para la card CLOUD STORAGE de This Device) — el plugin se trae las
+// dos al cargar la pantalla Settings.
+//
+// Read-only en Fase 1. Los toggles (safety, system_notifications) y
+// los botones (Install service, Refresh manifest, etc.) se enchufan
+// con POST endpoints en Fase 2.
+
+#[derive(serde::Serialize)]
+struct ApiSettingsResponse {
+    backup_path: String,
+    manifest: ApiSettingsManifest,
+    roots: Vec<ApiSettingsRoot>,
+    safety: ApiSettingsSafety,
+    service: ApiSettingsService,
+}
+
+#[derive(serde::Serialize)]
+struct ApiSettingsManifest {
+    /// URL del manifest primario (la oficial de mtkennerly por defecto).
+    primary_url: String,
+    primary_enabled: bool,
+    /// Lista de manifests secundarios. Cada uno es local (path) o
+    /// remote (url), con su flag enable.
+    secondary: Vec<ApiSettingsSecondaryManifest>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum ApiSettingsSecondaryManifest {
+    Local { path: String, enabled: bool },
+    Remote { url: String, enabled: bool },
+}
+
+#[derive(serde::Serialize)]
+struct ApiSettingsRoot {
+    /// Nombre del store en lowercase (steam, epic, gog, gogGalaxy,
+    /// heroic, legendary, lutris, microsoft, origin, prime, uplay,
+    /// otherHome, otherWine, otherWindows, otherLinux, otherMac, other).
+    /// Mismo serde-rename que `Store` del manifest.
+    store: String,
+    path: String,
+}
+
+#[derive(serde::Serialize)]
+struct ApiSettingsSafety {
+    safety_backups_enabled: bool,
+    system_notifications_enabled: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ApiSettingsService {
+    /// `true` si la scheduled task / systemd service está instalada.
+    /// Sólo Windows por ahora — Linux/Mac todavía no tienen la lógica
+    /// de detección portada (la GUI también devuelve `false` ahí).
+    installed: bool,
+}
+
+async fn settings_handler() -> Json<ApiSettingsResponse> {
+    use crate::resource::config::{Config, SecondaryManifestConfig};
+    use crate::sync::sync_config::SyncGamesConfig;
+
+    let config = Config::load().unwrap_or_default();
+    let sync_cfg = SyncGamesConfig::load();
+
+    // Manifest URL primario: la GUI usa `config.manifest.url()` que cae
+    // a la default oficial si está None. Replicamos para que el plugin
+    // siempre vea la URL real, no `null`.
+    let primary_url = config.manifest.url().to_string();
+    let primary_enabled = config.manifest.enable;
+
+    let secondary: Vec<ApiSettingsSecondaryManifest> = config
+        .manifest
+        .secondary
+        .iter()
+        .map(|s| match s {
+            SecondaryManifestConfig::Local { path, enable } => ApiSettingsSecondaryManifest::Local {
+                path: path.render(),
+                enabled: *enable,
+            },
+            SecondaryManifestConfig::Remote { url, enable } => ApiSettingsSecondaryManifest::Remote {
+                url: url.clone(),
+                enabled: *enable,
+            },
+        })
+        .collect();
+
+    // Roots: aplanamos el enum Root → { store: lowercase_camel, path }.
+    // El plugin no necesita distinguir Steam de Epic en el render
+    // (todos se muestran igual con label de store).
+    fn store_to_str(s: crate::resource::manifest::Store) -> &'static str {
+        use crate::resource::manifest::Store;
+        match s {
+            Store::Ea => "ea",
+            Store::Epic => "epic",
+            Store::Gog => "gog",
+            Store::GogGalaxy => "gogGalaxy",
+            Store::Heroic => "heroic",
+            Store::Legendary => "legendary",
+            Store::Lutris => "lutris",
+            Store::Microsoft => "microsoft",
+            Store::Origin => "origin",
+            Store::Prime => "prime",
+            Store::Steam => "steam",
+            Store::Uplay => "uplay",
+            Store::OtherHome => "otherHome",
+            Store::OtherWine => "otherWine",
+            Store::OtherWindows => "otherWindows",
+            Store::OtherLinux => "otherLinux",
+            Store::OtherMac => "otherMac",
+            Store::Other => "other",
+        }
+    }
+    let roots: Vec<ApiSettingsRoot> = config
+        .roots
+        .iter()
+        .map(|r| ApiSettingsRoot {
+            store: store_to_str(r.store()).to_string(),
+            path: r.path().render(),
+        })
+        .collect();
+
+    Json(ApiSettingsResponse {
+        backup_path: config.backup.path.render(),
+        manifest: ApiSettingsManifest {
+            primary_url,
+            primary_enabled,
+            secondary,
+        },
+        roots,
+        safety: ApiSettingsSafety {
+            safety_backups_enabled: sync_cfg.safety_backups_enabled(),
+            system_notifications_enabled: sync_cfg.system_notifications_enabled(),
+        },
+        service: ApiSettingsService {
+            installed: detect_service_installed(),
+        },
+    })
+}
+
+/// Detecta si el daemon está instalado como servicio del SO. Misma
+/// lógica que la GUI (src/gui/app.rs:4220) — Windows sólo, los demás
+/// SOs reportan false. Cuando portemos la lógica al daemon worker
+/// (Fase 2 o posterior) este helper se quita.
+fn detect_service_installed() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("schtasks.exe")
+            .args(["/query", "/TN", "LudusaviDaemon"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 // ============================================================================
@@ -922,6 +1100,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/events", get(events_handler))
         .route("/api/accela-installs", get(accela_installs_handler))
         .route("/api/cloud", get(cloud_handler))
+        .route("/api/settings", get(settings_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
