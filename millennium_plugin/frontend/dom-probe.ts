@@ -23,6 +23,7 @@ import { relativeTime } from './time-format';
 
 declare const g_PopupManager: any;
 declare const Millennium: any;
+declare const SteamClient: any;
 
 const MAIN_WINDOW_NAME = 'SP Desktop_uid0';
 
@@ -387,8 +388,14 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
       //      de NUESTRO overlay y lo oculta. Reintenta hasta que
       //      el overlay quede on top.
       navigateToBiblioteca(bibliotecaWrapper);
-      await sleep(80);
+      await sleep(300); // más tiempo para que Steam desmonte Tienda
       await showSyncOverlay(doc);
+      // Log diagnóstico tras intentar mostrar el overlay: qué hay
+      // en el centro del viewport. Si el overlay NO aparece, esto
+      // dice qué se está colando — typically un tag custom de
+      // Steam (cef-osr-frame, sp-page, etc.) que necesitamos
+      // identificar para targetearlo.
+      logViewportCenter(doc);
     },
     true, // capture phase para llegar antes de los listeners de Steam
   );
@@ -1534,11 +1541,48 @@ function hideSyncOverlay(doc: Document) {
 
 const hiddenElementsState = new Map<HTMLElement, string>();
 
-/** Llama el `onClick` interno de React asociado al elemento (lo que
- *  Steam configuró para esa nav-tab). Es más fiable que un `click()`
- *  sintético porque accede a las props directamente sin pasar por
- *  el event system de React, que puede filtrar por `isTrusted`. */
+/** Navega Steam a Biblioteca probando varios métodos en orden de
+ *  fiabilidad. Emite logs detallados para diagnóstico (lee
+ *  C:\Program Files (x86)\Steam\logs\cef_log.txt buscando líneas
+ *  `[ludusavi-sync] navigate:`). Una vez sabemos qué método funciona
+ *  podemos limpiar los demás.
+ *
+ *  Por qué tantas tentativas:
+ *   - Tienda y Comunidad viven en procesos CEF separados (distinto
+ *     PID, distinto contexto Chrome) que se componen sobre nuestra
+ *     ventana. Confirmado en cef_log.txt — los store loads vienen
+ *     de https://store.steampowered.com/ con su propio CSP.
+ *   - Para que Tienda DESAPAREZCA visualmente Steam tiene que
+ *     desmontar ese proceso. CSS/DOM en nuestra ventana no le
+ *     afecta. Sólo la API interna de Steam puede hacerlo.
+ */
 function navigateToBiblioteca(bibliotecaWrapper: Element) {
+  const log = (msg: string) => console.log(`[ludusavi-sync] navigate: ${msg}`);
+
+  // Vía 1: SteamClient.URL.ExecuteSteamURL — API interna oficial.
+  // Probamos varios paths porque la URL exacta puede variar entre
+  // builds de Steam.
+  if (typeof SteamClient !== 'undefined' && SteamClient?.URL?.ExecuteSteamURL) {
+    const candidates = [
+      'steam://nav/library/home',
+      'steam://nav/library',
+      'steam://open/games',
+      'steam://open/library',
+    ];
+    for (const url of candidates) {
+      try {
+        SteamClient.URL.ExecuteSteamURL(url);
+        log(`SteamClient.URL.ExecuteSteamURL("${url}") OK`);
+        return;
+      } catch (e) {
+        log(`SteamClient.URL.ExecuteSteamURL("${url}") threw: ${e}`);
+      }
+    }
+  } else {
+    log('SteamClient.URL.ExecuteSteamURL no disponible');
+  }
+
+  // Vía 2: React onClick directo via __reactProps$<hash>.
   const propKey = Object.keys(bibliotecaWrapper).find((k) =>
     k.startsWith('__reactProps$'),
   );
@@ -1546,22 +1590,42 @@ function navigateToBiblioteca(bibliotecaWrapper: Element) {
     const props = (bibliotecaWrapper as any)[propKey];
     if (typeof props?.onClick === 'function') {
       try {
-        // Pasamos un evento mock — React handlers no usan
-        // typically más que preventDefault/stopPropagation.
         props.onClick({
           preventDefault: () => {},
           stopPropagation: () => {},
           currentTarget: bibliotecaWrapper,
           target: bibliotecaWrapper,
         });
+        log('React onClick (props) OK');
         return;
       } catch (e) {
-        console.warn('[ludusavi-sync] React onClick failed:', e);
+        log(`React onClick threw: ${e}`);
       }
+    } else {
+      log('React props sin onClick');
     }
+  } else {
+    log('No __reactProps$ key');
   }
-  // Fallback: click DOM nativo. Menos fiable pero mejor que nada.
-  (bibliotecaWrapper as HTMLElement).click();
+
+  // Vía 3: dispatchEvent click sintético.
+  try {
+    bibliotecaWrapper.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    log('dispatchEvent MouseEvent OK');
+    return;
+  } catch (e) {
+    log(`dispatchEvent threw: ${e}`);
+  }
+
+  // Vía 4: HTMLElement.click() nativo.
+  try {
+    (bibliotecaWrapper as HTMLElement).click();
+    log('HTMLElement.click() OK');
+  } catch (e) {
+    log(`HTMLElement.click() threw: ${e}`);
+  }
 }
 
 /** Después de mostrar el overlay, mira si algo se cuela por encima.
@@ -1631,6 +1695,38 @@ function restoreStackingCompetitors() {
     el.style.visibility = origVis;
   });
   hiddenElementsState.clear();
+}
+
+/** Log diagnóstico para cef_log.txt: qué tags y URLs están en el
+ *  centro del viewport tras intentar mostrar el overlay. Sirve para
+ *  identificar empíricamente qué tipo de elemento está pintando
+ *  Tienda — iframe, webview, custom element, etc. */
+function logViewportCenter(doc: Document) {
+  const w = (doc.defaultView ?? window).innerWidth;
+  const h = (doc.defaultView ?? window).innerHeight;
+  const stack = doc.elementsFromPoint(w / 2, h / 2);
+  console.log(
+    `[ludusavi-sync] viewport-center stack (${stack.length} elements):`,
+  );
+  for (let i = 0; i < Math.min(stack.length, 10); i++) {
+    const el = stack[i] as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    const cls =
+      typeof el.className === 'string' ? el.className.slice(0, 60) : '';
+    const id = el.id || '';
+    const src = (el as any).src || '';
+    const rect = el.getBoundingClientRect();
+    console.log(
+      `  [${i}] <${tag}> ${id ? '#' + id : ''} ${cls ? '.' + cls : ''} ${
+        Math.round(rect.width)
+      }x${Math.round(rect.height)}@${Math.round(rect.x)},${Math.round(rect.y)}${
+        src ? ' src=' + src : ''
+      }`,
+    );
+  }
+  // Lista de URL de la ventana — si Steam navegó a Biblioteca el
+  // location.href cambia.
+  console.log(`[ludusavi-sync] window.location.href = ${(doc.defaultView as any)?.location?.href}`);
 }
 
 
