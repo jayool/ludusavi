@@ -370,9 +370,25 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
 
   syncTab.addEventListener(
     'click',
-    (e) => {
+    async (e) => {
       e.stopPropagation();
       e.preventDefault();
+
+      // FORZAR Biblioteca antes de mostrar overlay. Tienda y
+      // Comunidad usan widgets de Steam (no iframes estándar) que
+      // pintan por encima de TODO lo que renderiza nuestro DOM
+      // — z-index, transform, isolation, todo da igual. La única
+      // forma fiable: hacer que Steam navegue a Biblioteca, que
+      // SÍ es DOM normal donde el overlay funciona.
+      //
+      // Click sintético sobre el wrapper de Biblioteca con bubbles
+      // para que Steam (React) lo procese como un click real.
+      bibliotecaWrapper.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+      );
+      // Damos un instante a Steam para que arranque la transición y
+      // desmonte el contenedor previo (Tienda/Comunidad).
+      await sleep(80);
       showSyncOverlay(doc);
     },
     true, // capture phase para llegar antes de los listeners de Steam
@@ -382,6 +398,12 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
   // Biblioteca/Tienda/Comunidad/etc, ocultamos nuestro overlay para
   // no taparles el contenido. Steam sigue procesando el click
   // normalmente porque NO usamos stopPropagation aquí.
+  //
+  // Cuando NUESTRO click handler (arriba) dispara click sintético
+  // sobre Biblioteca, este listener también se dispara — pero
+  // hideSyncOverlay es idempotente (no-op si el overlay no existe
+  // o ya está oculto), así que la secuencia "click Biblioteca →
+  // hide → showSyncOverlay" funciona correctamente.
   Array.from(row.children).forEach((sibling) => {
     if (sibling === syncTab) return;
     sibling.addEventListener('click', () => hideSyncOverlay(doc));
