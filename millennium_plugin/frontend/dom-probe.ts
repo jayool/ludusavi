@@ -11,7 +11,7 @@
  */
 
 import { sleep } from '@steambrew/client';
-import { ApiDeviceRow, daemon } from './daemon-client';
+import { ApiCloudResponse, ApiDeviceRow, daemon, openAppDir } from './daemon-client';
 import { describeGame, statusColor } from './game-format';
 import { relativeTime } from './time-format';
 
@@ -749,12 +749,19 @@ function formatBytesShort(bytes: number): string {
 // ============================================================================
 
 /**
- * Renderiza la tab "This Device": muestra el device actual del daemon
- * (su nombre, last sync time, cuántos juegos tiene), y la lista de
- * juegos en este device con su mode/status (cruzando /api/devices con
- * /api/games por nombre).
+ * Renderiza la tab "This Device" en paridad con `Screen::ThisDevice`
+ * de la GUI Iced. Tres cards:
  *
- * Equivale a `Screen::ThisDevice` en la GUI Iced.
+ *  1. DEVICE — nombre, UUID completo, botón "Open logs".
+ *  2. SYNC DAEMON — running dot, "Daemon is running", Last sync,
+ *     Monitoring (lista inline de juegos en este device).
+ *  3. CLOUD STORAGE — Provider, Remote ID, Path, rclone state +
+ *     "Install instructions" si missing.
+ *
+ * Las 3 cards se cargan con datos de /api/devices, /api/status,
+ * /api/cloud. Si alguno falla, mostramos un placeholder en su card
+ * en lugar de abortar el render entero — el usuario aún ve los
+ * datos que sí cargaron.
  */
 async function loadAndRenderThisDevice(doc: Document, content: HTMLElement) {
   content.innerHTML = '';
@@ -763,9 +770,13 @@ async function loadAndRenderThisDevice(doc: Document, content: HTMLElement) {
   loading.style.cssText = 'color: #9aa3b2; font-size: 13px; padding: 12px;';
   content.appendChild(loading);
 
-  const [devicesSettled, gamesSettled] = await Promise.allSettled([
+  // 4 fuentes en paralelo: devices (UUID, lista de juegos), status
+  // (app_dir, last_sync), cloud (provider, rclone state), games
+  // (cross para mostrar mode/status en monitoring inline).
+  const [devicesSettled, statusSettled, cloudSettled] = await Promise.allSettled([
     daemon.getDevices(),
-    daemon.getGames(),
+    daemon.getStatus(),
+    daemon.getCloud(),
   ]);
 
   if (devicesSettled.status === 'rejected') {
@@ -787,50 +798,270 @@ async function loadAndRenderThisDevice(doc: Document, content: HTMLElement) {
     return;
   }
 
-  // Header card del device actual: 🖥 NOMBRE · last sync · N juegos.
-  content.appendChild(renderDeviceHeaderCard(doc, thisDevice, true));
+  // Card 1: DEVICE
+  const appDir =
+    statusSettled.status === 'fulfilled' ? statusSettled.value.app_dir : undefined;
+  content.appendChild(renderDeviceCard(doc, thisDevice, appDir));
 
-  // Lista de juegos en este device. Cruzamos /api/devices.games (que
-  // sólo trae nombres) con /api/games (que trae mode/status) para
-  // poder mostrar el detalle. Si /api/games falló (gamesSettled
-  // rejected), caemos a sólo los nombres.
-  const gameNames = new Set(thisDevice.games);
-  const gamesById = new Map<string, any>();
-  if (gamesSettled.status === 'fulfilled') {
-    for (const g of gamesSettled.value.games) {
-      if (gameNames.has(g.name)) {
-        gamesById.set(g.name, g);
+  // Card 2: SYNC DAEMON
+  const lastSyncIso =
+    statusSettled.status === 'fulfilled'
+      ? statusSettled.value.last_sync_time_utc
+      : undefined;
+  content.appendChild(renderDaemonCard(doc, lastSyncIso, thisDevice.games));
+
+  // Card 3: CLOUD STORAGE
+  if (cloudSettled.status === 'fulfilled') {
+    content.appendChild(renderCloudCard(doc, cloudSettled.value));
+  } else {
+    content.appendChild(
+      renderCardError(doc, 'CLOUD STORAGE', `${cloudSettled.reason}`),
+    );
+  }
+}
+
+// ----------------------------------------------------------------------
+// Cards de "This Device" — 3 secciones que mimica la GUI Iced.
+// ----------------------------------------------------------------------
+
+/** Card genérica con label de sección + cuerpo. Estilo común. */
+function makeSectionCard(doc: Document, label: string): {
+  card: HTMLElement;
+  body: HTMLElement;
+} {
+  const card = doc.createElement('div');
+  card.style.cssText = [
+    'background: #171b26',
+    'border: 1px solid #2a2f42',
+    'border-radius: 6px',
+    'padding: 16px',
+    'margin-bottom: 12px',
+  ].join(';');
+
+  const labelEl = doc.createElement('div');
+  labelEl.textContent = label;
+  labelEl.style.cssText = [
+    'font-size: 11px',
+    'color: #9aa3b2',
+    'letter-spacing: 0.08em',
+    'margin-bottom: 10px',
+    'font-weight: 600',
+  ].join(';');
+  card.appendChild(labelEl);
+
+  const body = doc.createElement('div');
+  body.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+  card.appendChild(body);
+
+  return { card, body };
+}
+
+/** DEVICE card: nombre + UUID + Open logs. */
+function renderDeviceCard(
+  doc: Document,
+  device: ApiDeviceRow,
+  appDir: string | undefined,
+): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'DEVICE');
+
+  // Layout: nombre+UUID a la izquierda, botón a la derecha.
+  const row = doc.createElement('div');
+  row.style.cssText = 'display: flex; align-items: center; gap: 16px;';
+
+  const left = doc.createElement('div');
+  left.style.cssText = 'display: flex; flex-direction: column; gap: 4px; flex: 1;';
+
+  const name = doc.createElement('div');
+  name.textContent = device.name;
+  name.style.cssText = 'font-size: 13px; color: #ffffff;';
+  left.appendChild(name);
+
+  const idEl = doc.createElement('div');
+  idEl.textContent = device.id;
+  idEl.style.cssText = 'font-size: 11px; color: #9aa3b2; font-family: monospace;';
+  left.appendChild(idEl);
+
+  row.appendChild(left);
+
+  // Open logs button (sólo si app_dir disponible — si /api/status
+  // falló no tenemos path al que llevar al usuario).
+  if (appDir) {
+    const btn = doc.createElement('button');
+    btn.textContent = 'Open logs';
+    btn.style.cssText = [
+      'background: transparent',
+      'color: #ffffff',
+      'border: 1px solid #2a2f42',
+      'border-radius: 4px',
+      'padding: 6px 14px',
+      'font-size: 12px',
+      'font-family: inherit',
+      'cursor: pointer',
+    ].join(';');
+    btn.addEventListener('click', async () => {
+      const ok = await openAppDir(appDir);
+      if (!ok) {
+        btn.textContent = 'Open failed';
+        btn.style.color = '#ef4444';
+        setTimeout(() => {
+          btn.textContent = 'Open logs';
+          btn.style.color = '#ffffff';
+        }, 2000);
       }
-    }
+    });
+    row.appendChild(btn);
   }
 
-  const sectionTitle = doc.createElement('div');
-  sectionTitle.textContent = `Juegos en este device (${thisDevice.games.length})`;
-  sectionTitle.style.cssText =
-    'color: #9aa3b2; font-size: 12px; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;';
-  content.appendChild(sectionTitle);
+  body.appendChild(row);
+  return card;
+}
 
-  if (thisDevice.games.length === 0) {
-    const empty = doc.createElement('div');
-    empty.textContent = 'Sin juegos asociados todavía a este device.';
-    empty.style.cssText = 'color: #6b7280; padding: 12px;';
-    content.appendChild(empty);
-    return;
-  }
+/** SYNC DAEMON card: dot running + "Daemon is running" + Last sync +
+ *  Monitoring (lista inline de juegos del device). */
+function renderDaemonCard(
+  doc: Document,
+  lastSyncIso: string | undefined,
+  monitoredGames: string[],
+): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'SYNC DAEMON');
 
-  const sortedNames = [...thisDevice.games].sort((a, b) =>
-    a.toLowerCase().localeCompare(b.toLowerCase()),
-  );
-  for (const name of sortedNames) {
-    const fullGame = gamesById.get(name);
-    if (fullGame) {
-      content.appendChild(renderGameRow(doc, fullGame));
-    } else {
-      // Fallback: el juego está listado en device pero /api/games no
-      // lo trae (raro: nombre desincronizado, o games endpoint falló).
-      content.appendChild(renderPlainNameRow(doc, name));
-    }
+  // Línea 1: dot verde + "Daemon is running".
+  const runningRow = doc.createElement('div');
+  runningRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const dot = doc.createElement('div');
+  dot.style.cssText =
+    'background: #3ecf8e; width: 8px; height: 8px; border-radius: 50%;';
+  runningRow.appendChild(dot);
+  const runningLabel = doc.createElement('div');
+  runningLabel.textContent = 'Daemon is running';
+  runningLabel.style.cssText = 'font-size: 13px; color: #3ecf8e;';
+  runningRow.appendChild(runningLabel);
+  body.appendChild(runningRow);
+
+  // Línea 2: Last sync.
+  const lastSyncRow = doc.createElement('div');
+  lastSyncRow.style.cssText = 'display: flex; gap: 6px; font-size: 12px;';
+  const lastSyncLabel = doc.createElement('span');
+  lastSyncLabel.textContent = 'Last sync:';
+  lastSyncLabel.style.color = '#9aa3b2';
+  lastSyncRow.appendChild(lastSyncLabel);
+  const lastSyncValue = doc.createElement('span');
+  lastSyncValue.textContent = relativeTime(lastSyncIso);
+  lastSyncValue.style.color = '#cfd6e3';
+  lastSyncRow.appendChild(lastSyncValue);
+  body.appendChild(lastSyncRow);
+
+  // Línea 3+: Monitoring.
+  const monitoringWrap = doc.createElement('div');
+  monitoringWrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+  const monitoringLabel = doc.createElement('div');
+  monitoringLabel.textContent = 'Monitoring:';
+  monitoringLabel.style.cssText = 'font-size: 12px; color: #9aa3b2;';
+  monitoringWrap.appendChild(monitoringLabel);
+  const monitoringValue = doc.createElement('div');
+  if (monitoredGames.length === 0) {
+    monitoringValue.textContent = 'No games registered for this device';
+    monitoringValue.style.color = '#9aa3b2';
+  } else {
+    const sorted = [...monitoredGames].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    );
+    monitoringValue.textContent = sorted.join(', ');
+    monitoringValue.style.color = '#cfd6e3';
   }
+  monitoringValue.style.cssText += ';font-size: 12px; line-height: 1.5;';
+  monitoringWrap.appendChild(monitoringValue);
+  body.appendChild(monitoringWrap);
+
+  return card;
+}
+
+/** CLOUD STORAGE card: provider/remote_id/path/rclone state. */
+function renderCloudCard(doc: Document, cloud: ApiCloudResponse): HTMLElement {
+  const { card, body } = makeSectionCard(doc, 'CLOUD STORAGE');
+
+  const addRow = (label: string, value: string, valueColor = '#cfd6e3') => {
+    const row = doc.createElement('div');
+    row.style.cssText = 'display: flex; gap: 6px; font-size: 12px;';
+    const lab = doc.createElement('span');
+    lab.textContent = `${label}:`;
+    lab.style.color = '#9aa3b2';
+    row.appendChild(lab);
+    const val = doc.createElement('span');
+    val.textContent = value;
+    val.style.color = valueColor;
+    row.appendChild(val);
+    body.appendChild(row);
+  };
+
+  addRow('Provider', cloud.provider, '#ffffff');
+  addRow('Remote', cloud.remote_id);
+  addRow('Path', cloud.path);
+
+  // Línea de rclone state: dot de color + texto.
+  const rcloneRow = doc.createElement('div');
+  rcloneRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const rcDot = doc.createElement('div');
+  let rcColor = '#9aa3b2';
+  let rcText = 'rclone not configured';
+  let rcTextColor = '#9aa3b2';
+  if (cloud.rclone_state === 'missing') {
+    rcColor = '#ef4444';
+    rcText = 'rclone not found';
+    rcTextColor = '#9aa3b2';
+  } else if (cloud.rclone_state === 'ok') {
+    rcColor = '#3ecf8e';
+    rcText = 'rclone configured';
+    rcTextColor = '#3ecf8e';
+  }
+  rcDot.style.cssText = `background: ${rcColor}; width: 8px; height: 8px; border-radius: 50%;`;
+  rcloneRow.appendChild(rcDot);
+  const rcLabel = doc.createElement('span');
+  rcLabel.textContent = rcText;
+  rcLabel.style.cssText = `font-size: 13px; color: ${rcTextColor};`;
+  rcloneRow.appendChild(rcLabel);
+  // Botón Install instructions cuando missing.
+  if (cloud.rclone_state === 'missing' && cloud.install_url) {
+    const install = doc.createElement('button');
+    install.textContent = 'Install instructions';
+    install.style.cssText = [
+      'background: #4f8ef7',
+      'color: white',
+      'border: none',
+      'border-radius: 4px',
+      'padding: 4px 12px',
+      'font-size: 11px',
+      'font-family: inherit',
+      'cursor: pointer',
+      'margin-left: 6px',
+    ].join(';');
+    install.addEventListener('click', () => {
+      // Plugin no puede abrir URLs externas directamente desde el
+      // overlay (sandbox). Usamos `SteamClient.URL.ExecuteSteamURL`
+      // si está disponible, o `window.open` (que en CEF puede abrir
+      // en el navegador externo según política).
+      try {
+        (doc.defaultView as any)?.open(cloud.install_url, '_blank');
+      } catch (e) {
+        console.error('[ludusavi-sync] could not open install_url:', e);
+      }
+    });
+    rcloneRow.appendChild(install);
+  }
+  body.appendChild(rcloneRow);
+
+  return card;
+}
+
+/** Card de error: cuando un fetch para una sub-card falla, en lugar
+ *  de abortar el render entero pintamos el card en estado de error. */
+function renderCardError(doc: Document, label: string, msg: string): HTMLElement {
+  const { card, body } = makeSectionCard(doc, label);
+  const err = doc.createElement('div');
+  err.textContent = `✗ ${msg}`;
+  err.style.cssText = 'color: #ef4444; font-size: 12px;';
+  body.appendChild(err);
+  return card;
 }
 
 // ============================================================================
