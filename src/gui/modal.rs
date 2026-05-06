@@ -284,6 +284,13 @@ impl Modal {
                 remove_saves,
             } => {
                 use crate::gui::accela::InstallAction;
+                // confirm_message returns "title\n\ndescription". The
+                // body() function splits on the first \n\n; everything
+                // after that is the description, and any further \n\n
+                // would render as a literal blank line. So we append
+                // extras inline, separated by spaces — keeps the
+                // description as a single paragraph like the other
+                // destructive modals (ConfirmSyncRestore et al.).
                 let mut msg = action.confirm_message(&install.game_name);
                 if matches!(action, InstallAction::Uninstall) {
                     let mut extras: Vec<&str> = Vec::new();
@@ -294,11 +301,11 @@ impl Modal {
                         extras.push("Steam cloud saves");
                     }
                     if !extras.is_empty() {
-                        msg.push_str("\n\nAlso removing: ");
+                        msg.push_str(" Also removing: ");
                         msg.push_str(&extras.join(", "));
                         msg.push('.');
                     }
-                    msg.push_str("\n\nThis cannot be undone.");
+                    msg.push_str(" This cannot be undone.");
                 }
                 msg
             }
