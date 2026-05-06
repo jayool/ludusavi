@@ -388,7 +388,11 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
       //      de NUESTRO overlay y lo oculta. Reintenta hasta que
       //      el overlay quede on top.
       navigateToBiblioteca(bibliotecaWrapper);
-      await sleep(300); // más tiempo para que Steam desmonte Tienda
+      // 800ms para dar tiempo a Steam a desmontar el proceso CEF de
+      // Tienda (validado en cef_log que arranca un proceso Chrome
+      // separado por webview, eso tarda en cerrarse). 300ms era
+      // demasiado corto; en ese momento Tienda aún era visible.
+      await sleep(800);
       await showSyncOverlay(doc);
       // Log diagnóstico tras intentar mostrar el overlay: qué hay
       // en el centro del viewport. Si el overlay NO aparece, esto
@@ -479,23 +483,12 @@ async function showSyncOverlay(doc: Document) {
 
   if (!overlay) {
     overlay = buildOverlayShell(doc);
-    // Append a `documentElement` (<html>), no a `body`. Algunas
-    // pantallas de Steam (Tienda, Comunidad) viven en contenedores
-    // dentro de body con su propio stacking context o webview
-    // hardware-accelerated que renderiza por encima de cualquier
-    // hijo de body, sin importar el z-index. Saliendo a <html>
-    // garantizamos que el overlay esté en el stacking root del
-    // documento.
-    doc.documentElement.appendChild(overlay);
-  } else {
-    overlay.style.display = 'flex';
   }
-
-  // Cleanup empírico: detecta qué está encima del overlay y lo
-  // oculta. Necesario porque Tienda/Comunidad usan widgets que
-  // ignoran z-index. Idempotente — si ya estamos en Biblioteca
-  // (DOM normal) no oculta nada.
-  await dismissObscuringLayers(doc);
+  // Re-append a body como ÚLTIMO hijo cada vez. Garantiza que en el
+  // stacking del DOM el overlay viene después de cualquier
+  // re-render de Library/Tienda que Steam pueda hacer.
+  doc.body.appendChild(overlay);
+  overlay.style.display = 'flex';
 
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
   const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
@@ -551,13 +544,7 @@ function buildOverlayShell(doc: Document): HTMLElement {
     'left: 0',
     'right: 0',
     'bottom: 0',
-    // z-index al máximo int32. Steam no debería usar valores tan
-    // altos pero por si acaso. Combinado con `transform: translateZ(0)`
-    // que fuerza al overlay a una capa GPU propia, se sitúa al mismo
-    // nivel que webviews acelerados (el caso de la pestaña Tienda).
-    'z-index: 2147483647',
-    'transform: translateZ(0)',
-    'isolation: isolate',
+    'z-index: 9000',
     'background: #0f1117',
     'color: #ffffff',
     'display: flex',
@@ -1701,68 +1688,6 @@ function showDebugBanner(doc: Document) {
 
   // Auto-fade tras 15s.
   setTimeout(() => banner.remove(), 15000);
-}
-
-/** Después de mostrar el overlay, mira si algo se cuela por encima.
- *  Si sí, lo oculta. Repite hasta 5 capas o hasta que el overlay
- *  quede on top. Cada elemento ocultado se guarda en
- *  hiddenElementsState para restaurarlo al cerrar. */
-async function dismissObscuringLayers(doc: Document) {
-  const w = (doc.defaultView ?? window).innerWidth;
-  const h = (doc.defaultView ?? window).innerHeight;
-  // Cinco puntos de muestreo: centro + 4 cuartos. Capturamos
-  // obstáculos que puedan estar en cualquier zona del viewport,
-  // no sólo en el centro.
-  const samplePoints = [
-    { x: w / 2, y: h / 2 },
-    { x: w / 4, y: h / 4 },
-    { x: (3 * w) / 4, y: h / 4 },
-    { x: w / 4, y: (3 * h) / 4 },
-    { x: (3 * w) / 4, y: (3 * h) / 4 },
-  ];
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    let hidAny = false;
-    for (const pt of samplePoints) {
-      const stack = doc.elementsFromPoint(pt.x, pt.y);
-      for (const el of stack) {
-        // Si encontramos nuestro overlay primero en este punto, OK.
-        if (
-          el.matches?.(`[${OVERLAY_ATTR}]`) ||
-          el.closest?.(`[${OVERLAY_ATTR}]`)
-        ) {
-          break;
-        }
-        // <html> y <body> nunca se ocultan.
-        if (el === doc.documentElement || el === doc.body) {
-          continue;
-        }
-        // Encontrar un ancestro "grande" (que cubra ≥40% del viewport)
-        // para ocultar el contenedor entero, no un nodo profundo.
-        let target = el as HTMLElement;
-        let walk = 0;
-        while (
-          target.parentElement &&
-          target.parentElement !== doc.body &&
-          target.parentElement !== doc.documentElement &&
-          walk < 8
-        ) {
-          const r = target.getBoundingClientRect();
-          if (r.width >= w * 0.4 && r.height >= h * 0.4) break;
-          target = target.parentElement;
-          walk++;
-        }
-        if (!hiddenElementsState.has(target)) {
-          hiddenElementsState.set(target, target.style.visibility);
-          target.style.visibility = 'hidden';
-          hidAny = true;
-        }
-        break; // un elemento por punto de muestreo en cada pasada
-      }
-    }
-    if (!hidAny) break;
-    await sleep(20); // dejamos al layout asentar antes de volver a sondear
-  }
 }
 
 function restoreStackingCompetitors() {
