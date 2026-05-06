@@ -11,8 +11,9 @@
  */
 
 import { sleep } from '@steambrew/client';
-import { daemon } from './daemon-client';
+import { ApiDeviceRow, daemon } from './daemon-client';
 import { describeGame, statusColor } from './game-format';
+import { relativeTime } from './time-format';
 
 declare const g_PopupManager: any;
 
@@ -347,10 +348,24 @@ let pendingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 type SseStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
+/** Tabs del overlay. Mismo modelo que las pantallas de la GUI Iced
+ *  (Screen::Games, Screen::ThisDevice, Screen::AllDevices). */
+type ActiveTab = 'games' | 'this-device' | 'all-devices';
+
+/** Tab activa entre llamadas a showSyncOverlay. Se preserva si el
+ *  usuario abre/cierra el overlay sin reiniciar Steam. */
+let currentTab: ActiveTab = 'games';
+
+const TABS: { id: ActiveTab; label: string }[] = [
+  { id: 'games', label: 'Games' },
+  { id: 'this-device', label: 'This Device' },
+  { id: 'all-devices', label: 'All Devices' },
+];
+
 /**
  * Muestra el overlay del SYNC tab dentro del main window de Steam.
- * Idempotente: si ya está visible recarga la lista. Conecta al SSE
- * stream para refrescar automáticamente en cambios.
+ * Idempotente: si ya está visible recarga la tab activa. Conecta al
+ * SSE stream para refrescar automáticamente en cambios.
  *
  * Se renderiza con vanilla DOM (sin React) porque estamos fuera del
  * tree del settings panel. Para eventos interactivos basta con
@@ -368,11 +383,43 @@ async function showSyncOverlay(doc: Document) {
 
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
   const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
-  await loadAndRenderGames(doc, content);
+  await renderActiveTab(doc, overlay, content);
   // Conectar SSE después del primer render — si la conexión falla no
   // bloquea ver la lista inicial. El refresh automático sólo aplica a
   // futuras actualizaciones.
-  connectSse(doc, content, statusPill);
+  connectSse(doc, overlay, content, statusPill);
+}
+
+/** Renderiza la tab activa actual en el content area. */
+async function renderActiveTab(
+  doc: Document,
+  overlay: HTMLElement,
+  content: HTMLElement,
+) {
+  applyTabStyling(overlay);
+  switch (currentTab) {
+    case 'games':
+      await loadAndRenderGames(doc, content);
+      break;
+    case 'this-device':
+      await loadAndRenderThisDevice(doc, content);
+      break;
+    case 'all-devices':
+      await loadAndRenderAllDevices(doc, content);
+      break;
+  }
+}
+
+/** Pinta la tab activa (subrayado azul) y las inactivas (gris). */
+function applyTabStyling(overlay: HTMLElement) {
+  const tabs = overlay.querySelectorAll<HTMLElement>('[data-tab-id]');
+  tabs.forEach((tab) => {
+    const id = tab.getAttribute('data-tab-id') as ActiveTab;
+    const isActive = id === currentTab;
+    tab.style.color = isActive ? '#ffffff' : '#9aa3b2';
+    tab.style.borderBottomColor = isActive ? '#4f8ef7' : 'transparent';
+    tab.style.fontWeight = isActive ? '600' : '400';
+  });
 }
 
 /** Construye el "esqueleto" estático del overlay: header + content area. */
@@ -448,14 +495,48 @@ function buildOverlayShell(doc: Document): HTMLElement {
   ].join(';');
   refreshBtn.addEventListener('click', () => {
     const content = overlay.querySelector<HTMLElement>('[data-content]')!;
-    loadAndRenderGames(doc, content);
+    renderActiveTab(doc, overlay, content);
   });
   rightBlock.appendChild(refreshBtn);
 
   header.appendChild(rightBlock);
   overlay.appendChild(header);
 
-  // Content area que se rellena async con loadAndRenderGames.
+  // Tabs row: Games | This Device | All Devices.
+  const tabsRow = doc.createElement('div');
+  tabsRow.style.cssText = [
+    'display: flex',
+    'gap: 4px',
+    'border-bottom: 1px solid #2a2f42',
+    'margin-bottom: 16px',
+  ].join(';');
+  for (const tab of TABS) {
+    const tabBtn = doc.createElement('button');
+    tabBtn.setAttribute('data-tab-id', tab.id);
+    tabBtn.textContent = tab.label;
+    tabBtn.style.cssText = [
+      'background: transparent',
+      'border: none',
+      'border-bottom: 2px solid transparent',
+      'color: #9aa3b2',
+      'padding: 8px 14px',
+      'font-size: 13px',
+      'font-family: inherit',
+      'cursor: pointer',
+      'margin-bottom: -1px', // overlap con el border del row
+      'transition: color 0.15s',
+    ].join(';');
+    tabBtn.addEventListener('click', () => {
+      if (currentTab === tab.id) return; // ya activa, no refetch
+      currentTab = tab.id;
+      const content = overlay.querySelector<HTMLElement>('[data-content]')!;
+      renderActiveTab(doc, overlay, content);
+    });
+    tabsRow.appendChild(tabBtn);
+  }
+  overlay.appendChild(tabsRow);
+
+  // Content area que se rellena async según la tab activa.
   const content = doc.createElement('div');
   content.setAttribute('data-content', '1');
   content.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
@@ -493,11 +574,7 @@ async function loadAndRenderGames(doc: Document, content: HTMLElement) {
   ]);
 
   if (gamesSettled.status === 'rejected') {
-    content.innerHTML = '';
-    const err = doc.createElement('div');
-    err.textContent = `✗ ${gamesSettled.reason}`;
-    err.style.cssText = 'color: #ef4444; font-size: 13px; padding: 12px;';
-    content.appendChild(err);
+    showFatalError(doc, content, gamesSettled.reason);
     return;
   }
 
@@ -667,6 +744,256 @@ function formatBytesShort(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+// ============================================================================
+// Tab "This Device" — info del device actual + sus juegos
+// ============================================================================
+
+/**
+ * Renderiza la tab "This Device": muestra el device actual del daemon
+ * (su nombre, last sync time, cuántos juegos tiene), y la lista de
+ * juegos en este device con su mode/status (cruzando /api/devices con
+ * /api/games por nombre).
+ *
+ * Equivale a `Screen::ThisDevice` en la GUI Iced.
+ */
+async function loadAndRenderThisDevice(doc: Document, content: HTMLElement) {
+  content.innerHTML = '';
+  const loading = doc.createElement('div');
+  loading.textContent = 'Cargando...';
+  loading.style.cssText = 'color: #9aa3b2; font-size: 13px; padding: 12px;';
+  content.appendChild(loading);
+
+  const [devicesSettled, gamesSettled] = await Promise.allSettled([
+    daemon.getDevices(),
+    daemon.getGames(),
+  ]);
+
+  if (devicesSettled.status === 'rejected') {
+    showFatalError(doc, content, devicesSettled.reason);
+    return;
+  }
+
+  content.innerHTML = '';
+
+  const devicesResp = devicesSettled.value;
+  const thisDevice = devicesResp.devices.find((d) => d.is_current);
+
+  if (!thisDevice) {
+    const empty = doc.createElement('div');
+    empty.textContent =
+      'Este device no está registrado todavía. Ejecuta una operación de Ludusavi (backup, restore o sync) para inicializarlo.';
+    empty.style.cssText = 'color: #9aa3b2; padding: 24px; text-align: center;';
+    content.appendChild(empty);
+    return;
+  }
+
+  // Header card del device actual: 🖥 NOMBRE · last sync · N juegos.
+  content.appendChild(renderDeviceHeaderCard(doc, thisDevice, true));
+
+  // Lista de juegos en este device. Cruzamos /api/devices.games (que
+  // sólo trae nombres) con /api/games (que trae mode/status) para
+  // poder mostrar el detalle. Si /api/games falló (gamesSettled
+  // rejected), caemos a sólo los nombres.
+  const gameNames = new Set(thisDevice.games);
+  const gamesById = new Map<string, any>();
+  if (gamesSettled.status === 'fulfilled') {
+    for (const g of gamesSettled.value.games) {
+      if (gameNames.has(g.name)) {
+        gamesById.set(g.name, g);
+      }
+    }
+  }
+
+  const sectionTitle = doc.createElement('div');
+  sectionTitle.textContent = `Juegos en este device (${thisDevice.games.length})`;
+  sectionTitle.style.cssText =
+    'color: #9aa3b2; font-size: 12px; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;';
+  content.appendChild(sectionTitle);
+
+  if (thisDevice.games.length === 0) {
+    const empty = doc.createElement('div');
+    empty.textContent = 'Sin juegos asociados todavía a este device.';
+    empty.style.cssText = 'color: #6b7280; padding: 12px;';
+    content.appendChild(empty);
+    return;
+  }
+
+  const sortedNames = [...thisDevice.games].sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
+  );
+  for (const name of sortedNames) {
+    const fullGame = gamesById.get(name);
+    if (fullGame) {
+      content.appendChild(renderGameRow(doc, fullGame));
+    } else {
+      // Fallback: el juego está listado en device pero /api/games no
+      // lo trae (raro: nombre desincronizado, o games endpoint falló).
+      content.appendChild(renderPlainNameRow(doc, name));
+    }
+  }
+}
+
+// ============================================================================
+// Tab "All Devices" — lista de todos los devices conocidos
+// ============================================================================
+
+/**
+ * Renderiza la tab "All Devices": lista todos los devices que el daemon
+ * conoce, marcando cuál es el actual. Equivale a `Screen::AllDevices`
+ * en la GUI Iced.
+ *
+ * Cada device se muestra como card con nombre, indicador de "this
+ * device", último sync, y count de juegos. Sin click-to-expand por
+ * ahora — el detalle de juegos por device viene cuando añadamos write
+ * mode (Fase 2).
+ */
+async function loadAndRenderAllDevices(doc: Document, content: HTMLElement) {
+  content.innerHTML = '';
+  const loading = doc.createElement('div');
+  loading.textContent = 'Cargando...';
+  loading.style.cssText = 'color: #9aa3b2; font-size: 13px; padding: 12px;';
+  content.appendChild(loading);
+
+  let resp;
+  try {
+    resp = await daemon.getDevices();
+  } catch (e) {
+    showFatalError(doc, content, e);
+    return;
+  }
+
+  content.innerHTML = '';
+
+  const summary = doc.createElement('div');
+  summary.textContent = `${resp.devices.length} device(s) conocido(s)`;
+  summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 8px;';
+  content.appendChild(summary);
+
+  if (resp.devices.length === 0) {
+    const empty = doc.createElement('div');
+    empty.textContent =
+      'No hay devices registrados. Ejecuta una operación de Ludusavi para inicializar.';
+    empty.style.cssText = 'color: #6b7280; padding: 24px; text-align: center;';
+    content.appendChild(empty);
+    return;
+  }
+
+  // Sort: current device primero, luego resto alfabético.
+  const sorted = [...resp.devices].sort((a, b) => {
+    if (a.is_current && !b.is_current) return -1;
+    if (!a.is_current && b.is_current) return 1;
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  });
+
+  for (const device of sorted) {
+    content.appendChild(renderDeviceHeaderCard(doc, device, false));
+  }
+}
+
+/**
+ * Card de un device con icono + nombre + tag "this device" + last
+ * sync + count de juegos. Usado tanto en la tab "This Device" (como
+ * header destacado, expanded=true) como en "All Devices" (lista
+ * compacta, expanded=false).
+ */
+function renderDeviceHeaderCard(
+  doc: Document,
+  device: ApiDeviceRow,
+  expanded: boolean,
+): HTMLElement {
+  const card = doc.createElement('div');
+  card.style.cssText = [
+    'display: flex',
+    'align-items: center',
+    'gap: 14px',
+    expanded ? 'padding: 16px 18px' : 'padding: 12px 14px',
+    'background: #171b26',
+    device.is_current ? 'border: 1px solid #4f8ef7' : 'border: 1px solid #2a2f42',
+    'border-radius: 6px',
+    'margin-bottom: 6px',
+  ].join(';');
+
+  const icon = doc.createElement('div');
+  icon.textContent = device.is_current ? '🖥' : '📡';
+  icon.style.cssText = expanded ? 'font-size: 24px;' : 'font-size: 18px;';
+  card.appendChild(icon);
+
+  const textBlock = doc.createElement('div');
+  textBlock.style.cssText =
+    'display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;';
+
+  // Línea 1: nombre + tag "this device" si aplica.
+  const nameRow = doc.createElement('div');
+  nameRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  const name = doc.createElement('div');
+  name.textContent = device.name;
+  name.style.cssText = expanded
+    ? 'font-size: 15px; font-weight: 600; color: #ffffff;'
+    : 'font-size: 13px; font-weight: 500; color: #ffffff;';
+  nameRow.appendChild(name);
+  if (device.is_current) {
+    const tag = doc.createElement('div');
+    tag.textContent = 'this device';
+    tag.style.cssText = [
+      'font-size: 10px',
+      'color: #4f8ef7',
+      'border: 1px solid #4f8ef7',
+      'padding: 1px 6px',
+      'border-radius: 8px',
+      'text-transform: uppercase',
+      'letter-spacing: 0.05em',
+    ].join(';');
+    nameRow.appendChild(tag);
+  }
+  textBlock.appendChild(nameRow);
+
+  // Línea 2: stats — last sync · N juegos.
+  const stats = doc.createElement('div');
+  const lastSync = relativeTime(device.last_sync_time_utc);
+  const gamesCount = device.games.length;
+  stats.textContent = `${gamesCount} juego(s) · last sync: ${lastSync}`;
+  stats.style.cssText = 'font-size: 11px; color: #9aa3b2;';
+  textBlock.appendChild(stats);
+
+  card.appendChild(textBlock);
+  return card;
+}
+
+/** Fila simple con sólo el nombre del juego — fallback cuando no
+ *  tenemos el detalle de /api/games. */
+function renderPlainNameRow(doc: Document, name: string): HTMLElement {
+  const row = doc.createElement('div');
+  row.style.cssText = [
+    'display: flex',
+    'align-items: center',
+    'gap: 12px',
+    'padding: 10px 14px',
+    'background: #171b26',
+    'border: 1px solid #2a2f42',
+    'border-radius: 6px',
+  ].join(';');
+
+  const dot = doc.createElement('div');
+  dot.style.cssText =
+    'background: #6b7280; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;';
+  row.appendChild(dot);
+
+  const label = doc.createElement('div');
+  label.textContent = name;
+  label.style.cssText = 'font-size: 13px; color: #ffffff;';
+  row.appendChild(label);
+  return row;
+}
+
+/** Renderiza un mensaje de error fatal en `content` y limpia el resto. */
+function showFatalError(doc: Document, content: HTMLElement, e: unknown) {
+  content.innerHTML = '';
+  const err = doc.createElement('div');
+  err.textContent = `✗ ${e}`;
+  err.style.cssText = 'color: #ef4444; font-size: 13px; padding: 12px;';
+  content.appendChild(err);
+}
+
 /** Oculta el overlay si está visible (sin destruirlo — visibility toggle).
  *  Cierra el EventSource para no dejar conexiones abiertas mientras el
  *  usuario está en otra pestaña de Steam. */
@@ -702,6 +1029,7 @@ function hideSyncOverlay(doc: Document) {
  */
 async function connectSse(
   doc: Document,
+  overlay: HTMLElement,
   content: HTMLElement,
   statusPill: HTMLElement,
 ) {
@@ -712,15 +1040,10 @@ async function connectSse(
   try {
     es = await daemon.subscribeEvents(
       (event) => {
-        if (
-          event.type === 'games_changed' ||
-          event.type === 'devices_changed' ||
-          event.type === 'daemon_restarted'
-        ) {
-          scheduleRefresh(doc, content);
-          // Llegó un evento = la conexión funciona.
-          applyStatusPill(statusPill, 'live');
-        }
+        if (!shouldRefreshOn(event.type)) return;
+        scheduleRefresh(doc, overlay, content);
+        // Llegó un evento = la conexión funciona.
+        applyStatusPill(statusPill, 'live');
       },
       // EventSource.onerror se dispara tanto al fallar la conexión
       // inicial como en reconexiones intermedias. El navegador hace
@@ -744,6 +1067,27 @@ async function connectSse(
   currentEventSource = es;
 }
 
+/**
+ * Decide si un evento SSE es relevante para la tab activa actual.
+ * Optimización: si estoy en Games y llega `devices_changed`, no
+ * refetcheo Games. Si estoy en This Device / All Devices, ambos
+ * eventos son relevantes (games_changed afecta los nombres / status
+ * que se muestran).
+ *
+ * `daemon_restarted` siempre fuerza refresh — el token podría haber
+ * rotado y mejor recargar.
+ */
+function shouldRefreshOn(eventType: string): boolean {
+  if (eventType === 'daemon_restarted') return true;
+  switch (currentTab) {
+    case 'games':
+      return eventType === 'games_changed';
+    case 'this-device':
+    case 'all-devices':
+      return eventType === 'devices_changed' || eventType === 'games_changed';
+  }
+}
+
 /** Cierra el EventSource activo y cancela cualquier refresh pendiente. */
 function disconnectSse() {
   if (currentEventSource) {
@@ -761,14 +1105,16 @@ function disconnectSse() {
  * una sola vez. El file watcher del daemon emite eventos por cada
  * fichero modificado — escribir game-list + status puede disparar 2
  * eventos seguidos.
+ *
+ * Refresca la tab activa, no necesariamente Games.
  */
-function scheduleRefresh(doc: Document, content: HTMLElement) {
+function scheduleRefresh(doc: Document, overlay: HTMLElement, content: HTMLElement) {
   if (pendingRefreshTimer !== null) {
     clearTimeout(pendingRefreshTimer);
   }
   pendingRefreshTimer = setTimeout(() => {
     pendingRefreshTimer = null;
-    loadAndRenderGames(doc, content);
+    renderActiveTab(doc, overlay, content);
   }, 200);
 }
 
