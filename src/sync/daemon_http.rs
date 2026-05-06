@@ -704,6 +704,12 @@ pub fn run_http_server(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     runtime.block_on(async move {
         let app = build_router(state);
         let addr = format!("127.0.0.1:{}", DAEMON_HTTP_PORT);
+        // Nota sobre TIME_WAIT: en Windows, SO_REUSEADDR tiene semántica
+        // distinta (permite que OTRO proceso reuse el puerto, no es
+        // reuse-after-close). En Linux sí ayuda con TIME_WAIT pero es
+        // raro hitear ese caso. Por ahora bind directo; si reiniciar
+        // el daemon falla con EADDRINUSE el usuario puede esperar 30s
+        // o reintentar. Veremos si en práctica es necesario más.
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(|e| format!("Failed to bind {addr}: {e}"))?;
