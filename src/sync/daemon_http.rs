@@ -386,6 +386,89 @@ async fn games_handler() -> Json<ApiGamesResponse> {
     Json(build_games_response(&app_dir()))
 }
 
+// ============================================================================
+// /api/devices — lista de dispositivos del game-list
+// ============================================================================
+//
+// Equivalente a la pantalla "All Devices" de la GUI Iced. Para cada
+// dispositivo que aparece en `path_by_device` de algún juego, devuelve
+// su id + nombre + lista de juegos registrados + último sync agregado.
+// El plugin filtra/ordena/agrupa según la UI que esté renderizando
+// (panel principal, lateral del Decky, etc.).
+
+#[derive(serde::Serialize)]
+struct ApiDeviceRow {
+    id: String,
+    name: String,
+    /// True si es el device en el que está corriendo este daemon.
+    is_current: bool,
+    /// Names de juegos que tienen path registrado en este device
+    /// (es decir, donde `path_by_device.contains(device_id)`).
+    games: Vec<String>,
+    /// `max(last_sync_time_utc)` entre los juegos de este device, o
+    /// `None` si ninguno tiene timestamp.
+    last_sync_time_utc: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct ApiDevicesResponse {
+    current_device_id: String,
+    devices: Vec<ApiDeviceRow>,
+}
+
+fn build_devices_response(app_dir: &StrictPath) -> ApiDevicesResponse {
+    let device = crate::sync::device::DeviceIdentity::load_or_create(app_dir);
+    let game_list = read_game_list(app_dir);
+
+    // Agrupar: device_id -> (Vec<game_name>, max last_sync_time)
+    type DeviceAggregate = (Vec<String>, Option<chrono::DateTime<chrono::Utc>>);
+    let mut by_device: std::collections::HashMap<String, DeviceAggregate> =
+        std::collections::HashMap::new();
+
+    for game in &game_list.games {
+        for dev_id in game.path_by_device.keys() {
+            let entry = by_device
+                .entry(dev_id.clone())
+                .or_insert_with(|| (Vec::new(), None));
+            entry.0.push(game.id.clone());
+            // Acumular el max timestamp.
+            if let Some(t) = game.last_sync_time_utc {
+                entry.1 = Some(entry.1.map(|cur| cur.max(t)).unwrap_or(t));
+            }
+        }
+    }
+
+    let mut devices: Vec<ApiDeviceRow> = by_device
+        .into_iter()
+        .map(|(id, (mut games, last_sync))| {
+            games.sort();
+            ApiDeviceRow {
+                name: game_list.get_device_name(&id).to_string(),
+                is_current: id == device.id,
+                last_sync_time_utc: last_sync.map(|t| t.to_rfc3339()),
+                games,
+                id,
+            }
+        })
+        .collect();
+
+    // Orden estable: current primero, luego por nombre alfabéticamente.
+    devices.sort_by(|a, b| match (a.is_current, b.is_current) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+
+    ApiDevicesResponse {
+        current_device_id: device.id,
+        devices,
+    }
+}
+
+async fn devices_handler() -> Json<ApiDevicesResponse> {
+    Json(build_devices_response(&app_dir()))
+}
+
 /// Construye el `Router` de axum con todos los endpoints + auth + CORS.
 fn build_router(state: AppState) -> Router {
     // CORS abierto a localhost en cualquier puerto. Los plugins de
@@ -400,6 +483,7 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/status", get(status_handler))
         .route("/api/games", get(games_handler))
+        .route("/api/devices", get(devices_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
@@ -730,6 +814,83 @@ mod tests {
         assert_eq!(err.category, "rclone");
         assert_eq!(err.direction, "upload");
         assert_eq!(err.message, "rclone token expired");
+    }
+
+    #[test]
+    fn devices_response_empty_when_no_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let resp = build_devices_response(&sp(tmp.path()));
+        assert_eq!(resp.devices.len(), 0);
+        assert!(!resp.current_device_id.is_empty());
+    }
+
+    #[test]
+    fn devices_response_aggregates_games_per_device_and_sorts_current_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let me = "uuid-me";
+        let other = "uuid-other";
+        let zzz = "uuid-zzz-no-name";
+
+        let game_list = format!(
+            r#"{{
+              "games": [
+                {{
+                  "id": "Hades",
+                  "name": "Hades",
+                  "path_by_device": {{
+                    "{me}":   {{ "path": "C:/saves/hades" }},
+                    "{other}":{{ "path": "/home/saves/hades" }}
+                  }},
+                  "last_synced_from": "{me}",
+                  "last_sync_time_utc": "2026-05-06T12:00:00Z",
+                  "latest_write_time_utc": "2026-05-06T12:00:00Z",
+                  "storage_bytes": 100
+                }},
+                {{
+                  "id": "Skyrim",
+                  "name": "Skyrim",
+                  "path_by_device": {{
+                    "{other}":{{ "path": "/home/saves/skyrim" }},
+                    "{zzz}":  {{ "path": "/home/saves/skyrim" }}
+                  }},
+                  "last_synced_from": "{other}",
+                  "last_sync_time_utc": "2026-05-07T08:00:00Z",
+                  "latest_write_time_utc": "2026-05-07T08:00:00Z",
+                  "storage_bytes": 200
+                }}
+              ],
+              "device_names": {{ "{me}": "My-PC", "{other}": "Steam-Deck" }}
+            }}"#,
+        );
+        // sync-games no influye en /api/devices, basta con un objeto vacío.
+        let sync_games = r#"{ "games": {}, "safety_backups_enabled": true, "system_notifications_enabled": true }"#;
+
+        seed_app_dir(tmp.path(), me, "My-PC", &game_list, sync_games, None);
+
+        let resp = build_devices_response(&sp(tmp.path()));
+
+        assert_eq!(resp.current_device_id, me);
+        assert_eq!(resp.devices.len(), 3, "3 devices distintos en path_by_device");
+
+        // Current primero. Resto orden alfabético por nombre legible:
+        // My-PC (current), Steam-Deck, uuid-zzz-no-name (sin nombre legible).
+        assert!(resp.devices[0].is_current);
+        assert_eq!(resp.devices[0].id, me);
+        assert_eq!(resp.devices[0].games, vec!["Hades".to_string()]);
+
+        assert_eq!(resp.devices[1].name, "Steam-Deck");
+        assert_eq!(resp.devices[1].games, vec!["Hades".to_string(), "Skyrim".to_string()]);
+
+        // Device sin entry en device_names: el nombre cae al UUID por defecto.
+        assert_eq!(resp.devices[2].name, zzz);
+        assert_eq!(resp.devices[2].games, vec!["Skyrim".to_string()]);
+
+        // last_sync_time_utc agregado: max de los timestamps de sus games.
+        // Steam-Deck tiene Hades(2026-05-06) y Skyrim(2026-05-07) → 2026-05-07.
+        assert_eq!(
+            resp.devices[1].last_sync_time_utc.as_deref(),
+            Some("2026-05-07T08:00:00+00:00")
+        );
     }
 
     #[tokio::test]
