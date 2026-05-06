@@ -41,27 +41,28 @@ fn token_path() -> StrictPath {
 }
 
 /// Eventos que el daemon empuja a los frontends conectados via SSE.
-/// El plugin reacciona refrescando lo que necesite (un game específico,
-/// la lista entera, o todo).
-#[derive(Clone, Debug, serde::Serialize)]
+/// El plugin reacciona re-fetcheando el endpoint correspondiente.
+///
+/// Granularidad coarse-grained a propósito: el daemon detecta cambios
+/// observando los JSONs que escribe el worker loop (option B de Fase 0),
+/// así que sabe "algo cambió en games" pero no "qué juego concreto".
+/// El plugin re-fetchea `/api/games` entero — barato, una request HTTP
+/// local, sin coste de red real.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum DaemonEvent {
-    /// Un juego específico cambió (modo, status, sync time). El plugin
-    /// puede re-fetchear `/api/games/:name` (cuando exista) o
-    /// `/api/games` entero.
-    #[serde(rename = "game_updated")]
-    GameUpdated { name: String },
-    /// La lista de devices cambió. El plugin re-fetchea `/api/devices`.
-    #[serde(rename = "devices_updated")]
-    DevicesUpdated,
-    /// El daemon reinició su worker loop (cambio en sync-games.json,
-    /// nuevos juegos en cloud, rclone vuelto). El plugin re-fetchea
-    /// todo para evitar drift.
+    /// El estado de los juegos cambió (status, sync time, errores, o el
+    /// game-list añadió/quitó juegos). Plugin re-fetchea `/api/games`.
+    #[serde(rename = "games_changed")]
+    GamesChanged,
+    /// La lista de devices cambió (nuevo device sincronizó, rename de
+    /// device, etc.). Plugin re-fetchea `/api/devices`.
+    #[serde(rename = "devices_changed")]
+    DevicesChanged,
+    /// El daemon reinició su worker loop (cambio en sync-games.json).
+    /// Plugin re-fetchea todo para evitar drift.
     #[serde(rename = "daemon_restarted")]
     DaemonRestarted,
-    /// rclone se ha caído o ha vuelto. Plugin actualiza badge global.
-    #[serde(rename = "rclone_status_changed")]
-    RcloneStatusChanged { missing: bool },
 }
 
 /// Capacidad del canal de broadcast. Si se llenan, los receivers más
@@ -569,11 +570,126 @@ fn build_router(state: AppState) -> Router {
         .layer(cors)
 }
 
+/// Arranca un watcher (notify_debouncer_full) sobre los 3 JSONs que el
+/// worker loop escribe — `daemon-status.json`, `ludusavi-game-list.json`,
+/// `sync-games.json` — y publica eventos al broadcaster cuando cambian.
+///
+/// Es la "option B" de la Fase 0: en lugar de inyectar el broadcaster
+/// dentro del worker loop (que requeriría cambiar la firma de
+/// `start_daemon` y razonar sobre concurrencia entre 2 hilos), vigilamos
+/// los efectos en disco que el worker ya produce. Coarse-grained pero
+/// suficiente: el plugin re-fetchea el endpoint correspondiente.
+///
+/// Devuelve el debouncer; mientras vive el watcher sigue activo. Al
+/// dropearlo, el thread interno termina.
+fn start_event_watcher(
+    app_dir: &StrictPath,
+    sender: tokio::sync::broadcast::Sender<DaemonEvent>,
+) -> Result<
+    notify_debouncer_full::Debouncer<
+        notify::RecommendedWatcher,
+        notify_debouncer_full::FileIdMap,
+    >,
+    String,
+> {
+    use notify::{RecursiveMode, Watcher};
+    use notify_debouncer_full::{new_debouncer, DebounceEventResult};
+
+    let dir = app_dir
+        .as_std_path_buf()
+        .map_err(|e| format!("Cannot resolve app_dir: {e:?}"))?;
+
+    // Crea el dir si no existe (puede pasar en primer arranque cuando el
+    // worker loop aún no ha escrito nada).
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Cannot create app_dir {dir:?}: {e}"))?;
+
+    // Debounce 500ms: el daemon a veces escribe el mismo JSON varias
+    // veces en ráfaga (write a tempfile + rename). Coalescemos.
+    let watcher_sender = sender.clone();
+    let mut debouncer = new_debouncer(
+        std::time::Duration::from_millis(500),
+        None,
+        move |result: DebounceEventResult| {
+            let events = match result {
+                Ok(events) => events,
+                Err(errors) => {
+                    log::error!("[daemon-http watcher] errors: {errors:?}");
+                    return;
+                }
+            };
+
+            let mut emit_games = false;
+            let mut emit_devices = false;
+            let mut emit_restart = false;
+
+            for event in events {
+                for path in &event.paths {
+                    let filename = path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    match filename {
+                        "ludusavi-game-list.json" => {
+                            emit_games = true;
+                            emit_devices = true;
+                        }
+                        "daemon-status.json" => {
+                            emit_games = true;
+                        }
+                        "sync-games.json" => {
+                            emit_restart = true;
+                        }
+                        _ => {} // ignorar daemon.log, daemon-state.json, etc.
+                    }
+                }
+            }
+
+            // broadcast::Sender::send es no-bloqueante; falla con Err si
+            // no hay subscribers vivos, lo cual es OK — sólo tirar.
+            if emit_games {
+                let _ = watcher_sender.send(DaemonEvent::GamesChanged);
+            }
+            if emit_devices {
+                let _ = watcher_sender.send(DaemonEvent::DevicesChanged);
+            }
+            if emit_restart {
+                let _ = watcher_sender.send(DaemonEvent::DaemonRestarted);
+            }
+        },
+    )
+    .map_err(|e| format!("Failed to create file watcher: {e}"))?;
+
+    // Vigilamos el directorio entero (NonRecursive) en lugar de los
+    // ficheros uno a uno: aguanta cuando los ficheros aún no existen
+    // (primer arranque), o cuando el worker hace tempfile + rename.
+    debouncer
+        .watcher()
+        .watch(&dir, RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Failed to watch {dir:?}: {e}"))?;
+    log::info!("[daemon-http] file watcher active on {dir:?}");
+
+    Ok(debouncer)
+}
+
 /// Arranca el servidor HTTP y bloquea hasta que `stop_flag` se active.
 /// Llamado desde el binario del daemon en paralelo al worker loop.
 pub fn run_http_server(stop_flag: Arc<AtomicBool>) -> Result<(), String> {
     let token = load_or_create_token()?;
     let (events_tx, _) = tokio::sync::broadcast::channel(EVENT_CHANNEL_CAPACITY);
+
+    // Watcher de ficheros. Lo guardamos como `_watcher` (no `_`) para
+    // que su Drop se llame al final de esta función, parando el thread
+    // interno de notify limpiamente. Si la creación falla loggeamos y
+    // seguimos sin SSE — la API sigue siendo útil sin push events.
+    let _watcher = match start_event_watcher(&app_dir(), events_tx.clone()) {
+        Ok(w) => Some(w),
+        Err(e) => {
+            log::warn!("[daemon-http] event watcher failed to start, SSE will only emit keep-alives: {e}");
+            None
+        }
+    };
+
     let state = AppState {
         token: Arc::new(token),
         events: events_tx,
@@ -1070,6 +1186,103 @@ mod tests {
             found,
             "did not see the published event in the SSE body within 2s. accumulated={}",
             String::from_utf8_lossy(&accumulated)
+        );
+    }
+
+    #[tokio::test]
+    async fn file_watcher_emits_games_changed_when_status_json_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sender, mut rx) = tokio::sync::broadcast::channel(8);
+        let _watcher = start_event_watcher(&sp(tmp.path()), sender).unwrap();
+        // Pequeño margen para que el watcher empiece a observar.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        std::fs::write(tmp.path().join("daemon-status.json"), b"{}").unwrap();
+
+        // Debounce 500ms + margen.
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("watcher should emit within 2s")
+            .expect("broadcast not closed");
+        assert_eq!(event, DaemonEvent::GamesChanged);
+    }
+
+    #[tokio::test]
+    async fn file_watcher_emits_both_games_and_devices_when_game_list_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sender, mut rx) = tokio::sync::broadcast::channel(8);
+        let _watcher = start_event_watcher(&sp(tmp.path()), sender).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        std::fs::write(
+            tmp.path().join("ludusavi-game-list.json"),
+            br#"{"games":[],"device_names":{}}"#,
+        )
+        .unwrap();
+
+        // Esperamos al debounce (500ms) + margen, y después drenamos
+        // todos los eventos pendientes.
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        let mut got = Vec::new();
+        while let Ok(Ok(ev)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await
+        {
+            got.push(ev);
+        }
+
+        assert!(
+            got.contains(&DaemonEvent::GamesChanged),
+            "expected GamesChanged in {got:?}"
+        );
+        assert!(
+            got.contains(&DaemonEvent::DevicesChanged),
+            "expected DevicesChanged in {got:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_watcher_emits_daemon_restarted_when_sync_games_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sender, mut rx) = tokio::sync::broadcast::channel(8);
+        let _watcher = start_event_watcher(&sp(tmp.path()), sender).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        std::fs::write(
+            tmp.path().join("sync-games.json"),
+            br#"{"games":{},"safety_backups_enabled":true,"system_notifications_enabled":true}"#,
+        )
+        .unwrap();
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("watcher should emit within 2s")
+            .expect("broadcast not closed");
+        assert_eq!(event, DaemonEvent::DaemonRestarted);
+    }
+
+    #[tokio::test]
+    async fn file_watcher_ignores_unrelated_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sender, mut rx) = tokio::sync::broadcast::channel(8);
+        let _watcher = start_event_watcher(&sp(tmp.path()), sender).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Ficheros no monitorizados — daemon.log, daemon-state.json,
+        // ludusavi-device.json — no deben disparar eventos.
+        std::fs::write(tmp.path().join("daemon.log"), b"random log line").unwrap();
+        std::fs::write(tmp.path().join("daemon-state.json"), b"{}").unwrap();
+        std::fs::write(
+            tmp.path().join("ludusavi-device.json"),
+            br#"{"id":"x","name":"y"}"#,
+        )
+        .unwrap();
+
+        // Esperamos 1s — más que el debounce — y comprobamos que no
+        // llegó nada.
+        let attempt = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv()).await;
+        assert!(
+            attempt.is_err(),
+            "no event expected, got: {attempt:?}"
         );
     }
 
