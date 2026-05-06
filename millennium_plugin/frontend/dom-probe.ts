@@ -19,7 +19,9 @@ import {
   openAppDir,
 } from './daemon-client';
 import { describeGame, statusColor } from './game-format';
+import { navigateToSyncRoute } from './sync-route';
 import { relativeTime } from './time-format';
+
 
 declare const g_PopupManager: any;
 declare const Millennium: any;
@@ -371,39 +373,15 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
 
   syncTab.addEventListener(
     'click',
-    async (e) => {
+    (e) => {
       e.stopPropagation();
       e.preventDefault();
-
-      // Doble vía para garantizar que el overlay aparezca por encima
-      // del contenido actual (Tienda/Comunidad usan widgets que
-      // ignoran z-index CSS):
-      //
-      //   1. Forzar navegación a Biblioteca llamando el onClick de
-      //      React directamente (props internas), no via
-      //      dispatchEvent — algunas instalaciones de React filtran
-      //      eventos sintéticos por `isTrusted=false`.
-      //   2. Después de mostrar el overlay, ejecutar limpieza
-      //      empírica con elementFromPoint: detecta qué está encima
-      //      de NUESTRO overlay y lo oculta. Reintenta hasta que
-      //      el overlay quede on top.
-      navigateToBiblioteca(bibliotecaWrapper);
-      // 800ms para dar tiempo a Steam a desmontar el proceso CEF de
-      // Tienda (validado en cef_log que arranca un proceso Chrome
-      // separado por webview, eso tarda en cerrarse). 300ms era
-      // demasiado corto; en ese momento Tienda aún era visible.
-      await sleep(800);
-      await showSyncOverlay(doc);
-      // Log diagnóstico tras intentar mostrar el overlay: qué hay
-      // en el centro del viewport. Si el overlay NO aparece, esto
-      // dice qué se está colando — typically un tag custom de
-      // Steam (cef-osr-frame, sp-page, etc.) que necesitamos
-      // identificar para targetearlo.
-      logViewportCenter(doc);
-      // Banner visible en pantalla con TODO el diagnóstico que
-      // acumulamos en debugLines. Permite leer los datos sin abrir
-      // cef_log.txt y sin DevTools. Auto-fade tras 15s.
-      showDebugBanner(doc);
+      // Navegamos a la ruta personalizada `/ludusavi-sync` registrada
+      // en sync-route.tsx. Steam renderizará nuestro componente en el
+      // área de contenido principal, encima de Tienda/Comunidad/etc
+      // — porque ya no es DOM nuestro pegado en main window, es un
+      // route legítimo del router de Steam.
+      navigateToSyncRoute();
     },
     true, // capture phase para llegar antes de los listeners de Steam
   );
@@ -500,7 +478,7 @@ async function showSyncOverlay(doc: Document) {
 }
 
 /** Renderiza la tab activa actual en el content area. */
-async function renderActiveTab(
+export async function renderActiveTab(
   doc: Document,
   overlay: HTMLElement,
   content: HTMLElement,
@@ -535,16 +513,15 @@ function applyTabStyling(overlay: HTMLElement) {
 }
 
 /** Construye el "esqueleto" estático del overlay: header + content area. */
-function buildOverlayShell(doc: Document): HTMLElement {
+export function buildOverlayShell(doc: Document): HTMLElement {
   const overlay = doc.createElement('div');
   overlay.setAttribute(OVERLAY_ATTR, '1');
   overlay.style.cssText = [
-    'position: fixed',
-    'top: 60px', // debajo de la nav de Steam (Biblioteca/Tienda/SYNC)
-    'left: 0',
-    'right: 0',
-    'bottom: 0',
-    'z-index: 9000',
+    // Rellena el contenedor del modal de Steam (que ya provee
+    // posicionamiento). Sin position:fixed/z-index porque el modal
+    // está gestionado por Steam en su propio árbol React.
+    'width: 100%',
+    'height: 100%',
     'background: #0f1117',
     'color: #ffffff',
     'display: flex',
@@ -2142,7 +2119,7 @@ function renderManifestCard(doc: Document, settings: ApiSettingsResponse): HTMLE
  * ráfaga (file watcher es ruidoso) sólo refetcheamos una vez gracias
  * al debounce.
  */
-async function connectSse(
+export async function connectSse(
   doc: Document,
   overlay: HTMLElement,
   content: HTMLElement,
@@ -2212,7 +2189,7 @@ function shouldRefreshOn(eventType: string): boolean {
 }
 
 /** Cierra el EventSource activo y cancela cualquier refresh pendiente. */
-function disconnectSse() {
+export function disconnectSse() {
   if (currentEventSource) {
     currentEventSource.close();
     currentEventSource = null;

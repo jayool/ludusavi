@@ -10,6 +10,10 @@ import { definePlugin, IconsModule, Field, DialogButton } from '@steambrew/clien
 import { daemon, DaemonStatus } from './daemon-client';
 import { GamesTable } from './games-table';
 import { runDomProbe, injectTestSyncTab, autoInjectSyncTabOnLoad } from './dom-probe';
+// Side-effect import: registra la ruta /ludusavi-sync en routerHook.
+// Tiene que importarse aunque no se use directamente para que el
+// `routerHook.addRoute(...)` del módulo se ejecute al cargar.
+import './sync-route';
 
 type ConnState =
   | { kind: 'idle' }
