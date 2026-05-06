@@ -1594,6 +1594,7 @@ mod tests {
         assert_eq!(get_common_root_folder(&[]), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn common_root_returns_full_path_for_single_path() {
         // Con un solo path la "raíz común" es el path entero (sin parent).
@@ -1601,6 +1602,7 @@ mod tests {
         assert_eq!(result.as_deref(), Some("/home/jayo/saves"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn common_root_returns_shared_prefix() {
         let result = get_common_root_folder(&[
@@ -1610,6 +1612,7 @@ mod tests {
         assert_eq!(result.as_deref(), Some("/home/jayo/saves/game1"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn common_root_returns_root_when_only_root_overlaps() {
         // Dos rutas absolutas que solo comparten "/": la raíz común es "/".
@@ -1624,6 +1627,7 @@ mod tests {
         assert_eq!(result, None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn common_root_is_case_insensitive() {
         // Importante en Windows: C:\Users\Foo y c:\users\Foo deben matchear.
@@ -1640,6 +1644,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn common_root_handles_subset() {
         // Si una ruta es prefijo de otra, la común es la corta.
@@ -2929,6 +2934,7 @@ mod tests {
         assert_eq!(extract_root_from_scan(&found), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn extract_root_returns_parent_for_single_file() {
         let mut found = std::collections::HashMap::new();
@@ -2943,6 +2949,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn extract_root_skips_ignored_files() {
         let mut found = std::collections::HashMap::new();
@@ -2959,6 +2966,7 @@ mod tests {
         assert!(root.contains("game1"), "got {root:?}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn extract_root_finds_common_parent_of_multiple_files() {
         let mut found = std::collections::HashMap::new();
