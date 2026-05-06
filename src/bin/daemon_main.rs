@@ -136,6 +136,33 @@ fn run_normal() {
 
 fn run_with_flag(stop_flag: Arc<AtomicBool>) {
     let config = DaemonConfig;
-    let handle = start_daemon(stop_flag, config);
-    handle.join().expect("Daemon thread panicked");
+
+    // Worker loop del daemon (file watcher + sync worker) en su hilo.
+    let worker_handle = start_daemon(stop_flag.clone(), config);
+
+    // HTTP server (Capa 0 del plan Millennium/Decky) en otro hilo.
+    // Bloquea internamente hasta que stop_flag se activa.
+    let http_stop = stop_flag.clone();
+    let http_handle = std::thread::Builder::new()
+        .name("daemon-http-server".into())
+        .spawn(move || {
+            if let Err(e) = ludusavi::sync::daemon_http::run_http_server(http_stop) {
+                log::error!("HTTP server failed: {e}");
+            }
+        })
+        .expect("Failed to spawn HTTP server thread");
+
+    // Esperamos a ambos hilos. Cualquiera que termine antes (worker
+    // saliendo por NoCloudConfig, HTTP server crasheando, etc.) debe
+    // arrastrar al otro al cerrarse — si no, el proceso se quedaría
+    // colgado para siempre. Por eso al hacer join del primero,
+    // forzamos stop_flag para que el segundo también cierre.
+    if let Err(e) = worker_handle.join() {
+        log::error!("Daemon thread panicked: {e:?}");
+    }
+    log::info!("Worker thread joined; signalling HTTP server to stop");
+    stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Err(e) = http_handle.join() {
+        log::error!("HTTP server thread panicked: {e:?}");
+    }
 }
