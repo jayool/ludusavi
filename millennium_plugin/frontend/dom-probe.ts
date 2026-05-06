@@ -19,6 +19,7 @@ import {
   openAppDir,
 } from './daemon-client';
 import { describeGame, statusColor } from './game-format';
+import { closeSyncPopup, openSyncPopup } from './sync-popup';
 import { relativeTime } from './time-format';
 
 declare const g_PopupManager: any;
@@ -371,29 +372,13 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
 
   syncTab.addEventListener(
     'click',
-    async (e) => {
+    (e) => {
       e.stopPropagation();
       e.preventDefault();
-
-      // Doble vía para garantizar que el overlay aparezca por encima
-      // del contenido actual (Tienda/Comunidad usan widgets que
-      // ignoran z-index CSS):
-      //
-      //   1. Forzar navegación a Biblioteca llamando el onClick de
-      //      React directamente (props internas), no via
-      //      dispatchEvent — algunas instalaciones de React filtran
-      //      eventos sintéticos por `isTrusted=false`.
-      //   2. Después de mostrar el overlay, ejecutar limpieza
-      //      empírica con elementFromPoint: detecta qué está encima
-      //      de NUESTRO overlay y lo oculta. Reintenta hasta que
-      //      el overlay quede on top.
-      navigateToBiblioteca(bibliotecaWrapper);
-      // 800ms para dar tiempo a Steam a desmontar el proceso CEF de
-      // Tienda (validado en cef_log que arranca un proceso Chrome
-      // separado por webview, eso tarda en cerrarse). 300ms era
-      // demasiado corto; en ese momento Tienda aún era visible.
-      await sleep(800);
-      await showSyncOverlay(doc);
+      // Abrimos el popup React-nativo de Steam. Steam lo dibuja en su
+      // propio árbol, por encima de Tienda/Comunidad (que viven en
+      // procesos CEF separados).
+      openSyncPopup();
       // Log diagnóstico tras intentar mostrar el overlay: qué hay
       // en el centro del viewport. Si el overlay NO aparece, esto
       // dice qué se está colando — typically un tag custom de
@@ -409,18 +394,12 @@ async function injectSyncTabImpl(waitMs: number): Promise<string> {
   );
 
   // Listeners en los OTROS tabs de la nav: cuando el usuario clica
-  // Biblioteca/Tienda/Comunidad/etc, ocultamos nuestro overlay para
-  // no taparles el contenido. Steam sigue procesando el click
-  // normalmente porque NO usamos stopPropagation aquí.
-  //
-  // Cuando NUESTRO click handler (arriba) dispara click sintético
-  // sobre Biblioteca, este listener también se dispara — pero
-  // hideSyncOverlay es idempotente (no-op si el overlay no existe
-  // o ya está oculto), así que la secuencia "click Biblioteca →
-  // hide → showSyncOverlay" funciona correctamente.
+  // Biblioteca/Tienda/Comunidad/etc, cerramos nuestro popup para que
+  // no tape el destino al que el usuario quiere ir. Steam sigue
+  // procesando el click normalmente porque NO usamos stopPropagation.
   Array.from(row.children).forEach((sibling) => {
     if (sibling === syncTab) return;
-    sibling.addEventListener('click', () => hideSyncOverlay(doc));
+    sibling.addEventListener('click', () => closeSyncPopup());
   });
 
   row.appendChild(syncTab);
@@ -478,24 +457,32 @@ const TABS: { id: ActiveTab; label: string }[] = [
  * tree del settings panel. Para eventos interactivos basta con
  * addEventListener directo.
  */
-async function showSyncOverlay(doc: Document) {
-  let overlay = doc.querySelector<HTMLElement>(`[${OVERLAY_ATTR}]`);
+/**
+ * Monta header + tabs + content area DENTRO de `parent`. Usado por el
+ * popup React-nativo de Steam (sync-popup.tsx) que provee un dialog
+ * Steam-managed como contenedor — no peleamos con stacking de Tienda
+ * porque el dialog vive en el árbol React de Steam.
+ *
+ * `parent` debe ser un div vacío con dimensiones; típicamente provisto
+ * por `<SteamDialog><div ref={...} /></SteamDialog>`.
+ */
+export async function renderOverlayBody(parent: HTMLElement) {
+  // Cerrar SSE previo si lo hubiera (si el popup se cerró/abrió varias
+  // veces). Idempotente.
+  disconnectSse();
+  parent.innerHTML = '';
+  const doc = parent.ownerDocument;
 
-  if (!overlay) {
-    overlay = buildOverlayShell(doc);
-  }
-  // Re-append a body como ÚLTIMO hijo cada vez. Garantiza que en el
-  // stacking del DOM el overlay viene después de cualquier
-  // re-render de Library/Tienda que Steam pueda hacer.
-  doc.body.appendChild(overlay);
-  overlay.style.display = 'flex';
+  const overlay = buildOverlayShell(doc);
+  parent.appendChild(overlay);
 
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
   const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
   await renderActiveTab(doc, overlay, content);
-  // Conectar SSE después del primer render — si la conexión falla no
-  // bloquea ver la lista inicial. El refresh automático sólo aplica a
-  // futuras actualizaciones.
+  // Conectar SSE — refresh automático en cambios mientras el popup
+  // esté abierto. Cuando el usuario cierre el dialog, parent.innerHTML
+  // se vacía pero la conexión sigue activa hasta que la próxima
+  // apertura llame a disconnectSse() arriba.
   connectSse(doc, overlay, content, statusPill);
 }
 
@@ -539,12 +526,9 @@ function buildOverlayShell(doc: Document): HTMLElement {
   const overlay = doc.createElement('div');
   overlay.setAttribute(OVERLAY_ATTR, '1');
   overlay.style.cssText = [
-    'position: fixed',
-    'top: 60px', // debajo de la nav de Steam (Biblioteca/Tienda/SYNC)
-    'left: 0',
-    'right: 0',
-    'bottom: 0',
-    'z-index: 9000',
+    // Ocupamos el contenedor entero del dialog Steam-managed.
+    'width: 100%',
+    'height: 100%',
     'background: #0f1117',
     'color: #ffffff',
     'display: flex',
