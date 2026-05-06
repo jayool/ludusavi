@@ -9,7 +9,7 @@
 import { definePlugin, IconsModule, Field, DialogButton } from '@steambrew/client';
 import { daemon, DaemonStatus } from './daemon-client';
 import { GamesTable } from './games-table';
-import { runDomProbe, injectTestSyncTab } from './dom-probe';
+import { runDomProbe, injectTestSyncTab, autoInjectSyncTabOnLoad } from './dom-probe';
 
 type ConnState =
   | { kind: 'idle' }
@@ -155,8 +155,15 @@ const SyncTabInjector = () => {
   );
 };
 
-export default definePlugin(() => ({
-  title: 'Ludusavi Sync',
-  icon: <IconsModule.Settings />,
-  content: <SyncTab />,
-}));
+export default definePlugin(() => {
+  // Auto-inyectar el SYNC tab en la nav principal de Steam al cargar
+  // el plugin. Idempotente y con polling interno para esperar al main
+  // window. Lanzado en background — no bloquea el plugin load.
+  void autoInjectSyncTabOnLoad();
+
+  return {
+    title: 'Ludusavi Sync',
+    icon: <IconsModule.Settings />,
+    content: <SyncTab />,
+  };
+});

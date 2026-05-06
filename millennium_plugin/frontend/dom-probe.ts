@@ -213,11 +213,37 @@ export async function runDomProbe(): Promise<string> {
  * cuando confirmemos que el botón aparece bien.
  */
 export async function injectTestSyncTab(): Promise<string> {
+  return await injectSyncTabImpl(/* waitMs */ 0);
+}
+
+/**
+ * Auto-inyección al cargar el plugin. Espera hasta `timeoutMs` a que
+ * el main window de Steam aparezca (puede tardar 1-3s tras arrancar
+ * Steam) y entonces inyecta. Idempotente — si ya está inyectado por
+ * otra llamada anterior, no hace nada.
+ *
+ * Pensado para llamarse desde el entrypoint del plugin sin necesidad
+ * de que el usuario abra Settings → Plugins → Sync.
+ */
+export async function autoInjectSyncTabOnLoad(): Promise<void> {
+  const result = await injectSyncTabImpl(/* waitMs */ 30000);
+  console.log('[ludusavi-sync] auto-inject:', result);
+}
+
+async function injectSyncTabImpl(waitMs: number): Promise<string> {
   if (typeof g_PopupManager === 'undefined') {
     return '[ERROR] g_PopupManager no definido';
   }
-  const popup = g_PopupManager.GetExistingPopup(MAIN_WINDOW_NAME);
-  if (!popup) return '[ERROR] Main window no disponible';
+  // Polling para esperar el main window. Cuando Steam arranca el
+  // plugin entrypoint puede ejecutarse antes de que `SP Desktop_uid0`
+  // esté creado — toca esperar.
+  const deadline = Date.now() + waitMs;
+  let popup = g_PopupManager.GetExistingPopup(MAIN_WINDOW_NAME);
+  while (!popup && Date.now() < deadline) {
+    await sleep(250);
+    popup = g_PopupManager.GetExistingPopup(MAIN_WINDOW_NAME);
+  }
+  if (!popup) return '[ERROR] Main window no disponible (timeout)';
   const doc: Document = popup.m_popup.document;
 
   // Idempotente: si ya inyectado, no duplicamos.
@@ -291,8 +317,10 @@ export async function injectTestSyncTab(): Promise<string> {
     return false;
   }
   changeText(syncTab, 'SYNC');
-  syncTab.style.outline = '2px solid #4f8ef7';
-  syncTab.style.borderRadius = '4px';
+  // Sin outline custom: el clon hereda el styling nativo de Steam,
+  // queremos que se vea idéntico a Tienda/Comunidad. Activación
+  // visual queda implícita (cuando el overlay está abierto, el
+  // resto de la UI queda detrás).
 
   syncTab.addEventListener(
     'click',
@@ -300,25 +328,17 @@ export async function injectTestSyncTab(): Promise<string> {
       e.stopPropagation();
       e.preventDefault();
       showSyncOverlay(doc);
-      syncTab.style.outline = '2px solid #3ecf8e';
     },
     true, // capture phase para llegar antes de los listeners de Steam
   );
 
   // Listeners en los OTROS tabs de la nav: cuando el usuario clica
-  // Biblioteca/Tienda/Comunidad/etc, ocultamos nuestro overlay y
-  // restauramos el outline azul de SYNC. Steam sigue procesando el
-  // click normalmente porque NO usamos stopPropagation aquí.
+  // Biblioteca/Tienda/Comunidad/etc, ocultamos nuestro overlay para
+  // no taparles el contenido. Steam sigue procesando el click
+  // normalmente porque NO usamos stopPropagation aquí.
   Array.from(row.children).forEach((sibling) => {
     if (sibling === syncTab) return;
-    sibling.addEventListener(
-      'click',
-      () => {
-        hideSyncOverlay(doc);
-        syncTab.style.outline = '2px solid #4f8ef7';
-      },
-      // No capture: Steam tiene que procesar el click primero.
-    );
+    sibling.addEventListener('click', () => hideSyncOverlay(doc));
   });
 
   row.appendChild(syncTab);
@@ -855,9 +875,12 @@ function modeColor(mode: string): string {
 
 /**
  * Row de un juego ACCELA-only (instalado en disco pero no registrado
- * todavía en Ludusavi). Misma layout de columnas que renderGameRow,
- * pero la mayoría son "—" porque no tenemos info de sync. El nombre
- * se acompaña de un sufijo "📦 ACCELA" inline para distinguirlo.
+ * todavía en Ludusavi). Mismo layout que renderGameRow, dashes en
+ * todas las columnas de sync porque no hay info — la ausencia de
+ * mode/auto_sync es la señal visual de "no configurado todavía".
+ *
+ * Sin badge "ACCELA" — los dashes en mode/auto_sync ya distinguen
+ * claramente estos juegos de los registered.
  */
 function renderAccelaOnlyRow(
   doc: Document,
@@ -879,25 +902,15 @@ function renderAccelaOnlyRow(
     'background: #6b7280; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;';
   row.appendChild(dot);
 
-  // NAME + sufijo ACCELA + size.
-  const nameCell = doc.createElement('div');
-  nameCell.style.cssText =
-    'flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap;';
-  const name = doc.createElement('span');
+  // NAME (flex). Tooltip con install_path para troubleshooting.
+  const name = doc.createElement('div');
   name.textContent = accela.name;
+  name.title = accela.install_path;
   name.style.cssText =
-    'font-size: 13px; color: #ffffff; overflow: hidden; text-overflow: ellipsis;';
-  nameCell.appendChild(name);
-  const sizeStr =
-    accela.size_on_disk > 0 ? `📦 ACCELA · ${formatBytesShort(accela.size_on_disk)}` : '📦 ACCELA';
-  const tag = doc.createElement('span');
-  tag.textContent = sizeStr;
-  tag.style.cssText = 'font-size: 11px; color: #9aa3b2; flex-shrink: 0;';
-  nameCell.appendChild(tag);
-  row.appendChild(nameCell);
+    'flex: 1; min-width: 0; font-size: 13px; color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+  row.appendChild(name);
 
-  // Resto de columnas: dashes (no aplican a ACCELA installs sin
-  // configurar mode todavía).
+  // Resto de columnas: dashes.
   row.appendChild(makeCell(doc, '—', '70px', '#6b7280'));
   row.appendChild(makeCell(doc, '—', '90px', '#6b7280'));
   row.appendChild(makeCell(doc, '—', '160px', '#6b7280'));
@@ -906,13 +919,6 @@ function renderAccelaOnlyRow(
   return row;
 }
 
-/** Helper local: formatea bytes en forma compacta (KB/MB/GB). */
-function formatBytesShort(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 // ============================================================================
 // Tab "This Device" — info del device actual + sus juegos
