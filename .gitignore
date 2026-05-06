@@ -5,3 +5,11 @@ tarpaulin-report.html
 tests/root3/game5/data-symlink
 *~
 /.claude/
+
+# Python adapter compiled bytecode
+accela_adapter/__pycache__/
+
+# Millennium plugin build artefacts and dependencies
+millennium_plugin/node_modules/
+millennium_plugin/.millennium/
+millennium_plugin/*.log

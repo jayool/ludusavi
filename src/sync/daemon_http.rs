@@ -502,6 +502,201 @@ async fn devices_handler() -> Json<ApiDevicesResponse> {
 }
 
 // ============================================================================
+// /api/accela-installs — juegos instalados via ACCELA
+// ============================================================================
+//
+// Spawnea el adapter Python (`accela_adapter/adapter.py`) con el comando
+// `list_accela_installs` y devuelve la lista. Si la config de ACCELA no
+// está completa (bin_path, python_path) o no encontramos el adapter
+// script, devolvemos lista vacía — el plugin sabe gestionar ese caso
+// gracefully en lugar de mostrar error.
+//
+// Es la 4ª fuente de juegos que la GUI Iced ya integra desde Phase 4
+// de la integración ACCELA. El plugin Millennium la consume en paralelo
+// a /api/games y mergea para mostrar el total al usuario.
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct ApiAccelaInstall {
+    #[serde(default)]
+    appid: String,
+    #[serde(default)]
+    game_name: String,
+    #[serde(default)]
+    install_path: String,
+    #[serde(default)]
+    library_path: String,
+    #[serde(default)]
+    size_on_disk: u64,
+    #[serde(default)]
+    buildid: String,
+    #[serde(default)]
+    last_updated: String,
+    #[serde(default)]
+    accela_marker_path: String,
+    #[serde(default)]
+    appmanifest_path: String,
+}
+
+#[derive(serde::Serialize)]
+struct ApiAccelaInstallsResponse {
+    installs: Vec<ApiAccelaInstall>,
+    /// Mensaje opcional cuando devolvemos lista vacía: explica el motivo
+    /// (no configurado, adapter no encontrado, error). El plugin lo puede
+    /// surface al usuario como hint.
+    note: Option<String>,
+}
+
+/// Resuelve el path al adapter probando ubicaciones estándar.
+fn resolve_adapter_path() -> Option<std::path::PathBuf> {
+    let candidates = [
+        // 1. Junto al binario del daemon (deployment recomendado).
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("accela_adapter").join("adapter.py")),
+        // 2. Relativo al cwd (cuando se corre desde el repo, p.ej.
+        //    `cargo run --bin ludusavi-daemon` desde la raíz del worktree).
+        Some(std::path::PathBuf::from("accela_adapter").join("adapter.py")),
+    ];
+    for cand in candidates.into_iter().flatten() {
+        if cand.exists() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
+async fn accela_installs_handler() -> Json<ApiAccelaInstallsResponse> {
+    use crate::resource::config::Config;
+
+    let config = match Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[daemon-http] config load failed for accela: {e:?}");
+            return Json(ApiAccelaInstallsResponse {
+                installs: vec![],
+                note: Some(format!("Config load failed: {e:?}")),
+            });
+        }
+    };
+
+    let bin_path = config.accela.bin_path.trim().to_string();
+    let python_path = config.accela.python_path.trim().to_string();
+
+    if bin_path.is_empty() || python_path.is_empty() {
+        return Json(ApiAccelaInstallsResponse {
+            installs: vec![],
+            note: Some(
+                "ACCELA paths not configured. Set them in the GUI Iced (Settings → ACCELA).".to_string(),
+            ),
+        });
+    }
+
+    let adapter_path = match resolve_adapter_path() {
+        Some(p) => p,
+        None => {
+            return Json(ApiAccelaInstallsResponse {
+                installs: vec![],
+                note: Some(
+                    "ACCELA adapter not found. Copy `accela_adapter/` next to the daemon binary."
+                        .to_string(),
+                ),
+            });
+        }
+    };
+
+    match spawn_adapter_list_installs(&python_path, &adapter_path, &bin_path).await {
+        Ok(installs) => Json(ApiAccelaInstallsResponse {
+            installs,
+            note: None,
+        }),
+        Err(e) => {
+            log::warn!("[daemon-http] accela list_installs failed: {e}");
+            Json(ApiAccelaInstallsResponse {
+                installs: vec![],
+                note: Some(format!("Adapter call failed: {e}")),
+            })
+        }
+    }
+}
+
+/// Spawnea el adapter, manda `list_accela_installs` por stdin y parsea
+/// la respuesta. Mismo patrón que la GUI usa en `accela::send_command`.
+async fn spawn_adapter_list_installs(
+    python_path: &str,
+    adapter_path: &std::path::Path,
+    bin_path: &str,
+) -> Result<Vec<ApiAccelaInstall>, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let mut cmd = tokio::process::Command::new(python_path);
+    cmd.arg(adapter_path)
+        .arg("--accela-path")
+        .arg(bin_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // CREATE_NO_WINDOW para que en Windows no parpadee una consola.
+    // tokio::process::Command expone creation_flags() directamente en
+    // Windows; no hay que importar std::os::windows::process::CommandExt.
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "stdin pipe missing".to_string())?;
+    stdin
+        .write_all(b"{\"cmd\": \"list_accela_installs\"}\n")
+        .await
+        .map_err(|e| format!("stdin write: {e}"))?;
+    drop(stdin);
+
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("wait_with_output: {e}"))?;
+
+    if !output.status.success() && output.stdout.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("adapter exited with {}: {stderr}", output.status));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .next()
+        .ok_or_else(|| "no output from adapter".to_string())?;
+    let event: serde_json::Value =
+        serde_json::from_str(line).map_err(|e| format!("json parse: {e} (line: {line})"))?;
+
+    match event.get("event").and_then(|v| v.as_str()) {
+        Some("accela_installs") => {
+            let games = event
+                .get("games")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let parsed: Vec<ApiAccelaInstall> = games
+                .into_iter()
+                .filter_map(|v| serde_json::from_value(v).ok())
+                .collect();
+            Ok(parsed)
+        }
+        Some("error") => Err(event
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown adapter error")
+            .to_string()),
+        other => Err(format!("unexpected adapter event: {other:?}")),
+    }
+}
+
+// ============================================================================
 // /api/events — Server-Sent Events stream
 // ============================================================================
 //
@@ -560,6 +755,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/games", get(games_handler))
         .route("/api/devices", get(devices_handler))
         .route("/api/events", get(events_handler))
+        .route("/api/accela-installs", get(accela_installs_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
