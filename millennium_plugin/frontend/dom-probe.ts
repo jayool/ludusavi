@@ -338,9 +338,19 @@ ${childrenSummary.join('\n')}`;
 
 const OVERLAY_ATTR = 'data-ludusavi-sync-overlay';
 
+// Estado SSE a nivel de módulo: la conexión EventSource activa, y el
+// timer de debounce. Nivel de módulo (no global window) porque el plugin
+// se ejecuta en un único contexto JS — múltiples overlays simultáneos
+// no es un caso de uso real.
+let currentEventSource: EventSource | null = null;
+let pendingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+type SseStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
+
 /**
  * Muestra el overlay del SYNC tab dentro del main window de Steam.
- * Idempotente: si ya está visible recarga la lista.
+ * Idempotente: si ya está visible recarga la lista. Conecta al SSE
+ * stream para refrescar automáticamente en cambios.
  *
  * Se renderiza con vanilla DOM (sin React) porque estamos fuera del
  * tree del settings panel. Para eventos interactivos basta con
@@ -357,7 +367,12 @@ async function showSyncOverlay(doc: Document) {
   }
 
   const content = overlay.querySelector<HTMLElement>('[data-content]')!;
+  const statusPill = overlay.querySelector<HTMLElement>('[data-sse-status]')!;
   await loadAndRenderGames(doc, content);
+  // Conectar SSE después del primer render — si la conexión falla no
+  // bloquea ver la lista inicial. El refresh automático sólo aplica a
+  // futuras actualizaciones.
+  connectSse(doc, content, statusPill);
 }
 
 /** Construye el "esqueleto" estático del overlay: header + content area. */
@@ -397,6 +412,28 @@ function buildOverlayShell(doc: Document): HTMLElement {
   title.style.cssText = 'font-size: 20px; font-weight: 600;';
   header.appendChild(title);
 
+  // Bloque derecho del header: status pill SSE + botón Refresh.
+  const rightBlock = doc.createElement('div');
+  rightBlock.style.cssText = 'display: flex; align-items: center; gap: 12px;';
+
+  // Status pill: indicador del SSE stream. Empieza en 'connecting' y se
+  // actualiza con eventos de la conexión.
+  const statusPill = doc.createElement('div');
+  statusPill.setAttribute('data-sse-status', 'connecting');
+  statusPill.style.cssText = [
+    'display: inline-flex',
+    'align-items: center',
+    'gap: 6px',
+    'padding: 4px 10px',
+    'border-radius: 12px',
+    'background: #1f2433',
+    'font-size: 11px',
+    'color: #9aa3b2',
+    'font-family: inherit',
+  ].join(';');
+  applyStatusPill(statusPill, 'connecting');
+  rightBlock.appendChild(statusPill);
+
   const refreshBtn = doc.createElement('button');
   refreshBtn.textContent = 'Refresh';
   refreshBtn.style.cssText = [
@@ -413,8 +450,9 @@ function buildOverlayShell(doc: Document): HTMLElement {
     const content = overlay.querySelector<HTMLElement>('[data-content]')!;
     loadAndRenderGames(doc, content);
   });
-  header.appendChild(refreshBtn);
+  rightBlock.appendChild(refreshBtn);
 
+  header.appendChild(rightBlock);
   overlay.appendChild(header);
 
   // Content area que se rellena async con loadAndRenderGames.
@@ -629,10 +667,142 @@ function formatBytesShort(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** Oculta el overlay si está visible (sin destruirlo — visibility toggle). */
+/** Oculta el overlay si está visible (sin destruirlo — visibility toggle).
+ *  Cierra el EventSource para no dejar conexiones abiertas mientras el
+ *  usuario está en otra pestaña de Steam. */
 function hideSyncOverlay(doc: Document) {
   const overlay = doc.querySelector<HTMLElement>(`[${OVERLAY_ATTR}]`);
   if (overlay) {
     overlay.style.display = 'none';
   }
+  disconnectSse();
+}
+
+// ============================================================================
+// SSE wiring — refresh automático
+// ============================================================================
+
+/**
+ * Abre la conexión SSE al daemon y registra handlers para refrescar
+ * el overlay cuando llegan eventos. Cierra cualquier conexión previa
+ * antes de abrir la nueva (idempotente).
+ *
+ * El daemon emite tres tipos de eventos (ver `DaemonEvent` en
+ * daemon-client.ts):
+ *  - `games_changed`     → la lista de juegos cambió (añadir, mode,
+ *                           status). Refrescamos.
+ *  - `devices_changed`   → cambió la lista de devices (afecta nombres
+ *                           que aparecen en cards). Refrescamos.
+ *  - `daemon_restarted`  → el daemon se relanzó (token podría haber
+ *                           rotado). Refrescamos full.
+ *
+ * Todos disparan el mismo `scheduleRefresh()`. Si llegan varios en
+ * ráfaga (file watcher es ruidoso) sólo refetcheamos una vez gracias
+ * al debounce.
+ */
+async function connectSse(
+  doc: Document,
+  content: HTMLElement,
+  statusPill: HTMLElement,
+) {
+  disconnectSse();
+  applyStatusPill(statusPill, 'connecting');
+
+  let es: EventSource;
+  try {
+    es = await daemon.subscribeEvents(
+      (event) => {
+        if (
+          event.type === 'games_changed' ||
+          event.type === 'devices_changed' ||
+          event.type === 'daemon_restarted'
+        ) {
+          scheduleRefresh(doc, content);
+          // Llegó un evento = la conexión funciona.
+          applyStatusPill(statusPill, 'live');
+        }
+      },
+      // EventSource.onerror se dispara tanto al fallar la conexión
+      // inicial como en reconexiones intermedias. El navegador hace
+      // backoff automático y vuelve a abrir, así que no destruimos
+      // el EventSource — sólo marcamos status.
+      () => {
+        applyStatusPill(statusPill, 'reconnecting');
+      },
+    );
+  } catch (e) {
+    console.error('[ludusavi-sync] SSE subscribe failed:', e);
+    applyStatusPill(statusPill, 'offline');
+    return;
+  }
+
+  // `open` se dispara cuando la conexión queda establecida — usamos
+  // ese momento para marcar 'live' aunque aún no haya llegado ningún
+  // evento real.
+  es.addEventListener('open', () => applyStatusPill(statusPill, 'live'));
+
+  currentEventSource = es;
+}
+
+/** Cierra el EventSource activo y cancela cualquier refresh pendiente. */
+function disconnectSse() {
+  if (currentEventSource) {
+    currentEventSource.close();
+    currentEventSource = null;
+  }
+  if (pendingRefreshTimer !== null) {
+    clearTimeout(pendingRefreshTimer);
+    pendingRefreshTimer = null;
+  }
+}
+
+/**
+ * Debounce: si llegan varios eventos en ventana de 200ms, refetchear
+ * una sola vez. El file watcher del daemon emite eventos por cada
+ * fichero modificado — escribir game-list + status puede disparar 2
+ * eventos seguidos.
+ */
+function scheduleRefresh(doc: Document, content: HTMLElement) {
+  if (pendingRefreshTimer !== null) {
+    clearTimeout(pendingRefreshTimer);
+  }
+  pendingRefreshTimer = setTimeout(() => {
+    pendingRefreshTimer = null;
+    loadAndRenderGames(doc, content);
+  }, 200);
+}
+
+/** Renderiza el status pill: dot + texto según estado SSE. */
+function applyStatusPill(pill: HTMLElement, status: SseStatus) {
+  pill.setAttribute('data-sse-status', status);
+  // Limpia y reconstruye con dot + texto.
+  pill.innerHTML = '';
+  const dot = pill.ownerDocument.createElement('span');
+  dot.style.cssText = [
+    'width: 7px',
+    'height: 7px',
+    'border-radius: 50%',
+    'flex-shrink: 0',
+  ].join(';');
+  const label = pill.ownerDocument.createElement('span');
+  switch (status) {
+    case 'live':
+      dot.style.background = '#3ecf8e';
+      label.textContent = 'Live';
+      break;
+    case 'connecting':
+      dot.style.background = '#eab308';
+      label.textContent = 'Connecting…';
+      break;
+    case 'reconnecting':
+      dot.style.background = '#f97316';
+      label.textContent = 'Reconnecting…';
+      break;
+    case 'offline':
+      dot.style.background = '#ef4444';
+      label.textContent = 'Offline (manual refresh)';
+      break;
+  }
+  pill.appendChild(dot);
+  pill.appendChild(label);
 }

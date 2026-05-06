@@ -202,13 +202,20 @@ export class DaemonClient {
    * caller pueda cerrarlo cuando se desmonte el componente.
    *
    * EventSource (estándar W3C) NO acepta headers custom, así que el
-   * token va en query string. El daemon valida tanto Authorization
-   * header como `?token=...` (TODO: aún no implementado en Fase 0 —
-   * por ahora /api/events sólo valida via header, lo que significa
-   * que esta función fallará. Hay que añadir soporte de query token
-   * al daemon en una fase posterior, o usar fetch streaming).
+   * token va en query string. El daemon valida tanto `Authorization:
+   * Bearer` como `?token=...` (validado e2e desde 2026-05-06; ver
+   * tests `status_returns_200_with_correct_query_token` y compañía).
+   *
+   * `onError` se llama cuando el browser detecta que la conexión se
+   * cayó. EventSource reintenta automáticamente (con backoff propio del
+   * navegador) — el caller normalmente no necesita hacer nada, pero el
+   * callback existe para que pueda surface "reconectando..." al
+   * usuario.
    */
-  async subscribeEvents(onEvent: (event: DaemonEvent) => void): Promise<EventSource> {
+  async subscribeEvents(
+    onEvent: (event: DaemonEvent) => void,
+    onError?: (e: Event) => void,
+  ): Promise<EventSource> {
     const token = await this.getToken();
     if (!token) {
       throw new Error('Daemon token unavailable for SSE');
@@ -223,6 +230,9 @@ export class DaemonClient {
         console.error('[ludusavi-sync] failed to parse SSE event:', err, e.data);
       }
     };
+    if (onError) {
+      es.onerror = onError;
+    }
     return es;
   }
 }

@@ -144,28 +144,60 @@ fn load_or_create_token() -> Result<String, String> {
     Ok(token)
 }
 
-/// Middleware que valida el header `Authorization: Bearer <token>`
-/// contra el token cargado al arrancar el server. 401 si falta o no
-/// coincide.
+/// Middleware que valida el token via DOS mecanismos:
+///
+/// 1. `Authorization: Bearer <token>` header (preferido, lo usan los
+///    `fetch` normales).
+/// 2. `?token=<token>` query string (sólo necesario para `EventSource`
+///    en el plugin, porque la API estándar de `EventSource` NO permite
+///    headers custom).
+///
+/// Ambos canales devuelven 401 si falta o no coincide.
+///
+/// Nota de seguridad: el daemon escucha en localhost únicamente, por lo
+/// que el query token no puede leakear a la red. Aún así, los headers
+/// son preferibles porque NO se loggean en `Referer`, history del
+/// navegador, ni proxies. Por convención el plugin usa header en
+/// `fetch` y query sólo en `EventSource`.
 async fn require_auth(
     State(state): State<AppState>,
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let header_value = req
+    let expected = state.token.as_str();
+
+    // Canal 1: Authorization header.
+    let header_token = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .and_then(|s| s.strip_prefix("Bearer "));
 
-    let expected = format!("Bearer {}", *state.token);
-    if header_value != expected {
-        log::debug!("[daemon-http] auth rejected for {} {}", req.method(), req.uri().path());
+    // Canal 2: ?token=... en el query string. Parseo manual para no
+    // tirar de `axum::extract::Query` (querría una struct específica
+    // y nos romperia si añadimos otros params al endpoint).
+    let query_token = req.uri().query().and_then(|q| {
+        q.split('&').find_map(|kv| {
+            let mut parts = kv.splitn(2, '=');
+            match (parts.next(), parts.next()) {
+                (Some("token"), Some(v)) => Some(v),
+                _ => None,
+            }
+        })
+    });
+
+    let provided = header_token.or(query_token).unwrap_or("");
+    if provided != expected {
+        log::debug!(
+            "[daemon-http] auth rejected for {} {}",
+            req.method(),
+            req.uri().path()
+        );
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({
-                "error": "Missing or invalid Authorization header",
-                "expected": "Bearer <daemon-token-from-disk>",
+                "error": "Missing or invalid token",
+                "expected": "Authorization: Bearer <daemon-token-from-disk>, or ?token=<token> on /api/events",
             })),
         )
             .into_response();
@@ -1010,6 +1042,77 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["daemon"], "ludusavi-daemon");
         assert_eq!(json["api_version"], 1);
+    }
+
+    /// Auth via `?token=...` query string. Necesario para EventSource
+    /// (la API estándar no permite headers custom).
+    #[tokio::test]
+    async fn status_returns_200_with_correct_query_token() {
+        let token = "correct-token-xyz";
+        let app = build_router(test_state(token));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/status?token={token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Query token incorrecto = 401. Igual que un Authorization header
+    /// equivocado.
+    #[tokio::test]
+    async fn status_returns_401_with_wrong_query_token() {
+        let app = build_router(test_state("right-token"));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/status?token=wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Si vienen ambos canales, gana el header — preferimos el más
+    /// seguro. Aquí el query es válido pero el header no, debería 401.
+    #[tokio::test]
+    async fn header_token_takes_precedence_over_query_token() {
+        let app = build_router(test_state("right-token"));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/status?token=right-token")
+                    .header("Authorization", "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// El parsing de query tolera otros params junto al token (p.ej.
+    /// si más adelante añadimos `?token=X&since=...` para SSE replay).
+    #[tokio::test]
+    async fn query_token_parsing_tolerates_extra_params() {
+        let token = "right-token";
+        let app = build_router(test_state(token));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/status?since=42&token={token}&foo=bar"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     /// Helper de tests: escribe los 4 ficheros que `build_games_response`
