@@ -157,9 +157,9 @@ const SyncTabInjector = () => {
 
 export default definePlugin(() => {
   // Auto-inyectar el SYNC tab en la nav principal de Steam al cargar
-  // el plugin. Idempotente y con polling interno para esperar al main
-  // window. Lanzado en background — no bloquea el plugin load.
-  void autoInjectSyncTabOnLoad();
+  // el plugin. Función no-async: arranca dos vías (polling + hook de
+  // window-create) en background. Ver autoInjectSyncTabOnLoad().
+  autoInjectSyncTabOnLoad();
 
   return {
     title: 'Ludusavi Sync',

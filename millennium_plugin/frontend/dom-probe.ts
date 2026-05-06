@@ -16,6 +16,7 @@ import { describeGame, statusColor } from './game-format';
 import { relativeTime } from './time-format';
 
 declare const g_PopupManager: any;
+declare const Millennium: any;
 
 const MAIN_WINDOW_NAME = 'SP Desktop_uid0';
 
@@ -217,27 +218,66 @@ export async function injectTestSyncTab(): Promise<string> {
 }
 
 /**
- * Auto-inyección al cargar el plugin. Espera hasta `timeoutMs` a que
- * el main window de Steam aparezca (puede tardar 1-3s tras arrancar
- * Steam) y entonces inyecta. Idempotente — si ya está inyectado por
- * otra llamada anterior, no hace nada.
+ * Auto-inyección al cargar el plugin. Doble vía:
  *
- * Pensado para llamarse desde el entrypoint del plugin sin necesidad
- * de que el usuario abra Settings → Plugins → Sync.
+ *  1. Polling inmediato durante hasta 30s — para el caso en que el
+ *     plugin carga DESPUÉS de que Steam ya tenga el main window
+ *     listo (reload del plugin, hot reload).
+ *  2. `Millennium.AddWindowCreateHook` — para el caso del arranque
+ *     en frío de Steam: cuando se cree cualquier ventana nueva
+ *     reintentamos la inyección. Como es idempotente, sólo prende
+ *     la vez que aparece el main window. Necesario porque al
+ *     arrancar Steam el entrypoint del plugin puede ejecutarse
+ *     ANTES de que `g_PopupManager` exista, en cuyo caso el polling
+ *     de la vía 1 tampoco arranca.
+ *
+ * Pensado para llamarse desde el entrypoint del plugin sin
+ * intervención del usuario.
  */
-export async function autoInjectSyncTabOnLoad(): Promise<void> {
-  const result = await injectSyncTabImpl(/* waitMs */ 30000);
-  console.log('[ludusavi-sync] auto-inject:', result);
+export function autoInjectSyncTabOnLoad(): void {
+  // Vía 1: intento inmediato con polling.
+  injectSyncTabImpl(/* waitMs */ 30000).then((result) => {
+    console.log('[ludusavi-sync] auto-inject (polling):', result);
+  });
+
+  // Vía 2: hook de creación de ventanas. AddWindowCreateHook fue
+  // validado en hello-world B (2026-05-06) — fire repetido en
+  // muchas ventanas, lo aprovechamos como "trigger garantizado".
+  // Idempotency check dentro de injectSyncTabImpl evita duplicar.
+  if (typeof Millennium !== 'undefined' && Millennium.AddWindowCreateHook) {
+    try {
+      Millennium.AddWindowCreateHook(() => {
+        injectSyncTabImpl(/* waitMs */ 5000).then((result) => {
+          // Sólo logueamos si fue una inyección efectiva o un error
+          // distinto a "ya inyectado" para no spamear la consola.
+          if (result.startsWith('✓') || result.startsWith('[ERROR]')) {
+            console.log('[ludusavi-sync] auto-inject (window-hook):', result);
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('[ludusavi-sync] AddWindowCreateHook failed:', e);
+    }
+  } else {
+    console.warn('[ludusavi-sync] Millennium.AddWindowCreateHook no disponible');
+  }
 }
 
 async function injectSyncTabImpl(waitMs: number): Promise<string> {
-  if (typeof g_PopupManager === 'undefined') {
-    return '[ERROR] g_PopupManager no definido';
-  }
-  // Polling para esperar el main window. Cuando Steam arranca el
-  // plugin entrypoint puede ejecutarse antes de que `SP Desktop_uid0`
-  // esté creado — toca esperar.
   const deadline = Date.now() + waitMs;
+
+  // Espera a que `g_PopupManager` esté definido. Al arrancar Steam,
+  // los plugins pueden cargarse antes de que ese global exista; sin
+  // este loop salíamos por el `[ERROR] g_PopupManager no definido`
+  // antes de tener oportunidad de inyectar (bug histórico).
+  while (typeof g_PopupManager === 'undefined' && Date.now() < deadline) {
+    await sleep(250);
+  }
+  if (typeof g_PopupManager === 'undefined') {
+    return '[ERROR] g_PopupManager no definido (timeout)';
+  }
+
+  // Espera al main window.
   let popup = g_PopupManager.GetExistingPopup(MAIN_WINDOW_NAME);
   while (!popup && Date.now() < deadline) {
     await sleep(250);
@@ -626,9 +666,7 @@ async function loadAndRenderGames(doc: Document, content: HTMLElement) {
   const summary = doc.createElement('div');
   const rcloneNote = resp.rclone_missing ? ' · ⚠ rclone unavailable' : '';
   const totalCount = resp.games.length + extraAccela.length;
-  const accelaCount =
-    extraAccela.length > 0 ? ` (+${extraAccela.length} ACCELA)` : '';
-  summary.textContent = `${totalCount} game(s)${accelaCount} — device: ${resp.device.name}${rcloneNote}`;
+  summary.textContent = `${totalCount} game(s) — device: ${resp.device.name}${rcloneNote}`;
   summary.style.cssText = 'color: #9aa3b2; font-size: 12px; margin-bottom: 12px;';
   content.appendChild(summary);
 
