@@ -446,12 +446,30 @@ const TABS: { id: ActiveTab; label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ];
 
-/** Renderiza la tab activa actual en el content area. */
+/**
+ * Renderiza la tab activa actual en el content area.
+ *
+ * `preserveScroll`: si true, restaura `overlay.scrollTop` tras el
+ * render. Lo usamos en refreshes provocados por el usuario o por
+ * eventos del daemon (SSE) — ahí queremos que la vista siga donde
+ * estaba. En cambio, al cambiar manualmente de tab queremos
+ * arrancar arriba (`preserveScroll=false`, el default).
+ *
+ * Por qué hace falta: cada renderer hace `content.innerHTML = ''`
+ * y reconstruye desde cero. El scroll del `overlay` (que tiene
+ * `overflow: auto`) se mantiene en bytes, pero al haber cero
+ * contenido durante el fetch + render, scrollTop colapsa a 0.
+ * Capturándolo antes y restaurándolo después evitamos el "salto"
+ * al top que pasaba al hacer toggle de un pill SAFETY (validado
+ * por el usuario).
+ */
 export async function renderActiveTab(
   doc: Document,
   overlay: HTMLElement,
   content: HTMLElement,
+  preserveScroll: boolean = false,
 ) {
+  const savedScrollTop = preserveScroll ? overlay.scrollTop : 0;
   applyTabStyling(overlay);
   switch (currentTab) {
     case 'games':
@@ -466,6 +484,11 @@ export async function renderActiveTab(
     case 'settings':
       await loadAndRenderSettings(doc, content);
       break;
+  }
+  // Restaura scroll si pidieron preservar; si no, queda a 0 (arriba)
+  // que es el default tras un re-render.
+  if (preserveScroll) {
+    overlay.scrollTop = savedScrollTop;
   }
 }
 
@@ -553,7 +576,9 @@ export function buildOverlayShell(doc: Document): HTMLElement {
   ].join(';');
   refreshBtn.addEventListener('click', () => {
     const content = overlay.querySelector<HTMLElement>('[data-content]')!;
-    renderActiveTab(doc, overlay, content);
+    // Preservar scroll: si el usuario tocó Refresh es porque quiere
+    // ver datos frescos, no perder su sitio.
+    renderActiveTab(doc, overlay, content, /* preserveScroll */ true);
   });
   rightBlock.appendChild(refreshBtn);
 
@@ -1989,7 +2014,10 @@ function scheduleRefresh(doc: Document, overlay: HTMLElement, content: HTMLEleme
   }
   pendingRefreshTimer = setTimeout(() => {
     pendingRefreshTimer = null;
-    renderActiveTab(doc, overlay, content);
+    // Refresh por evento SSE: preservar scroll. El usuario no clicó
+    // refrescar, su contexto de lectura debe mantenerse — typically
+    // un toggle SAFETY o un cambio de mode causaba salto al top.
+    renderActiveTab(doc, overlay, content, /* preserveScroll */ true);
   }, 200);
 }
 
