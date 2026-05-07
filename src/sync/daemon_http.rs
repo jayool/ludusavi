@@ -759,6 +759,36 @@ fn read_sync_config(app_dir: &StrictPath) -> crate::sync::sync_config::SyncGames
         .unwrap_or_default()
 }
 
+/// Lee el `cache.yaml` que la GUI Iced mantiene tras cada scan. El campo
+/// `backup.recent_games` contiene la lista de juegos que el último scan
+/// detectó como presentes en disco — coincide con lo que la GUI muestra
+/// en su pantalla Games. Sin esta fuente, `/api/games` sólo veía juegos
+/// ya registrados en `ludusavi-game-list.json` (los que han llegado al
+/// punto de tener un sync activo), perdiendo la cola de juegos
+/// detectados pero no aún configurados. Ver
+/// `src/resource/cache.rs::Cache.backup.recent_games`.
+fn read_cache_recent_games(app_dir: &StrictPath) -> Vec<String> {
+    let path = app_dir.joined("cache.yaml");
+    let content = match path.read() {
+        Some(c) => c,
+        None => return Vec::new(),
+    };
+    let parsed: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    parsed
+        .get("backup")
+        .and_then(|b| b.get("recent_games"))
+        .and_then(|g| g.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Construye la respuesta de `/api/games` combinando game-list +
 /// daemon-status + sync-games + device. `app_dir` se inyecta como
 /// parámetro para que los tests puedan apuntar a un tempdir; el handler
@@ -785,14 +815,25 @@ fn build_games_response(app_dir: &StrictPath) -> ApiGamesResponse {
         }
     }
 
-    // Construir la unión de game IDs: game-list ∪ sync-games. El plugin
-    // ve TODOS los juegos que el daemon conoce, no sólo los del cloud.
+    // Unión de game IDs de TODAS las fuentes que el daemon conoce. El
+    // plugin ve los mismos juegos que la GUI Iced.
+    //   - `ludusavi-game-list.json`: juegos con sync activo (registered).
+    //   - `sync-games.json`: juegos con mode/auto_sync configurado por el
+    //     usuario, aunque aún no se hayan sync-eado.
+    //   - `cache.yaml.backup.recent_games`: juegos detectados en el
+    //     último backup scan de la GUI. Esta fuente cubre la cola de
+    //     juegos detectados-pero-no-managed que antes el plugin no
+    //     veía (caso del usuario: la GUI veía 9 juegos pero el plugin
+    //     sólo 2).
     let mut all_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in &game_list.games {
         all_names.insert(g.id.clone());
     }
     for g in sync_config.games.keys() {
         all_names.insert(g.clone());
+    }
+    for g in read_cache_recent_games(app_dir) {
+        all_names.insert(g);
     }
 
     let mut rows: Vec<ApiGameRow> = Vec::with_capacity(all_names.len());
@@ -1903,6 +1944,38 @@ mod tests {
         // El device se autogenera en load_or_create — siempre tiene id válido.
         assert!(!resp.device.id.is_empty());
         assert_eq!(resp.rclone_missing, false);
+    }
+
+    /// Verifica que `cache.yaml.backup.recent_games` se incluye en el
+    /// union — los juegos detectados por el último scan de la GUI son
+    /// visibles para el plugin aunque no estén aún en game-list/sync-games.
+    #[test]
+    fn games_response_includes_cache_recent_games() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Escribimos sólo cache.yaml — sin game-list ni sync-games.
+        let cache_yaml = "
+backup:
+  recent_games:
+    - Balatro
+    - Hades II
+    - Trails in the Sky 1st Chapter
+restore:
+  recent_games: []
+";
+        std::fs::write(tmp.path().join("cache.yaml"), cache_yaml).unwrap();
+
+        let resp = build_games_response(&sp(tmp.path()));
+        let names: Vec<String> = resp.games.iter().map(|g| g.name.clone()).collect();
+        assert_eq!(names.len(), 3);
+        // Orden alfabético garantizado por BTreeSet.
+        assert_eq!(names, vec!["Balatro", "Hades II", "Trails in the Sky 1st Chapter"]);
+        // Sin game-list ni sync-games, todos están en mode=none.
+        for g in &resp.games {
+            assert_eq!(g.mode, "none");
+            assert_eq!(g.status, "not_managed"); // default cuando mode=none y sin status
+            assert!(!g.registered_here);
+            assert!(!g.registered_elsewhere);
+        }
     }
 
     #[test]
