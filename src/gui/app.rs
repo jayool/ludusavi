@@ -2965,27 +2965,72 @@ impl App {
                 )
             }
             Message::ToggleSafetyBackupsEnabled(enabled) => {
-                self.sync_games_config.safety_backups_enabled = enabled;
-                self.sync_games_config.save();
-                self.timed_notification = Some(Notification::new(
-                    if enabled {
-                        "✓ Safety backups enabled".to_string()
-                    } else {
-                        "✓ Safety backups disabled".to_string()
+                // Migrado a HTTP API del daemon (Fase 2). Antes
+                // escribíamos directamente sync-games.json; ahora
+                // hablamos via /api/settings/safety para que el daemon
+                // sea single source of truth y emita el evento SSE
+                // correspondiente para los demás clientes (plugin
+                // Millennium, futuro Decky).
+                Task::future(async move {
+                    match ludusavi::sync::daemon_client::post_safety(Some(enabled), None).await {
+                        Ok(echo) => Message::SafetyToggleSucceeded {
+                            safety_backups_enabled: echo.safety_backups_enabled,
+                            system_notifications_enabled: echo.system_notifications_enabled,
+                        },
+                        Err(e) => Message::SafetyToggleFailed(e),
                     }
-                ).expires(2));
-                Task::none()
+                })
             }
             Message::ToggleSystemNotificationsEnabled(enabled) => {
-                self.sync_games_config.system_notifications_enabled = enabled;
-                self.sync_games_config.save();
-                self.timed_notification = Some(Notification::new(
-                    if enabled {
-                        "✓ System notifications enabled".to_string()
-                    } else {
-                        "✓ System notifications disabled".to_string()
+                // Idem que ToggleSafetyBackupsEnabled.
+                Task::future(async move {
+                    match ludusavi::sync::daemon_client::post_safety(None, Some(enabled)).await {
+                        Ok(echo) => Message::SafetyToggleSucceeded {
+                            safety_backups_enabled: echo.safety_backups_enabled,
+                            system_notifications_enabled: echo.system_notifications_enabled,
+                        },
+                        Err(e) => Message::SafetyToggleFailed(e),
                     }
-                ).expires(2));
+                })
+            }
+            Message::SafetyToggleSucceeded {
+                safety_backups_enabled,
+                system_notifications_enabled,
+            } => {
+                // Reconciliamos in-memory con el echo del daemon.
+                // El daemon ya escribió sync-games.json con estos
+                // valores; nuestro file watcher vería el cambio en
+                // ~ms pero usando el echo evitamos esa carrera.
+                let prev_safety = self.sync_games_config.safety_backups_enabled;
+                let prev_notif = self.sync_games_config.system_notifications_enabled;
+                self.sync_games_config.safety_backups_enabled = safety_backups_enabled;
+                self.sync_games_config.system_notifications_enabled = system_notifications_enabled;
+
+                let msg = if prev_safety != safety_backups_enabled {
+                    if safety_backups_enabled {
+                        "✓ Safety backups enabled"
+                    } else {
+                        "✓ Safety backups disabled"
+                    }
+                } else if prev_notif != system_notifications_enabled {
+                    if system_notifications_enabled {
+                        "✓ System notifications enabled"
+                    } else {
+                        "✓ System notifications disabled"
+                    }
+                } else {
+                    // Echo idéntico — toggle no cambió nada (¿race con
+                    // otro cliente?). Sin notificación.
+                    return Task::none();
+                };
+                self.timed_notification = Some(Notification::new(msg.to_string()).expires(2));
+                Task::none()
+            }
+            Message::SafetyToggleFailed(error) => {
+                log::warn!("[gui] safety toggle failed: {error}");
+                self.timed_notification = Some(
+                    Notification::new(format!("✗ Safety toggle failed: {error}")).expires(4),
+                );
                 Task::none()
             }
             Message::RequestRestoreSafetyBackup(game) => {

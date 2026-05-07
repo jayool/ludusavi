@@ -1,5 +1,6 @@
 pub mod conflict;
 pub mod daemon;
+pub mod daemon_client;
 pub mod daemon_http;
 pub mod device;
 pub mod game_list;

@@ -132,6 +132,17 @@ pub enum Message {
     ToggleSafetyBackupsEnabled(bool),
     /// Toggle global para mostrar notificaciones nativas del SO desde el daemon.
     ToggleSystemNotificationsEnabled(bool),
+    /// Respuesta exitosa del POST /api/settings/safety. Contiene el
+    /// estado completo tras el cambio (echo). Reconciliamos in-memory
+    /// `sync_games_config` con estos valores.
+    SafetyToggleSucceeded {
+        safety_backups_enabled: bool,
+        system_notifications_enabled: bool,
+    },
+    /// El POST /api/settings/safety falló. Mostramos notificación al
+    /// usuario y NO mutamos `sync_games_config` — se queda en el valor
+    /// anterior, así el toggle visual rebota al estado real.
+    SafetyToggleFailed(String),
     /// Pide confirmación antes de restaurar un safety backup.
     RequestRestoreSafetyBackup(String),
     /// Ejecuta el restore del safety backup del juego indicado.
