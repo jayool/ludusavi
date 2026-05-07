@@ -449,26 +449,27 @@ const TABS: { id: ActiveTab; label: string }[] = [
 /**
  * Renderiza la tab activa actual en el content area.
  *
- * `preserveScroll`: si true, mantiene `overlay.scrollTop` entre el
- * render anterior y el nuevo. Lo usamos en refreshes provocados por
- * el usuario o por eventos del daemon (SSE) — la vista no debe
- * saltar. Al cambiar manualmente de tab queremos arrancar arriba
- * (`preserveScroll=false`, el default).
+ * `preserveScroll`: si true, hace **swap atómico** — renderiza el
+ * contenido nuevo en un buffer offscreen y lo intercambia con el
+ * de `content` en un solo frame, sin pasar por "Cargando..." visible
+ * y sin que el scroll salte. Lo usamos en refreshes (SSE event,
+ * Refresh button).
  *
- * Por qué el truco del `min-height`:
- *   1. Cada renderer hace `content.innerHTML = ''` y muestra
- *      "Cargando..." mientras fetcha. En ese momento `content`
- *      colapsa a la altura de "Cargando..." (~30px).
- *   2. `overlay.scrollHeight` se reduce, y el navegador clampa
- *      `overlay.scrollTop` a la nueva altura — el scroll salta al
- *      top.
- *   3. Aunque restauremos `scrollTop` después del render, ya hay
- *      un parpadeo perceptible (validado por el usuario).
+ * Si false (cambio de tab o primer render), escribe directamente
+ * a `content` — el "Cargando..." es visible mientras el fetch
+ * ocurre, lo cual es UX correcta cuando vas de "nada" a "algo".
  *
- * Solución: ANTES del render, fijar `content.style.minHeight` a su
- * altura actual. Así el contenedor no colapsa durante "Cargando..."
- * — el scroll se mantiene durante toda la transición. Al final
- * removemos el min-height para que vuelva a su altura natural.
+ * Por qué evolucionó hasta aquí:
+ *   1. Primera versión: `content.innerHTML = ''` siempre. Scroll
+ *      saltaba al top.
+ *   2. Restaurar scrollTop después del render: scroll volvía a su
+ *      sitio pero había un parpadeo de "Cargando..." en posición top.
+ *   3. min-height fijo durante render: scroll no saltaba pero
+ *      seguía habiendo parpadeo del contenido (validado por el
+ *      usuario: "se recarga en la posicion correcta pero parpadea").
+ *   4. **Esta versión**: render en buffer offscreen, swap atómico.
+ *      Sin parpadeo. El "Cargando..." nunca llega a verse en el
+ *      DOM real.
  */
 export async function renderActiveTab(
   doc: Document,
@@ -476,37 +477,38 @@ export async function renderActiveTab(
   content: HTMLElement,
   preserveScroll: boolean = false,
 ) {
-  const savedScrollTop = preserveScroll ? overlay.scrollTop : 0;
-  let prevMinHeight: string | null = null;
-  if (preserveScroll && content.children.length > 0) {
-    prevMinHeight = content.style.minHeight;
-    content.style.minHeight = `${content.offsetHeight}px`;
-  }
-
   applyTabStyling(overlay);
+
+  // Target de render. Para preserveScroll usamos un div offscreen;
+  // si no, escribimos directo a content (con su loading visible).
+  const renderTarget = preserveScroll ? doc.createElement('div') : content;
+
   switch (currentTab) {
     case 'games':
-      await loadAndRenderGames(doc, content);
+      await loadAndRenderGames(doc, renderTarget);
       break;
     case 'this-device':
-      await loadAndRenderThisDevice(doc, content);
+      await loadAndRenderThisDevice(doc, renderTarget);
       break;
     case 'all-devices':
-      await loadAndRenderAllDevices(doc, content);
+      await loadAndRenderAllDevices(doc, renderTarget);
       break;
     case 'settings':
-      await loadAndRenderSettings(doc, content);
+      await loadAndRenderSettings(doc, renderTarget);
       break;
   }
 
   if (preserveScroll) {
-    // Restaurar scroll por si acaso (con min-height debería no haber
-    // hecho falta, pero defensivo). Y limpiar el min-height para
-    // que el contenedor vuelva a auto.
+    const savedScrollTop = overlay.scrollTop;
+    // replaceChildren reemplaza todos los hijos de content por los
+    // nuevos en un solo paso atómico — no hay frame intermedio donde
+    // content esté vacío. Spread de Array.from para tomar snapshot
+    // (children es live; al moverlos al nuevo padre desaparecen del
+    // viejo).
+    content.replaceChildren(...Array.from(renderTarget.children));
+    // Defensivo: por si el contenido nuevo cambió de altura, asegurar
+    // que el scroll queda donde estaba.
     overlay.scrollTop = savedScrollTop;
-    if (prevMinHeight !== null) {
-      content.style.minHeight = prevMinHeight;
-    }
   }
 }
 
