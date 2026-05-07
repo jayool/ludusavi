@@ -877,8 +877,11 @@ function renderGameRow(
     'flex: 1; min-width: 0; font-size: 13px; color: #ffffff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
   row.appendChild(name);
 
-  // MODE
-  row.appendChild(makeCell(doc, modeBadgeShort(game.mode), '70px', modeColor(game.mode)));
+  // MODE — clicable. <select> nativo del browser CEF de Steam — al
+  // click abre dropdown nativo con las 4 opciones. onchange dispara
+  // POST al daemon. Optimistic: deshabilita el select hasta que la
+  // respuesta llegue, después el SSE refresca toda la tab.
+  row.appendChild(renderModeSelect(doc, game));
 
   // AUTO SYNC — checkmark/dash. Sólo aplicable si mode != none.
   const autoSyncText = game.mode === 'none' ? '—' : (game.auto_sync ? '✓' : '✗');
@@ -898,6 +901,69 @@ function renderGameRow(
   row.appendChild(makeCell(doc, lastSyncText, '120px', '#cfd6e3'));
 
   return row;
+}
+
+/** Selector de mode clicable para una fila de la tabla Games.
+ *  Cuando el usuario cambia el dropdown, dispara POST al daemon. */
+function renderModeSelect(
+  doc: Document,
+  game: import('./daemon-client').ApiGameRow,
+): HTMLElement {
+  const select = doc.createElement('select');
+  const options: Array<'none' | 'local' | 'cloud' | 'sync'> = [
+    'none',
+    'local',
+    'cloud',
+    'sync',
+  ];
+  for (const m of options) {
+    const opt = doc.createElement('option');
+    opt.value = m;
+    opt.textContent = modeBadgeShort(m);
+    if (m === game.mode) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  }
+  // Mismo styling que makeCell pero con apariencia de control. Evita
+  // el border default del browser para alinear con el resto.
+  select.style.cssText = [
+    'width: 70px',
+    'flex-shrink: 0',
+    `color: ${modeColor(game.mode)}`,
+    'background: transparent',
+    'border: 1px solid #2a2f42',
+    'border-radius: 4px',
+    'padding: 2px 4px',
+    'font-size: 12px',
+    'font-family: inherit',
+    'font-weight: 600',
+    'cursor: pointer',
+    'appearance: none',
+    '-webkit-appearance: none',
+    'text-align: center',
+  ].join(';');
+  select.addEventListener('change', async () => {
+    const newMode = select.value as 'none' | 'local' | 'cloud' | 'sync';
+    if (newMode === game.mode) return;
+    select.disabled = true;
+    select.style.opacity = '0.6';
+    try {
+      await daemon.setGameMode(game.name, newMode);
+      // SSE event `daemon_restarted` (file watcher rota sync-games.json)
+      // refresca la tabla con el nuevo mode visible. No tocamos el
+      // select aquí — el atomic swap del re-render lo reemplaza con
+      // uno nuevo ya en el estado correcto.
+    } catch (e) {
+      console.error('[ludusavi-sync] setGameMode failed:', e);
+      // Revertir visualmente al mode previo. Sin re-fetch — el
+      // próximo SSE refresh sincroniza si hizo falta.
+      select.value = game.mode;
+      select.disabled = false;
+      select.style.opacity = '1';
+    }
+  });
+  return select;
 }
 
 /** Helper: celda con ancho fijo + color de texto. */

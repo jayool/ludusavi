@@ -17,7 +17,7 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use std::time::Duration;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -584,6 +584,73 @@ async fn settings_safety_handler(
         safety_backups_enabled: cfg.safety_backups_enabled,
         system_notifications_enabled: cfg.system_notifications_enabled,
     }))
+}
+
+// ============================================================================
+// POST /api/games/{name}/mode — cambio del save mode de un juego
+// ============================================================================
+//
+// Equivale a `Message::SetGameSaveMode` + `Message::SaveGameDetail`
+// de la GUI Iced. Acepta uno de los 4 modos del enum SaveMode:
+// "none", "local", "cloud", "sync" (camelCase, mismo wire format que
+// los JSONs persistidos).
+//
+// El daemon NO valida pre-condiciones (rclone disponible, daemon
+// corriendo) — eso es responsabilidad del cliente. Si el usuario
+// pone mode=cloud sin rclone, el worker tick siguiente fallará y el
+// game quedará con status=error, lo que la GUI/plugin renderiza al
+// usuario. La GUI mantiene su lógica de aviso pre-save (una buena
+// UX, no necesaria para corrección).
+//
+// Side-effect: rota sync-games.json con el nuevo mode preservando
+// auto_sync. El file watcher detecta el cambio y emite
+// `daemon_restarted` por SSE — los clientes refrescan la tabla
+// Games automáticamente.
+
+#[derive(serde::Deserialize, Debug)]
+struct GameModeUpdateBody {
+    mode: crate::sync::sync_config::SaveMode,
+}
+
+#[derive(serde::Serialize)]
+struct GameModeEchoResponse {
+    /// Nombre del juego (echo del path param).
+    name: String,
+    /// Nuevo mode tras el cambio. Mismo wire format que los JSONs
+    /// (camelCase).
+    mode: crate::sync::sync_config::SaveMode,
+    /// Auto sync flag — preservado del estado previo. Lo devolvemos
+    /// para que el cliente reconcilie su UI sin re-fetch.
+    auto_sync: bool,
+}
+
+async fn games_mode_handler(
+    Path(name): Path<String>,
+    Json(body): Json<GameModeUpdateBody>,
+) -> Result<Json<GameModeEchoResponse>, (StatusCode, Json<serde_json::Value>)> {
+    use crate::sync::sync_config::SyncGamesConfig;
+
+    if name.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Game name is empty"})),
+        ));
+    }
+
+    let mut cfg = SyncGamesConfig::load();
+    cfg.set_mode(&name, body.mode.clone());
+    let echo = GameModeEchoResponse {
+        name: name.clone(),
+        mode: cfg
+            .games
+            .get(&name)
+            .map(|g| g.mode.clone())
+            .unwrap_or(body.mode),
+        auto_sync: cfg.get_auto_sync(&name),
+    };
+    cfg.save();
+
+    Ok(Json(echo))
 }
 
 // ============================================================================
@@ -1161,6 +1228,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/cloud", get(cloud_handler))
         .route("/api/settings", get(settings_handler))
         .route("/api/settings/safety", post(settings_safety_handler))
+        .route("/api/games/:name/mode", post(games_mode_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
@@ -1657,6 +1725,146 @@ mod tests {
         let cfg = crate::sync::sync_config::SyncGamesConfig::load();
         assert!(cfg.safety_backups_enabled);
         assert!(cfg.system_notifications_enabled);
+    }
+
+    // ------------------------------------------------------------------
+    // POST /api/games/{name}/mode — segundo write endpoint de Fase 2
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn games_mode_post_requires_auth() {
+        let app = build_router(test_state("token"));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Stardew/mode")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"mode":"sync"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn games_mode_post_persists_each_save_mode() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // Set sequencia de cada modo y verifica persistencia.
+        for mode in &["sync", "cloud", "local", "none"] {
+            let body = format!(r#"{{"mode":"{mode}"}}"#);
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/games/Stardew%20Valley/mode")
+                        .header("Authorization", format!("Bearer {token}"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "mode {mode} should be accepted"
+            );
+
+            let bytes = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["name"], "Stardew Valley");
+            assert_eq!(json["mode"], *mode);
+
+            // Persistido a disco.
+            let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+            let mode_str = match cfg.get_mode("Stardew Valley") {
+                crate::sync::sync_config::SaveMode::None => "none",
+                crate::sync::sync_config::SaveMode::Local => "local",
+                crate::sync::sync_config::SaveMode::Cloud => "cloud",
+                crate::sync::sync_config::SaveMode::Sync => "sync",
+            };
+            assert_eq!(mode_str, *mode);
+        }
+    }
+
+    #[tokio::test]
+    async fn games_mode_post_preserves_auto_sync() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // Pre-setear auto_sync a false manualmente.
+        {
+            let mut cfg = crate::sync::sync_config::SyncGamesConfig::default();
+            cfg.set_mode("Hades", crate::sync::sync_config::SaveMode::Local);
+            cfg.set_auto_sync("Hades", false);
+            cfg.save();
+        }
+
+        // Cambiar mode via POST.
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Hades/mode")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"mode":"sync"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // auto_sync se mantiene en false (lo que set_mode preserva).
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["mode"], "sync");
+        assert_eq!(json["auto_sync"], false);
+
+        let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+        assert!(!cfg.get_auto_sync("Hades"));
+    }
+
+    #[tokio::test]
+    async fn games_mode_post_invalid_mode_returns_400() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // serde rechaza "purple" (no es variant del enum).
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Anything/mode")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"mode":"purple"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // axum's `Json<T>` extractor rechaza con 422 (Unprocessable Entity)
+        // cuando el body es JSON pero falla la deserialización al tipo.
+        assert!(
+            matches!(
+                response.status(),
+                StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+            ),
+            "expected 400 or 422 for invalid mode, got {}",
+            response.status()
+        );
     }
 
     /// Helper de tests: escribe los 4 ficheros que `build_games_response`

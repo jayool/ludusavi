@@ -88,3 +88,63 @@ pub async fn post_safety(
         .await
         .map_err(|e| format!("Failed to parse response JSON: {e}"))
 }
+
+/// Echo del endpoint POST /api/games/{name}/mode. `mode` es el wire
+/// format camelCase del enum `SaveMode`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GameModeEcho {
+    pub name: String,
+    pub mode: crate::sync::sync_config::SaveMode,
+    pub auto_sync: bool,
+}
+
+/// POST /api/games/{name}/mode — cambia el save mode del juego.
+/// Devuelve el echo con name, mode y auto_sync (preservado).
+pub async fn post_game_mode(
+    name: String,
+    mode: crate::sync::sync_config::SaveMode,
+) -> Result<GameModeEcho, String> {
+    let token = read_token()?;
+    let body = serde_json::json!({ "mode": mode });
+    let url = format!(
+        "{DAEMON_BASE_URL}/api/games/{}/mode",
+        urlencoding_encode(&name),
+    );
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(url)
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+
+    resp.json::<GameModeEcho>()
+        .await
+        .map_err(|e| format!("Failed to parse response JSON: {e}"))
+}
+
+/// URL-encode minimal para path components. No traemos la crate
+/// `urlencoding` para no inflar dependencies — los nombres de juegos
+/// pueden contener espacios, dos puntos, paréntesis, etc., todos
+/// caracteres reservados en URL paths que necesitan percent-encoding.
+fn urlencoding_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        // Set seguro en path component: A-Z, a-z, 0-9, '-', '_', '.', '~'.
+        // Cualquier otro byte se percent-encodea.
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}

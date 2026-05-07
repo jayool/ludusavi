@@ -380,6 +380,31 @@ export class DaemonClient {
   }
 
   /**
+   * Cambia el save mode de un juego. `mode` es uno de los 4 valores
+   * del enum `SaveMode` del daemon, en wire format camelCase: 'none',
+   * 'local', 'cloud', 'sync'.
+   *
+   * El daemon NO valida pre-condiciones (rclone, daemon corriendo).
+   * Si el cliente quiere bloquear el cambio (p.ej. en Cloud sin
+   * rclone), tiene que comprobarlo localmente antes de llamar.
+   *
+   * Side-effect: rota sync-games.json + emite SSE `daemon_restarted`.
+   * El cliente refresca la tabla Games al recibir el evento.
+   *
+   * Devuelve echo con `name`, `mode`, y `auto_sync` (preservado del
+   * estado previo) para que el caller reconcilie sin re-fetch.
+   */
+  setGameMode(
+    name: string,
+    mode: 'none' | 'local' | 'cloud' | 'sync',
+  ): Promise<{ name: string; mode: string; auto_sync: boolean }> {
+    return this.postJSON(
+      `/api/games/${encodeURIComponent(name)}/mode`,
+      { mode },
+    );
+  }
+
+  /**
    * Suscribe al stream SSE. Devuelve el `EventSource` para que el
    * caller pueda cerrarlo cuando se desmonte el componente.
    *
