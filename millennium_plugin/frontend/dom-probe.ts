@@ -449,19 +449,26 @@ const TABS: { id: ActiveTab; label: string }[] = [
 /**
  * Renderiza la tab activa actual en el content area.
  *
- * `preserveScroll`: si true, restaura `overlay.scrollTop` tras el
- * render. Lo usamos en refreshes provocados por el usuario o por
- * eventos del daemon (SSE) — ahí queremos que la vista siga donde
- * estaba. En cambio, al cambiar manualmente de tab queremos
- * arrancar arriba (`preserveScroll=false`, el default).
+ * `preserveScroll`: si true, mantiene `overlay.scrollTop` entre el
+ * render anterior y el nuevo. Lo usamos en refreshes provocados por
+ * el usuario o por eventos del daemon (SSE) — la vista no debe
+ * saltar. Al cambiar manualmente de tab queremos arrancar arriba
+ * (`preserveScroll=false`, el default).
  *
- * Por qué hace falta: cada renderer hace `content.innerHTML = ''`
- * y reconstruye desde cero. El scroll del `overlay` (que tiene
- * `overflow: auto`) se mantiene en bytes, pero al haber cero
- * contenido durante el fetch + render, scrollTop colapsa a 0.
- * Capturándolo antes y restaurándolo después evitamos el "salto"
- * al top que pasaba al hacer toggle de un pill SAFETY (validado
- * por el usuario).
+ * Por qué el truco del `min-height`:
+ *   1. Cada renderer hace `content.innerHTML = ''` y muestra
+ *      "Cargando..." mientras fetcha. En ese momento `content`
+ *      colapsa a la altura de "Cargando..." (~30px).
+ *   2. `overlay.scrollHeight` se reduce, y el navegador clampa
+ *      `overlay.scrollTop` a la nueva altura — el scroll salta al
+ *      top.
+ *   3. Aunque restauremos `scrollTop` después del render, ya hay
+ *      un parpadeo perceptible (validado por el usuario).
+ *
+ * Solución: ANTES del render, fijar `content.style.minHeight` a su
+ * altura actual. Así el contenedor no colapsa durante "Cargando..."
+ * — el scroll se mantiene durante toda la transición. Al final
+ * removemos el min-height para que vuelva a su altura natural.
  */
 export async function renderActiveTab(
   doc: Document,
@@ -470,6 +477,12 @@ export async function renderActiveTab(
   preserveScroll: boolean = false,
 ) {
   const savedScrollTop = preserveScroll ? overlay.scrollTop : 0;
+  let prevMinHeight: string | null = null;
+  if (preserveScroll && content.children.length > 0) {
+    prevMinHeight = content.style.minHeight;
+    content.style.minHeight = `${content.offsetHeight}px`;
+  }
+
   applyTabStyling(overlay);
   switch (currentTab) {
     case 'games':
@@ -485,10 +498,15 @@ export async function renderActiveTab(
       await loadAndRenderSettings(doc, content);
       break;
   }
-  // Restaura scroll si pidieron preservar; si no, queda a 0 (arriba)
-  // que es el default tras un re-render.
+
   if (preserveScroll) {
+    // Restaurar scroll por si acaso (con min-height debería no haber
+    // hecho falta, pero defensivo). Y limpiar el min-height para
+    // que el contenedor vuelva a auto.
     overlay.scrollTop = savedScrollTop;
+    if (prevMinHeight !== null) {
+      content.style.minHeight = prevMinHeight;
+    }
   }
 }
 
