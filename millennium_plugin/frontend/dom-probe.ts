@@ -966,18 +966,45 @@ function renderModeSelect(
   return select;
 }
 
-/** Toggle de auto_sync para una fila Games. Click → POST. En mode=none
- *  no es clicable porque el daemon ignora el flag entonces (mostramos
- *  dash gris en su lugar). */
+/** Toggle de auto_sync para una fila Games. Click → POST.
+ *
+ *  Reglas (paridad con la GUI Iced, ver app.rs:5646):
+ *  - mode=none  → dash gris, no clicable. El daemon ignora el flag.
+ *  - mode=sync  → ✓ verde no clicable. En SYNC, auto_sync es siempre
+ *                 ON implícitamente (no tiene sentido un SYNC sin
+ *                 auto-sync). La GUI directamente oculta el toggle
+ *                 ahí; aquí mostramos un check fijo con tooltip
+ *                 explicativo para que el usuario sepa por qué no
+ *                 puede tocarlo.
+ *  - mode=local | cloud → toggle real ✓/✗.
+ */
 function renderAutoSyncToggle(
   doc: Document,
   game: import('./daemon-client').ApiGameRow,
 ): HTMLElement {
-  // mode=none: dash gris, no clicable.
   if (game.mode === 'none') {
     return makeCell(doc, '—', '90px', '#6b7280');
   }
 
+  if (game.mode === 'sync') {
+    const cell = doc.createElement('div');
+    cell.style.cssText = [
+      'width: 90px',
+      'flex-shrink: 0',
+      'display: flex',
+      'align-items: center',
+      'justify-content: center',
+      'color: #3ecf8e',
+      'font-size: 14px',
+      'font-weight: 600',
+      'cursor: default',
+    ].join(';');
+    cell.textContent = '✓';
+    cell.title = 'In SYNC mode auto sync is always ON — change mode to LOCAL or CLOUD if you want to toggle it';
+    return cell;
+  }
+
+  // mode = local | cloud → toggle clicable.
   const cell = doc.createElement('div');
   cell.style.cssText = [
     'width: 90px',
