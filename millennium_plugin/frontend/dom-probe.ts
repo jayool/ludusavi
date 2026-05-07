@@ -883,10 +883,10 @@ function renderGameRow(
   // respuesta llegue, después el SSE refresca toda la tab.
   row.appendChild(renderModeSelect(doc, game));
 
-  // AUTO SYNC — checkmark/dash. Sólo aplicable si mode != none.
-  const autoSyncText = game.mode === 'none' ? '—' : (game.auto_sync ? '✓' : '✗');
-  const autoSyncColor = game.mode === 'none' ? '#6b7280' : (game.auto_sync ? '#3ecf8e' : '#9aa3b2');
-  row.appendChild(makeCell(doc, autoSyncText, '90px', autoSyncColor));
+  // AUTO SYNC — toggle clicable. Sólo activable cuando mode != none
+  // (el daemon ignora auto_sync si no hay sync activo). En mode=none
+  // mostramos un dash gris no-clicable.
+  row.appendChild(renderAutoSyncToggle(doc, game));
 
   // LAST SYNCED FROM (device name).
   const fromText = game.last_synced_from
@@ -964,6 +964,63 @@ function renderModeSelect(
     }
   });
   return select;
+}
+
+/** Toggle de auto_sync para una fila Games. Click → POST. En mode=none
+ *  no es clicable porque el daemon ignora el flag entonces (mostramos
+ *  dash gris en su lugar). */
+function renderAutoSyncToggle(
+  doc: Document,
+  game: import('./daemon-client').ApiGameRow,
+): HTMLElement {
+  // mode=none: dash gris, no clicable.
+  if (game.mode === 'none') {
+    return makeCell(doc, '—', '90px', '#6b7280');
+  }
+
+  const cell = doc.createElement('div');
+  cell.style.cssText = [
+    'width: 90px',
+    'flex-shrink: 0',
+    'display: flex',
+    'align-items: center',
+    'justify-content: center',
+  ].join(';');
+
+  const button = doc.createElement('button');
+  button.textContent = game.auto_sync ? '✓' : '✗';
+  button.title = game.auto_sync ? 'Auto sync ON — click to disable' : 'Auto sync OFF — click to enable';
+  button.style.cssText = [
+    'background: transparent',
+    'border: 1px solid #2a2f42',
+    'border-radius: 4px',
+    `color: ${game.auto_sync ? '#3ecf8e' : '#9aa3b2'}`,
+    'font-size: 14px',
+    'font-weight: 600',
+    'font-family: inherit',
+    'cursor: pointer',
+    'padding: 2px 10px',
+    'min-width: 32px',
+  ].join(';');
+
+  button.addEventListener('click', async () => {
+    const newValue = !game.auto_sync;
+    button.disabled = true;
+    button.style.opacity = '0.6';
+    try {
+      await daemon.setGameAutoSync(game.name, newValue);
+      // SSE refresh repinta la tabla con el valor real. No mutamos el
+      // botón aquí — el atomic swap del re-render lo reemplaza.
+    } catch (e) {
+      console.error('[ludusavi-sync] setGameAutoSync failed:', e);
+      // Revertir.
+      button.disabled = false;
+      button.style.opacity = '1';
+    }
+  });
+
+  cell.appendChild(button);
+  return cell;
 }
 
 /** Helper: celda con ancho fijo + color de texto. */

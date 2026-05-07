@@ -654,6 +654,52 @@ async fn games_mode_handler(
 }
 
 // ============================================================================
+// POST /api/games/{name}/auto-sync — toggle auto-sync por juego
+// ============================================================================
+//
+// Equivale a `Message::SetGameAutoSync` + Save de la GUI Iced.
+// Mismo patrón que /api/games/{name}/mode: PATCH-style, persiste a
+// sync-games.json, file watcher emite SSE `daemon_restarted`, echo
+// con name+mode+auto_sync.
+
+#[derive(serde::Deserialize, Debug)]
+struct GameAutoSyncUpdateBody {
+    enabled: bool,
+}
+
+async fn games_auto_sync_handler(
+    Path(name): Path<String>,
+    Json(body): Json<GameAutoSyncUpdateBody>,
+) -> Result<Json<GameModeEchoResponse>, (StatusCode, Json<serde_json::Value>)> {
+    use crate::sync::sync_config::SyncGamesConfig;
+
+    if name.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Game name is empty"})),
+        ));
+    }
+
+    let mut cfg = SyncGamesConfig::load();
+    cfg.set_auto_sync(&name, body.enabled);
+    // Reuso GameModeEchoResponse en lugar de crear un eco específico —
+    // mismo shape (name+mode+auto_sync) y el cliente espera reconciliar
+    // ambos campos en cualquier write a un juego.
+    let echo = GameModeEchoResponse {
+        name: name.clone(),
+        mode: cfg
+            .games
+            .get(&name)
+            .map(|g| g.mode.clone())
+            .unwrap_or_default(),
+        auto_sync: cfg.get_auto_sync(&name),
+    };
+    cfg.save();
+
+    Ok(Json(echo))
+}
+
+// ============================================================================
 // /api/games — tabla denormalizada de juegos
 // ============================================================================
 //
@@ -1270,6 +1316,7 @@ fn build_router(state: AppState) -> Router {
         .route("/api/settings", get(settings_handler))
         .route("/api/settings/safety", post(settings_safety_handler))
         .route("/api/games/:name/mode", post(games_mode_handler))
+        .route("/api/games/:name/auto-sync", post(games_auto_sync_handler))
         // El middleware de auth se aplica DESPUÉS del cors layer para
         // que las peticiones OPTIONS (preflight) no requieran token.
         .route_layer(middleware::from_fn_with_state(
@@ -1904,6 +1951,137 @@ mod tests {
                 StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
             ),
             "expected 400 or 422 for invalid mode, got {}",
+            response.status()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // POST /api/games/{name}/auto-sync
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn games_auto_sync_post_requires_auth() {
+        let app = build_router(test_state("token"));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Stardew/auto-sync")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn games_auto_sync_post_persists_both_values() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // false then true.
+        for enabled in &[false, true] {
+            let body = format!(r#"{{"enabled":{enabled}}}"#);
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/games/Stardew%20Valley/auto-sync")
+                        .header("Authorization", format!("Bearer {token}"))
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let bytes = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["name"], "Stardew Valley");
+            assert_eq!(json["auto_sync"], *enabled);
+
+            let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+            assert_eq!(cfg.get_auto_sync("Stardew Valley"), *enabled);
+        }
+    }
+
+    #[tokio::test]
+    async fn games_auto_sync_post_preserves_mode() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // Pre-setear mode=Sync para Hades.
+        {
+            let mut cfg = crate::sync::sync_config::SyncGamesConfig::default();
+            cfg.set_mode("Hades", crate::sync::sync_config::SaveMode::Sync);
+            cfg.set_auto_sync("Hades", true);
+            cfg.save();
+        }
+
+        // Toggle auto_sync a false via POST.
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Hades/auto-sync")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        // Mode preservado en sync — no se ha tocado.
+        assert_eq!(json["mode"], "sync");
+        assert_eq!(json["auto_sync"], false);
+
+        let cfg = crate::sync::sync_config::SyncGamesConfig::load();
+        assert_eq!(
+            cfg.get_mode("Hades"),
+            &crate::sync::sync_config::SaveMode::Sync
+        );
+        assert!(!cfg.get_auto_sync("Hades"));
+    }
+
+    #[tokio::test]
+    async fn games_auto_sync_post_missing_field_returns_400_or_422() {
+        let _guard = ConfigDirGuard::new(tempfile::tempdir().unwrap());
+        let token = "tok";
+        let app = build_router(test_state(token));
+
+        // Body sin `enabled` — serde rechaza (campo requerido).
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/games/Anything/auto-sync")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                response.status(),
+                StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+            ),
+            "expected 400 or 422 for missing field, got {}",
             response.status()
         );
     }

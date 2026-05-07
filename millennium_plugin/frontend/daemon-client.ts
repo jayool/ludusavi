@@ -405,6 +405,28 @@ export class DaemonClient {
   }
 
   /**
+   * Toggle del flag auto_sync de un juego. `enabled=true` = el daemon
+   * sincroniza el juego automáticamente al detectar cambios en disco;
+   * false = sólo sync manual.
+   *
+   * Echo idéntico a setGameMode: `{name, mode, auto_sync}`. El cliente
+   * reconcilia ambos campos sin re-fetch.
+   *
+   * No tiene sentido en mode=none (no se sync nada igualmente). El
+   * cliente puede deshabilitar el toggle en ese caso para evitar
+   * confusión.
+   */
+  setGameAutoSync(
+    name: string,
+    enabled: boolean,
+  ): Promise<{ name: string; mode: string; auto_sync: boolean }> {
+    return this.postJSON(
+      `/api/games/${encodeURIComponent(name)}/auto-sync`,
+      { enabled },
+    );
+  }
+
+  /**
    * Suscribe al stream SSE. Devuelve el `EventSource` para que el
    * caller pueda cerrarlo cuando se desmonte el componente.
    *
